@@ -1,0 +1,13 @@
+{
+  "name": "Picktennt",
+  "short_name": "Picktennt",
+  "description": "Pickleball Tournament Manager",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2bafc7",
+  "icons": [
+    { "src": "/images/logo.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/images/logo.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

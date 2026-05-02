@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <rect width="200" height="200" fill="none"/>
+  <!-- Vertical stem of P -->
+  <rect x="30" y="20" width="38" height="165" rx="6" fill="#2bafc7"/>
+  <!-- Bowl of P (outer) -->
+  <path d="M68 20 Q160 20 160 82 Q160 144 68 144" fill="#2bafc7"/>
+  <!-- Bowl cutout -->
+  <path d="M68 52 Q122 52 122 82 Q122 112 68 112" fill="white"/>
+  <!-- Diagonal slice (the paddle shape) -->
+  <path d="M100 82 L155 140 L130 140 L80 90 Z" fill="white"/>
+</svg>
