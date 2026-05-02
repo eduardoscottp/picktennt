@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { EditProfileForm } from "@/components/auth/edit-profile-form";
+import { AccountActions } from "@/components/auth/account-actions";
 import { getInitials, duprRatingColor, statusLabel, tournamentTypeLabel, formatDate } from "@/lib/utils";
 import { Trophy, TrendingUp, Target, Calendar } from "lucide-react";
 import type { Profile, Tournament, Match } from "@/types/database";
@@ -100,8 +101,9 @@ export default async function ProfilePage() {
                 )}
               </div>
             </div>
-            <div className="mt-4">
+            <div className="mt-4 space-y-3">
               <EditProfileForm profile={profile as Profile} />
+              <AccountActions />
             </div>
           </CardContent>
         </Card>

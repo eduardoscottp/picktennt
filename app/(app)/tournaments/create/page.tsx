@@ -61,8 +61,14 @@ export default function CreateTournamentPage() {
         e.games_per_player = "Required for mixed format";
     }
     if (step === 2) {
-      if (form.second_round_format !== "none" && !form.advancement_count)
-        e.advancement_count = "How many players advance?";
+      if (form.second_round_format !== "none") {
+        if (!form.advancement_count)
+          e.advancement_count = "How many players advance?";
+        else if (+form.advancement_count > +form.max_players)
+          e.advancement_count = `Cannot exceed max players (${form.max_players})`;
+        else if (+form.advancement_count < 2)
+          e.advancement_count = "At least 2 players must advance";
+      }
       if (form.finals_format !== "none" && form.finals_trigger === "none")
         e.finals_trigger = "When do finals start?";
     }
@@ -98,6 +104,15 @@ export default function CreateTournamentPage() {
       }).select().single();
 
       if (error) throw error;
+
+      // Auto-join creator as an approved player
+      await supabase.from("tournament_players").insert({
+        tournament_id: data.id,
+        user_id: user.id,
+        status: "approved",
+        joined_via: "invite",
+      });
+
       toast("Tournament created!", "success");
       router.push(`/tournaments/${data.id}`);
     } catch (err: any) {

@@ -114,13 +114,11 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
             {/* Join button for non-members */}
             {user && !isMember && !isAdmin && (
               <div className="mt-4">
-                {myPlayerRow?.status === "pending" ? (
-                  <div className="text-sm text-yellow-600 bg-yellow-50 rounded-xl px-4 py-2 font-medium">
-                    Your request to join is pending approval
-                  </div>
-                ) : (
-                  <JoinButton tournamentId={id} userId={user.id} />
-                )}
+                <JoinButton
+                  tournamentId={id}
+                  userId={user.id}
+                  pendingRowId={myPlayerRow?.status === "pending" ? myPlayerRow.id : undefined}
+                />
               </div>
             )}
             {!user && (

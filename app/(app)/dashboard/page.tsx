@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
-import { Trophy, Plus, Clock, CheckCircle } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Trophy, Plus, Clock, CheckCircle, Users } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDate, statusLabel, tournamentTypeLabel } from "@/lib/utils";
@@ -30,6 +30,20 @@ export default async function DashboardPage() {
 
   const myTournaments = (playerRows ?? []).map((r: any) => r.tournaments as Tournament);
   const adminTournaments = (adminRows ?? []).map((r: any) => r.tournaments as Tournament);
+
+  // Pending join requests for each tournament the user admins
+  const adminTournamentIds = (adminRows ?? []).map((r: any) => r.tournament_id as string);
+  let pendingByTournament: Record<string, number> = {};
+  if (adminTournamentIds.length > 0) {
+    const { data: pendingRows } = await supabase
+      .from("tournament_players")
+      .select("tournament_id")
+      .in("tournament_id", adminTournamentIds)
+      .eq("status", "pending");
+    for (const p of pendingRows ?? []) {
+      pendingByTournament[p.tournament_id] = (pendingByTournament[p.tournament_id] ?? 0) + 1;
+    }
+  }
 
   // Stats
   const { data: validatedMatches } = await supabase
@@ -136,19 +150,30 @@ export default async function DashboardPage() {
         <div>
           <h2 className="text-lg font-bold text-gray-900 mb-3">Administering</h2>
           <div className="space-y-3">
-            {adminTournaments.map((t) => (
-              <Link key={t.id} href={`/tournaments/${t.id}/admin`}>
-                <Card className="hover:border-brand-200 transition-colors cursor-pointer border-dashed border-brand-200">
-                  <CardContent className="flex items-center gap-3 py-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="font-bold text-gray-900 truncate">{t.name}</div>
-                      <div className="text-xs text-brand-500 font-medium">Administrator</div>
-                    </div>
-                    <Badge variant="default">{statusLabel(t.status)}</Badge>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
+            {adminTournaments.map((t) => {
+              const pending = pendingByTournament[t.id] ?? 0;
+              return (
+                <Link key={t.id} href={`/tournaments/${t.id}/admin`}>
+                  <Card className="hover:border-brand-200 transition-colors cursor-pointer border-dashed border-brand-200">
+                    <CardContent className="flex items-center gap-3 py-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-gray-900 truncate">{t.name}</div>
+                        <div className="text-xs text-brand-500 font-medium">Administrator</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {pending > 0 && (
+                          <span className="inline-flex items-center gap-1 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                            <Users className="h-3 w-3" />
+                            {pending}
+                          </span>
+                        )}
+                        <Badge variant="default">{statusLabel(t.status)}</Badge>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              );
+            })}
           </div>
         </div>
       )}
