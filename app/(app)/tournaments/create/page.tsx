@@ -101,7 +101,12 @@ export default function CreateTournamentPage() {
       toast("Tournament created!", "success");
       router.push(`/tournaments/${data.id}`);
     } catch (err: any) {
-      toast(err.message ?? "Failed to create tournament", "error");
+      if (err.code === "23505" || err.message?.includes("tournaments_name_key")) {
+        setErrors({ name: "This tournament name is already taken. Please choose another." });
+        setStep(0);
+      } else {
+        toast(err.message ?? "Failed to create tournament", "error");
+      }
     } finally {
       setLoading(false);
     }
