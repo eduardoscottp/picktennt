@@ -57,8 +57,8 @@ export default function CreateTournamentPage() {
     }
     if (step === 1) {
       if (!form.type) e.type = "Select a tournament type";
-      if (form.type === "mixed" && (!form.games_per_player || +form.games_per_player < 1))
-        e.games_per_player = "Required for mixed format";
+      if (form.type && (!form.games_per_player || +form.games_per_player < 1))
+        e.games_per_player = "Must be at least 1";
     }
     if (step === 2) {
       if (form.second_round_format !== "none") {
@@ -93,7 +93,7 @@ export default function CreateTournamentPage() {
         court_count: +form.court_count,
         max_players: +form.max_players,
         type: form.type as TournamentType,
-        games_per_player: form.type === "mixed" ? +form.games_per_player : null,
+        games_per_player: form.type ? +form.games_per_player : null,
         second_round_format: (form.second_round_format || "none") as SecondRoundFormat,
         advancement_count: form.advancement_count ? +form.advancement_count : null,
         finals_format: (form.finals_format || "none") as FinalsFormat,
@@ -202,7 +202,13 @@ export default function CreateTournamentPage() {
                     <button
                       key={t.val}
                       type="button"
-                      onClick={() => set("type", t.val)}
+                      onClick={() => {
+                        set("type", t.val);
+                        if (t.val !== "mixed") {
+                          const defaultRounds = Math.max(1, +form.max_players - 1);
+                          setForm((f) => ({ ...f, type: t.val, games_per_player: String(defaultRounds) }));
+                        }
+                      }}
                       className={`w-full text-left p-4 rounded-xl border-2 transition-colors ${
                         form.type === t.val
                           ? "border-brand-500 bg-brand-50"
@@ -216,14 +222,18 @@ export default function CreateTournamentPage() {
                 </div>
               </div>
 
-              {form.type === "mixed" && (
+              {form.type && (
                 <Input
-                  label="Games Per Player"
-                  type="number" min={1} max={50}
+                  label={form.type === "mixed" ? "Games Per Player" : "Rounds (games per team)"}
+                  type="number" min={1} max={200}
                   value={form.games_per_player}
                   onChange={(e) => set("games_per_player", e.target.value)}
                   error={errors.games_per_player}
-                  hint="How many games will each player play in the mixed round"
+                  hint={
+                    form.type === "mixed"
+                      ? "How many games each player plays in the mixed round"
+                      : `Default ${Math.max(1, +form.max_players - 1)} = full round robin (every team plays every other team)`
+                  }
                 />
               )}
             </CardContent>
