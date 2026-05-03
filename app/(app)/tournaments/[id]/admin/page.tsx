@@ -9,6 +9,7 @@ import { AdminPlayerActions } from "@/components/tournament/admin-player-actions
 import { AdminStatusActions } from "@/components/tournament/admin-status-actions";
 import { AdminGenerateRound } from "@/components/tournament/admin-generate-round";
 import { AdminBracketActions } from "@/components/tournament/admin-bracket-actions";
+import { AdminAddPlayer } from "@/components/tournament/admin-add-player";
 import { ShareButton } from "@/components/tournament/share-button";
 import type { Profile, Tournament, Match } from "@/types/database";
 
@@ -135,6 +136,12 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
             </CardContent>
           </Card>
         )}
+
+        {/* Add player by search */}
+        <AdminAddPlayer
+          tournament={tournament}
+          existingPlayerIds={(approvedPlayers ?? []).map((p: any) => p.user_id)}
+        />
 
         {/* Approved players */}
         <Card>
