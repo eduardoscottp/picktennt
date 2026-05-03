@@ -106,6 +106,26 @@ export default function CreateTournamentPage() {
         joined_via: "invite",
       });
 
+      // For singles/doubles: also create a team for the creator
+      if (form.type !== "mixed") {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("first_name, last_name, email")
+          .eq("id", user.id)
+          .single();
+        const teamName = profile
+          ? [profile.first_name, profile.last_name].filter(Boolean).join(" ") || profile.email
+          : user.email ?? "Creator";
+        const { data: team } = await supabase
+          .from("teams")
+          .insert({ tournament_id: data.id, name: teamName })
+          .select()
+          .single();
+        if (team) {
+          await supabase.from("team_members").insert({ team_id: team.id, user_id: user.id });
+        }
+      }
+
       toast("Tournament created!", "success");
       router.push(`/tournaments/${data.id}`);
     } catch (err: any) {
