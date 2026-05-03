@@ -1,5 +1,5 @@
 import { generateMixedSchedule } from "./mixed-pairing";
-import { generateRoundRobinSchedule } from "./round-robin";
+import { generateRoundRobinSchedule, roundsNeeded } from "./round-robin";
 import type { Tournament } from "@/types/database";
 
 type SupabaseClient = any;
@@ -85,7 +85,8 @@ export async function generateAndSaveSchedule(
     return schedule.length;
   } else {
     const teamIds = await fetchTeamIds(supabase, tournament.id);
-    const maxRounds = tournament.games_per_player ?? (teamIds.length - 1);
+    const gamesPerTeam = tournament.games_per_player ?? (teamIds.length - 1);
+    const maxRounds = roundsNeeded(teamIds.length, tournament.court_count, gamesPerTeam);
     const full = generateRoundRobinSchedule(teamIds, tournament.court_count);
     const schedule = full.slice(0, maxRounds);
 

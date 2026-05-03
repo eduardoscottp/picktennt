@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { generateMixedSchedule } from "@/lib/tournament/mixed-pairing";
-import { generateRoundRobinSchedule } from "@/lib/tournament/round-robin";
+import { generateRoundRobinSchedule, roundsNeeded } from "@/lib/tournament/round-robin";
 import type { Tournament, RoundType } from "@/types/database";
 import { CalendarRange, ChevronRight } from "lucide-react";
 
@@ -82,7 +82,8 @@ export function AdminGenerateRound({
 
   // Build the full schedule (array of match-insert rows per round, without round_id)
   function buildSinglesSchedule(teamIds: string[]) {
-    const maxRounds = tournament.games_per_player ?? (teamIds.length - 1);
+    const gamesPerTeam = tournament.games_per_player ?? (teamIds.length - 1);
+    const maxRounds = roundsNeeded(teamIds.length, tournament.court_count, gamesPerTeam);
     const full = generateRoundRobinSchedule(teamIds, tournament.court_count);
     return full.slice(0, maxRounds).map((pairs) =>
       pairs.map(([a, b], idx) => ({
@@ -171,8 +172,13 @@ export function AdminGenerateRound({
   }
 
   const totalRounds =
-    tournament.games_per_player ??
-    (tournament.type === "mixed" ? "?" : playerCount - 1);
+    tournament.type === "mixed"
+      ? (tournament.games_per_player ?? "?")
+      : roundsNeeded(
+          playerCount,
+          tournament.court_count,
+          tournament.games_per_player ?? Math.max(1, playerCount - 1)
+        );
 
   return (
     <Card>
