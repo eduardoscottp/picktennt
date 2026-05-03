@@ -8,8 +8,9 @@ import { getInitials, formatDate, generateJoinUrl, statusLabel } from "@/lib/uti
 import { AdminPlayerActions } from "@/components/tournament/admin-player-actions";
 import { AdminStatusActions } from "@/components/tournament/admin-status-actions";
 import { AdminGenerateRound } from "@/components/tournament/admin-generate-round";
+import { AdminBracketActions } from "@/components/tournament/admin-bracket-actions";
 import { ShareButton } from "@/components/tournament/share-button";
-import type { Profile, Tournament } from "@/types/database";
+import type { Profile, Tournament, Match } from "@/types/database";
 
 export default async function AdminPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -48,6 +49,21 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
     .eq("tournament_id", id)
     .order("succession_order");
 
+  // Fetch matches to determine if RR is complete
+  const { data: allMatchesRaw } = await supabase
+    .from("matches")
+    .select("*")
+    .eq("tournament_id", id);
+  const allMatches = (allMatchesRaw ?? []) as Match[];
+
+  const rrMatches = allMatches.filter(
+    (m) => m.bracket_next_winner_match_id === null && m.bracket_next_loser_match_id === null
+      && m.bracket_winner_fills_side === null
+  );
+  const rrAllValidated = rrMatches.length > 0 && rrMatches.every((m) => m.status === "validated");
+  const hasBracketAlready = allMatches.some((m) => m.bracket_next_winner_match_id !== null);
+  const showBracketButton = rrAllValidated && !hasBracketAlready && !!tournament.advancement_count;
+
   const joinUrl = generateJoinUrl(tournament.join_code);
 
   return (
@@ -75,7 +91,16 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
           </CardContent>
         </Card>
 
-        {/* Generate matches */}
+        {/* Bracket generation — shown when all RR matches are validated */}
+        {showBracketButton && (
+          <AdminBracketActions
+            tournament={tournament}
+            matches={allMatches}
+            advancingCount={tournament.advancement_count!}
+          />
+        )}
+
+        {/* Manual schedule generator */}
         {(tournament.status === "active" || tournament.status === "registration") && (
           <AdminGenerateRound tournament={tournament} playerCount={(approvedPlayers ?? []).length} />
         )}

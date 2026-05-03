@@ -106,6 +106,10 @@ export interface Match {
   entered_by: string | null;
   validated_by: string | null;
   scheduled_at: string | null;
+  bracket_next_winner_match_id: string | null;
+  bracket_next_loser_match_id: string | null;
+  bracket_winner_fills_side: "a" | "b" | null;
+  bracket_loser_fills_side: "a" | "b" | null;
   created_at: string;
   updated_at: string;
   team_a?: Team;

@@ -31,7 +31,7 @@ interface FormState {
 const INITIAL: FormState = {
   name: "", court_count: "2", max_players: "8", type: "",
   games_per_player: "4", second_round_format: "none",
-  advancement_count: "", finals_format: "none",
+  advancement_count: "0", finals_format: "none",
   finals_trigger: "none", rules_text: "", is_public: true,
 };
 
@@ -61,16 +61,9 @@ export default function CreateTournamentPage() {
         e.games_per_player = "Must be at least 1";
     }
     if (step === 2) {
-      if (form.second_round_format !== "none") {
-        if (!form.advancement_count)
-          e.advancement_count = "How many players advance?";
-        else if (+form.advancement_count > +form.max_players)
-          e.advancement_count = `Cannot exceed max players (${form.max_players})`;
-        else if (+form.advancement_count < 2)
-          e.advancement_count = "At least 2 players must advance";
-      }
-      if (form.finals_format !== "none" && form.finals_trigger === "none")
-        e.finals_trigger = "When do finals start?";
+      const adv = +form.advancement_count;
+      if (adv > 0 && adv > +form.max_players)
+        e.advancement_count = `Cannot exceed max players (${form.max_players})`;
     }
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -94,10 +87,10 @@ export default function CreateTournamentPage() {
         max_players: +form.max_players,
         type: form.type as TournamentType,
         games_per_player: form.type ? +form.games_per_player : null,
-        second_round_format: (form.second_round_format || "none") as SecondRoundFormat,
-        advancement_count: form.advancement_count ? +form.advancement_count : null,
-        finals_format: (form.finals_format || "none") as FinalsFormat,
-        finals_trigger: (form.finals_trigger || "none") as FinalsTrigger,
+        second_round_format: "none" as SecondRoundFormat,
+        advancement_count: form.advancement_count && +form.advancement_count > 0 ? +form.advancement_count : null,
+        finals_format: "none" as FinalsFormat,
+        finals_trigger: "none" as FinalsTrigger,
         rules_text: form.rules_text.trim() || null,
         is_public: form.is_public,
         status: "registration",
@@ -240,53 +233,40 @@ export default function CreateTournamentPage() {
           </Card>
         )}
 
-        {/* Step 2: Rounds & Finals */}
+        {/* Step 2: Bracket */}
         {step === 2 && (
           <Card>
-            <CardHeader><CardTitle>Rounds & Finals</CardTitle></CardHeader>
+            <CardHeader><CardTitle>Knockout Bracket</CardTitle></CardHeader>
             <CardContent className="space-y-4">
-              <Select value={form.second_round_format} onValueChange={(v) => set("second_round_format", v)}>
-                <SelectTrigger label="Second Round (optional)">
-                  <SelectValue placeholder="No second round" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No second round</SelectItem>
-                  <SelectItem value="round_robin">Round Robin (top N advance)</SelectItem>
-                  <SelectItem value="par_match">Par Match (1st vs last, etc.)</SelectItem>
-                </SelectContent>
-              </Select>
-
-              {form.second_round_format !== "none" && (
-                <Input
-                  label="Players advancing to second round"
-                  type="number" min={2}
-                  value={form.advancement_count}
-                  onChange={(e) => set("advancement_count", e.target.value)}
-                  error={errors.advancement_count}
-                />
-              )}
-
-              <Select value={form.finals_format} onValueChange={(v) => set("finals_format", v)}>
-                <SelectTrigger label="Finals Format">
-                  <SelectValue placeholder="No finals" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No finals</SelectItem>
-                  <SelectItem value="top2">Top 2 — Gold match only</SelectItem>
-                  <SelectItem value="top4">Top 4 — Gold + Bronze matches</SelectItem>
-                </SelectContent>
-              </Select>
-
-              {form.finals_format !== "none" && (
-                <Select value={form.finals_trigger} onValueChange={(v) => set("finals_trigger", v)}>
-                  <SelectTrigger label="Start finals after" error={errors.finals_trigger}>
-                    <SelectValue placeholder="Select..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="after_elimination">Elimination round</SelectItem>
-                    <SelectItem value="after_round_robin">Round robin</SelectItem>
-                  </SelectContent>
-                </Select>
+              <p className="text-sm text-gray-500">
+                After the round robin ends, the top teams enter a single-elimination bracket.
+                Semifinal losers play for 3rd place.
+              </p>
+              <div className="grid grid-cols-1 gap-2">
+                {([
+                  { val: "0",  label: "No bracket",          desc: "Round robin only — final standings decide winner" },
+                  { val: "2",  label: "Final only",           desc: "Top 2 play the Gold match" },
+                  { val: "4",  label: "Semifinals + Final",   desc: "Top 4 → SF → 3rd place + Final" },
+                  { val: "8",  label: "Quarterfinals + SF + Final", desc: "Top 8 → QF → SF → 3rd place + Final" },
+                  { val: "16", label: "Round of 16 + …",     desc: "Top 16 → R16 → QF → SF → 3rd place + Final" },
+                ] as const).map((opt) => (
+                  <button
+                    key={opt.val}
+                    type="button"
+                    onClick={() => set("advancement_count", opt.val)}
+                    className={`w-full text-left p-4 rounded-xl border-2 transition-colors ${
+                      form.advancement_count === opt.val
+                        ? "border-brand-500 bg-brand-50"
+                        : "border-gray-200 hover:border-gray-300"
+                    }`}
+                  >
+                    <div className="font-semibold text-gray-900">{opt.label}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">{opt.desc}</div>
+                  </button>
+                ))}
+              </div>
+              {errors.advancement_count && (
+                <p className="text-xs text-red-500">{errors.advancement_count}</p>
               )}
             </CardContent>
           </Card>
