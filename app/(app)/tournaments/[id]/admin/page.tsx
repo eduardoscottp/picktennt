@@ -4,15 +4,14 @@ import { MobileHeader } from "@/components/layout/navbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { getInitials, formatDate, generateJoinUrl, statusLabel } from "@/lib/utils";
+import { getInitials, generateJoinUrl, statusLabel } from "@/lib/utils";
 import { AdminPlayerActions } from "@/components/tournament/admin-player-actions";
 import { AdminStatusActions } from "@/components/tournament/admin-status-actions";
 import { AdminGenerateRound } from "@/components/tournament/admin-generate-round";
-import { AdminBracketActions } from "@/components/tournament/admin-bracket-actions";
 import { AdminAddPlayer } from "@/components/tournament/admin-add-player";
 import { DoublesTeamGrid } from "@/components/tournament/doubles-team-grid";
 import { ShareButton } from "@/components/tournament/share-button";
-import type { Profile, Tournament, Match, Team } from "@/types/database";
+import type { Profile, Tournament, Match } from "@/types/database";
 
 export default async function AdminPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -102,7 +101,6 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
   );
   const rrAllValidated = rrMatches.length > 0 && rrMatches.every((m) => m.status === "validated");
   const hasBracketAlready = allMatches.some((m) => m.bracket_next_winner_match_id !== null);
-  const showBracketButton = rrAllValidated && !hasBracketAlready && !!tournament.advancement_count;
 
   const joinUrl = generateJoinUrl(tournament.join_code);
 
@@ -131,22 +129,17 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
           </CardContent>
         </Card>
 
-        {/* Bracket generation — shown when all RR matches are validated */}
-        {showBracketButton && (
-          <AdminBracketActions
-            tournament={tournament}
-            matches={allMatches}
-            advancingCount={tournament.advancement_count!}
-          />
-        )}
-
-        {/* Manual schedule generator */}
-        {(tournament.status === "active" || tournament.status === "registration") && (
+        {/* Schedule card — handles RR generation, validation, and bracket phase */}
+        {tournament.status !== "draft" && tournament.status !== "completed" && (
           <AdminGenerateRound
             tournament={tournament}
             playerCount={(approvedPlayers ?? []).length}
             teamsData={tournament.type !== "mixed" ? teamsData : undefined}
             hasExistingRounds={hasExistingRounds}
+            rrMatches={rrMatches}
+            rrAllValidated={rrAllValidated}
+            hasBracketAlready={hasBracketAlready}
+            advancingCount={tournament.advancement_count ?? null}
           />
         )}
 

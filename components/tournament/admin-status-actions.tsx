@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
-import { generateAndSaveSchedule } from "@/lib/tournament/schedule";
 import type { Tournament, TournamentStatus } from "@/types/database";
 
 const TRANSITIONS: Record<TournamentStatus, { label: string; next: TournamentStatus } | null> = {
@@ -28,25 +27,12 @@ export function AdminStatusActions({ tournament }: { tournament: Tournament }) {
     setLoading(true);
     try {
       const supabase = createClient();
-
       const { error } = await supabase
         .from("tournaments")
         .update({ status: transition!.next })
         .eq("id", tournament.id);
       if (error) throw error;
-
-      // Auto-generate the full round-robin schedule when the tournament goes active
-      if (transition!.next === "active") {
-        try {
-          const count = await generateAndSaveSchedule(supabase, tournament);
-          toast(`Tournament started! ${count} rounds generated.`, "success");
-        } catch (schedErr: any) {
-          toast(`Tournament started, but schedule generation failed: ${schedErr.message}`, "error");
-        }
-      } else {
-        toast(`Status updated to "${transition!.next}"`, "success");
-      }
-
+      toast(`Status updated to "${transition!.next}"`, "success");
       router.refresh();
     } catch (err: any) {
       toast(err.message, "error");
@@ -56,9 +42,8 @@ export function AdminStatusActions({ tournament }: { tournament: Tournament }) {
   }
 
   return (
-    <Button onClick={advance} loading={loading} className="w-full">
+    <Button variant="secondary" onClick={advance} loading={loading} className="w-full">
       {transition.label}
-      {transition.next === "active" ? " & Generate Schedule" : ""}
     </Button>
   );
 }
