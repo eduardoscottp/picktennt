@@ -209,7 +209,7 @@ export default function CreateTournamentPage() {
                 <div className="grid grid-cols-1 gap-2">
                   {([
                     { val: "singles", label: "Singles", desc: "1 vs 1 — each player is their own team" },
-                    { val: "doubles", label: "Doubles", desc: "2 vs 2 — fixed partner teams" },
+                    { val: "doubles", label: "Doubles", desc: "2 vs 2 — fixed partner teams (2 players per team)" },
                     { val: "mixed",   label: "Mixed",   desc: "Rotating partners — individual standings" },
                   ] as const).map((t) => (
                     <button
@@ -218,7 +218,10 @@ export default function CreateTournamentPage() {
                       onClick={() => {
                         set("type", t.val);
                         if (t.val !== "mixed") {
-                          const defaultRounds = Math.max(1, +form.max_players - 1);
+                          const teamCount = t.val === "doubles"
+                            ? Math.max(2, Math.floor(+form.max_players / 2))
+                            : Math.max(2, +form.max_players);
+                          const defaultRounds = Math.max(1, teamCount - 1);
                           setForm((f) => ({ ...f, type: t.val, games_per_player: String(defaultRounds) }));
                         }
                       }}
@@ -245,7 +248,9 @@ export default function CreateTournamentPage() {
                   hint={
                     form.type === "mixed"
                       ? "How many games each player plays in the mixed round"
-                      : `Default ${Math.max(1, +form.max_players - 1)} = full round robin (every team plays every other team)`
+                      : form.type === "doubles"
+                      ? `Default ${Math.max(1, Math.floor(+form.max_players / 2) - 1)} = full round robin (every pair plays every other pair)`
+                      : `Default ${Math.max(1, +form.max_players - 1)} = full round robin (every player plays every other player)`
                   }
                 />
               )}

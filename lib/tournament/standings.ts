@@ -91,6 +91,55 @@ export function computeStandings(
 }
 
 /**
+ * Compute individual player standings from team-based (doubles) matches.
+ * Each player inherits their team's stats for every match.
+ */
+export function computeIndividualStandingsFromTeams(
+  matches: Match[],
+  teamToMembers: Map<string, string[]>
+): StandingRow[] {
+  const validated = matches.filter((m) => m.status === "validated");
+  const map = new Map<string, StandingData>();
+
+  function ensure(id: string) {
+    if (!map.has(id)) map.set(id, { wins: 0, losses: 0, pf: 0, pa: 0, pfInLosses: 0 });
+  }
+
+  for (const m of validated) {
+    if (!m.team_a_id || !m.team_b_id || m.score_a == null || m.score_b == null) continue;
+    const membersA = teamToMembers.get(m.team_a_id) ?? [];
+    const membersB = teamToMembers.get(m.team_b_id) ?? [];
+
+    for (const pid of membersA) { ensure(pid); map.get(pid)!.pf += m.score_a!; map.get(pid)!.pa += m.score_b!; }
+    for (const pid of membersB) { ensure(pid); map.get(pid)!.pf += m.score_b!; map.get(pid)!.pa += m.score_a!; }
+
+    if (m.score_a > m.score_b) {
+      for (const pid of membersA) { map.get(pid)!.wins++; }
+      for (const pid of membersB) { map.get(pid)!.losses++; map.get(pid)!.pfInLosses += m.score_b!; }
+    } else if (m.score_b > m.score_a) {
+      for (const pid of membersB) { map.get(pid)!.wins++; }
+      for (const pid of membersA) { map.get(pid)!.losses++; map.get(pid)!.pfInLosses += m.score_a!; }
+    } else {
+      for (const pid of [...membersA, ...membersB]) { map.get(pid)!.wins += 0.5; }
+    }
+  }
+
+  const rows = [...map.entries()].map(([id, s]) => ({
+    id, wins: s.wins, losses: s.losses,
+    pointsFor: s.pf, pointsAgainst: s.pa,
+    pointsForInLosses: s.pfInLosses, rank: 0,
+  }));
+
+  rows.sort((a, b) => {
+    if (b.wins !== a.wins) return b.wins - a.wins;
+    if (a.pointsAgainst !== b.pointsAgainst) return a.pointsAgainst - b.pointsAgainst;
+    return b.pointsForInLosses - a.pointsForInLosses;
+  });
+  rows.forEach((r, i) => { r.rank = i + 1; });
+  return rows;
+}
+
+/**
  * Par Match seeding: 1st vs last, 2nd vs 2nd-last, etc.
  */
 export function buildParMatchBracket(rankedIds: string[]): Array<[string, string]> {

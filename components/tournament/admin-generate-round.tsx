@@ -12,12 +12,19 @@ import { generateRoundRobinSchedule, roundsNeeded } from "@/lib/tournament/round
 import type { Tournament, RoundType } from "@/types/database";
 import { CalendarRange, ChevronRight } from "lucide-react";
 
+interface TeamInfo {
+  id: string;
+  memberCount: number;
+}
+
 export function AdminGenerateRound({
   tournament,
   playerCount,
+  teamsData,
 }: {
   tournament: Tournament;
   playerCount: number;
+  teamsData?: TeamInfo[];
 }) {
   const [roundType, setRoundType] = useState<RoundType>("round_robin");
   const [loading, setLoading] = useState(false);
@@ -171,13 +178,19 @@ export function AdminGenerateRound({
     }
   }
 
+  const isDoubles = tournament.type === "doubles";
+  const teamCount = teamsData ? teamsData.length : (isDoubles ? Math.floor(playerCount / 2) : playerCount);
+  const entityCount = isDoubles ? teamCount : playerCount;
+  const incompleteTeams = isDoubles ? (teamsData ?? []).filter((t) => t.memberCount < 2) : [];
+  const hasIncompleteTeams = incompleteTeams.length > 0;
+
   const totalRounds =
     tournament.type === "mixed"
       ? (tournament.games_per_player ?? "?")
       : roundsNeeded(
-          playerCount,
+          entityCount,
           tournament.court_count,
-          tournament.games_per_player ?? Math.max(1, playerCount - 1)
+          tournament.games_per_player ?? Math.max(1, entityCount - 1)
         );
 
   return (
@@ -190,8 +203,17 @@ export function AdminGenerateRound({
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="text-sm text-gray-500">
-          {playerCount} players · {tournament.court_count} courts · {totalRounds} rounds
+          {isDoubles
+            ? `${teamCount} teams (${playerCount} players)`
+            : `${playerCount} players`} · {tournament.court_count} courts · {totalRounds} rounds
         </p>
+
+        {hasIncompleteTeams && (
+          <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5 text-xs text-amber-800 font-medium">
+            {incompleteTeams.length} team{incompleteTeams.length > 1 ? "s are" : " is"} missing a partner.
+            All teams must have exactly 2 players before the schedule can be generated.
+          </div>
+        )}
 
         <Select value={roundType} onValueChange={(v) => setRoundType(v as RoundType)}>
           <SelectTrigger label="Round Type">
@@ -209,7 +231,7 @@ export function AdminGenerateRound({
         <Button
           onClick={generateFullSchedule}
           loading={loading}
-          disabled={loadingNext}
+          disabled={loadingNext || hasIncompleteTeams}
           className="w-full"
         >
           <CalendarRange className="h-4 w-4" />
@@ -222,7 +244,7 @@ export function AdminGenerateRound({
         <Button
           onClick={addNextRound}
           loading={loadingNext}
-          disabled={loading}
+          disabled={loading || hasIncompleteTeams}
           className="w-full"
           variant="secondary"
         >

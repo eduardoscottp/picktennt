@@ -11,7 +11,7 @@ import { AdminGenerateRound } from "@/components/tournament/admin-generate-round
 import { AdminBracketActions } from "@/components/tournament/admin-bracket-actions";
 import { AdminAddPlayer } from "@/components/tournament/admin-add-player";
 import { ShareButton } from "@/components/tournament/share-button";
-import type { Profile, Tournament, Match } from "@/types/database";
+import type { Profile, Tournament, Match, Team } from "@/types/database";
 
 export default async function AdminPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -49,6 +49,17 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
     .select("*, profile:profiles(*)")
     .eq("tournament_id", id)
     .order("succession_order");
+
+  // For doubles/singles: fetch teams with members
+  const { data: teamsRaw } = tournament.type !== "mixed"
+    ? await supabase
+        .from("teams")
+        .select("id, name, team_members(user_id, profile:profiles(first_name, last_name, avatar_url))")
+        .eq("tournament_id", id)
+        .order("created_at")
+    : { data: null };
+  const teams = (teamsRaw ?? []) as any[];
+  const teamsData = teams.map((t) => ({ id: t.id as string, memberCount: (t.team_members ?? []).length as number }));
 
   // Fetch matches to determine if RR is complete
   const { data: allMatchesRaw } = await supabase
@@ -103,7 +114,11 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
 
         {/* Manual schedule generator */}
         {(tournament.status === "active" || tournament.status === "registration") && (
-          <AdminGenerateRound tournament={tournament} playerCount={(approvedPlayers ?? []).length} />
+          <AdminGenerateRound
+            tournament={tournament}
+            playerCount={(approvedPlayers ?? []).length}
+            teamsData={tournament.type !== "mixed" ? teamsData : undefined}
+          />
         )}
 
         {/* Pending players */}
@@ -175,6 +190,60 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
             )}
           </CardContent>
         </Card>
+
+        {/* Teams section — doubles/singles only */}
+        {tournament.type !== "mixed" && teams.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">
+                Teams ({teams.length})
+                {tournament.type === "doubles" && teams.some((t) => (t.team_members ?? []).length < 2) && (
+                  <span className="ml-2 text-xs font-normal text-amber-600">— some teams incomplete</span>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {teams.map((team: any) => {
+                const members: any[] = team.team_members ?? [];
+                const isComplete = tournament.type !== "doubles" || members.length === 2;
+                return (
+                  <div
+                    key={team.id}
+                    className={`rounded-xl border px-3 py-2.5 ${isComplete ? "border-gray-100 bg-gray-50" : "border-amber-200 bg-amber-50"}`}
+                  >
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">
+                        {team.name ?? "Team"}
+                      </span>
+                      {!isComplete && (
+                        <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 rounded-full px-2 py-0.5">
+                          Needs partner
+                        </span>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      {members.length === 0 && (
+                        <span className="text-xs text-gray-400">No members yet</span>
+                      )}
+                      {members.map((m: any) => {
+                        const p = m.profile as Profile;
+                        return (
+                          <div key={m.user_id} className="flex items-center gap-2">
+                            <Avatar className="h-6 w-6">
+                              <AvatarImage src={p?.avatar_url ?? ""} />
+                              <AvatarFallback className="text-[9px]">{getInitials(p?.first_name, p?.last_name)}</AvatarFallback>
+                            </Avatar>
+                            <span className="text-sm text-gray-800">{p?.first_name} {p?.last_name}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Admin succession */}
         <Card>

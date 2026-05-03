@@ -15,6 +15,8 @@ import { JoinButton } from "@/components/tournament/join-button";
 import { ShareButton } from "@/components/tournament/share-button";
 import { ScoreEntryButton } from "@/components/tournament/score-entry-button";
 import { PlayersDialog } from "@/components/tournament/players-dialog";
+import { TeamPicker } from "@/components/tournament/team-picker";
+import type { AvailableTeam } from "@/components/tournament/team-picker";
 import type { Tournament, TournamentPlayer, Profile, Round } from "@/types/database";
 
 const ACTIVE_STATUSES = new Set(["active", "finals", "completed"]);
@@ -55,6 +57,42 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
   const joinUrl = generateJoinUrl(tournament.join_code);
   const isActive = ACTIVE_STATUSES.has(tournament.status);
   const isMixed  = tournament.type === "mixed";
+  const isDoubles = tournament.type === "doubles";
+
+  // For doubles/singles: fetch teams to determine team membership and available slots
+  let allTeams: any[] = [];
+  let myTeamId: string | null = null;
+  let availableTeamSlots: AvailableTeam[] = [];
+
+  if (!isMixed && user) {
+    const { data: teamsRaw } = await supabase
+      .from("teams")
+      .select("id, name, team_members(user_id, profile:profiles(first_name, last_name, avatar_url))")
+      .eq("tournament_id", id)
+      .order("created_at");
+    allTeams = (teamsRaw ?? []) as any[];
+
+    for (const t of allTeams) {
+      if ((t.team_members ?? []).some((m: any) => m.user_id === user.id)) {
+        myTeamId = t.id as string;
+        break;
+      }
+    }
+
+    // Slots available for team picking (teams with < 2 members, excluding user's own team if exists)
+    availableTeamSlots = allTeams
+      .filter((t) => (t.team_members ?? []).length < 2 && t.id !== myTeamId)
+      .map((t) => ({
+        id: t.id as string,
+        name: t.name as string | null,
+        members: (t.team_members ?? []).map((m: any) => ({
+          user_id: m.user_id as string,
+          first_name: m.profile?.first_name ?? null,
+          last_name: m.profile?.last_name ?? null,
+          avatar_url: m.profile?.avatar_url ?? null,
+        })),
+      }));
+  }
 
   const statusColor = {
     draft: "secondary", registration: "default",
@@ -214,6 +252,25 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
         <MobileHeader title={tournament.name} back="/tournaments" />
         <div className="px-4 py-4 space-y-4">
           {headerCard}
+
+          {/* Team picker for doubles: approved but no team yet */}
+          {isDoubles && isMember && !myTeamId && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Users className="h-4 w-4 text-brand-500" />
+                  Choose Your Team
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <TeamPicker
+                  tournamentId={id}
+                  userId={user!.id}
+                  availableTeams={availableTeamSlots}
+                />
+              </CardContent>
+            </Card>
+          )}
 
           {/* Navigation strip */}
           <div className="flex gap-2">
@@ -389,39 +446,107 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
           </Card>
         )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Users className="h-4 w-4 text-brand-500" />
-              Players ({players.length} / {tournament.max_players})
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {players.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-4">No players yet</p>
-            ) : (
-              players.map((p: any) => {
-                const profile = p.profile as Profile;
+        {/* Team picker for doubles: approved but no team yet */}
+        {isDoubles && isMember && !myTeamId && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Users className="h-4 w-4 text-brand-500" />
+                Choose Your Team
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <TeamPicker
+                tournamentId={id}
+                userId={user!.id}
+                availableTeams={availableTeamSlots}
+              />
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Teams list for doubles/singles */}
+        {!isMixed && allTeams.length > 0 ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Users className="h-4 w-4 text-brand-500" />
+                Teams ({allTeams.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {allTeams.map((team: any) => {
+                const members: any[] = team.team_members ?? [];
+                const isComplete = !isDoubles || members.length === 2;
                 return (
-                  <div key={p.id} className="flex items-center gap-3">
-                    <Avatar className="h-9 w-9">
-                      <AvatarImage src={profile.avatar_url ?? ""} />
-                      <AvatarFallback>{getInitials(profile.first_name, profile.last_name)}</AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-gray-900 text-sm">{profile.first_name} {profile.last_name}</div>
-                    </div>
-                    {profile.dupr_rating && (
-                      <span className={`text-xs font-bold ${duprRatingColor(profile.dupr_rating)}`}>
-                        {profile.dupr_rating.toFixed(2)}
+                  <div
+                    key={team.id}
+                    className={`rounded-xl border px-3 py-2.5 ${isComplete ? "border-gray-100 bg-gray-50" : "border-amber-200 bg-amber-50"}`}
+                  >
+                    {isDoubles && !isComplete && (
+                      <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 rounded-full px-2 py-0.5 mb-1 inline-block">
+                        Needs partner
                       </span>
                     )}
+                    <div className="space-y-1 mt-0.5">
+                      {members.map((m: any) => {
+                        const p = m.profile as Profile;
+                        return (
+                          <div key={m.user_id} className="flex items-center gap-2">
+                            <Avatar className="h-7 w-7">
+                              <AvatarImage src={p?.avatar_url ?? ""} />
+                              <AvatarFallback className="text-[9px]">{getInitials(p?.first_name, p?.last_name)}</AvatarFallback>
+                            </Avatar>
+                            <span className="text-sm font-medium text-gray-900">{p?.first_name} {p?.last_name}</span>
+                            {p?.dupr_rating && (
+                              <span className={`text-xs font-bold ml-auto ${duprRatingColor(p.dupr_rating)}`}>
+                                {p.dupr_rating.toFixed(2)}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 );
-              })
-            )}
-          </CardContent>
-        </Card>
+              })}
+            </CardContent>
+          </Card>
+        ) : isMixed ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Users className="h-4 w-4 text-brand-500" />
+                Players ({players.length} / {tournament.max_players})
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {players.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-4">No players yet</p>
+              ) : (
+                players.map((p: any) => {
+                  const profile = p.profile as Profile;
+                  return (
+                    <div key={p.id} className="flex items-center gap-3">
+                      <Avatar className="h-9 w-9">
+                        <AvatarImage src={profile.avatar_url ?? ""} />
+                        <AvatarFallback>{getInitials(profile.first_name, profile.last_name)}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-gray-900 text-sm">{profile.first_name} {profile.last_name}</div>
+                      </div>
+                      {profile.dupr_rating && (
+                        <span className={`text-xs font-bold ${duprRatingColor(profile.dupr_rating)}`}>
+                          {profile.dupr_rating.toFixed(2)}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </CardContent>
+          </Card>
+        ) : null}
       </div>
     </div>
   );
