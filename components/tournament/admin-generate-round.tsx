@@ -85,30 +85,57 @@ export function AdminGenerateRound({
           if (matchError) throw matchError;
         }
       } else {
-        // Singles/Doubles: get teams and create round robin
+        // Singles/Doubles: pair teams for this round
         const { data: teams } = await supabase
           .from("teams")
           .select("id")
           .eq("tournament_id", tournament.id);
 
-        const teamIds = (teams ?? []).map((t: any) => t.id);
-        const matches = [];
-        const courts = tournament.court_count;
-        let courtNum = 1;
+        const allTeamIds = (teams ?? []).map((t: any) => t.id as string);
+        const courts     = tournament.court_count;
+        const maxMatches = Math.min(courts, Math.floor(allTeamIds.length / 2));
 
-        // Simple round-robin pairing
-        for (let i = 0; i < teamIds.length; i++) {
-          for (let j = i + 1; j < teamIds.length; j++) {
-            matches.push({
-              tournament_id: tournament.id,
-              round_id: round.id,
-              court_number: courtNum,
-              team_a_id: teamIds[i],
-              team_b_id: teamIds[j],
-              status: "scheduled" as const,
-            });
-            courtNum = (courtNum % courts) + 1;
+        // Find which teams sat out the PREVIOUS round — give them priority
+        let satOutLastRound = new Set<string>();
+        if (nextRoundNumber > 1) {
+          const { data: prevRound } = await supabase
+            .from("rounds")
+            .select("id")
+            .eq("tournament_id", tournament.id)
+            .eq("round_number", nextRoundNumber - 1)
+            .single();
+
+          if (prevRound) {
+            const { data: prevMatches } = await supabase
+              .from("matches")
+              .select("team_a_id, team_b_id")
+              .eq("round_id", prevRound.id);
+
+            const played = new Set(
+              (prevMatches ?? []).flatMap((m: any) => [m.team_a_id, m.team_b_id])
+            );
+            allTeamIds.forEach((tid) => { if (!played.has(tid)) satOutLastRound.add(tid); });
           }
+        }
+
+        // Sort: teams that sat out last get priority, then shuffle the rest
+        const priority = allTeamIds.filter((t) => satOutLastRound.has(t));
+        const rest     = allTeamIds.filter((t) => !satOutLastRound.has(t)).sort(() => Math.random() - 0.5);
+        const ordered  = [...priority, ...rest];
+
+        // Pick the first maxMatches*2 teams to play; rest sit out
+        const playing   = ordered.slice(0, maxMatches * 2);
+        const matches: any[] = [];
+
+        for (let i = 0; i < playing.length; i += 2) {
+          matches.push({
+            tournament_id: tournament.id,
+            round_id: round.id,
+            court_number: i / 2 + 1,
+            team_a_id: playing[i],
+            team_b_id: playing[i + 1],
+            status: "scheduled" as const,
+          });
         }
 
         if (matches.length > 0) {

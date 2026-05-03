@@ -1,4 +1,4 @@
-import type { Match, Standing } from "@/types/database";
+import type { Match } from "@/types/database";
 
 export interface StandingRow {
   id: string; // team or player id
@@ -6,26 +6,33 @@ export interface StandingRow {
   losses: number;
   pointsFor: number;
   pointsAgainst: number;
+  pointsForInLosses: number; // tiebreaker 3: points scored in games they lost
   rank: number;
 }
 
+interface StandingData {
+  wins: number;
+  losses: number;
+  pf: number;
+  pa: number;
+  pfInLosses: number;
+}
+
 /**
- * Compute standings from validated matches.
- *
- * Tiebreaker:
+ * Tiebreaker order:
  * 1. Wins (descending)
- * 2. Among tied teams: points scored by opponents against *them* in
- *    head-to-head matches — fewer points against = better rank
+ * 2. Points against (ascending) — fewer conceded = better
+ * 3. Points for in losses (descending) — more points scored while losing = better
  */
 export function computeStandings(
   matches: Match[],
   entityKey: "team" | "player"
 ): StandingRow[] {
   const validated = matches.filter((m) => m.status === "validated");
-  const map = new Map<string, { wins: number; losses: number; pf: number; pa: number }>();
+  const map = new Map<string, StandingData>();
 
   function ensure(id: string) {
-    if (!map.has(id)) map.set(id, { wins: 0, losses: 0, pf: 0, pa: 0 });
+    if (!map.has(id)) map.set(id, { wins: 0, losses: 0, pf: 0, pa: 0, pfInLosses: 0 });
   }
 
   for (const m of validated) {
@@ -37,61 +44,46 @@ export function computeStandings(
       const b = map.get(m.team_b_id)!;
       a.pf += m.score_a; a.pa += m.score_b;
       b.pf += m.score_b; b.pa += m.score_a;
-      if (m.score_a > m.score_b) { a.wins++; b.losses++; }
-      else if (m.score_b > m.score_a) { b.wins++; a.losses++; }
-      else { a.wins += 0.5; b.wins += 0.5; } // draw
+      if (m.score_a > m.score_b) {
+        a.wins++; b.losses++;
+        b.pfInLosses += m.score_b;
+      } else if (m.score_b > m.score_a) {
+        b.wins++; a.losses++;
+        a.pfInLosses += m.score_a;
+      } else {
+        a.wins += 0.5; b.wins += 0.5;
+      }
     } else {
       // Mixed — individual tracking
-      const players = [
-        [m.player_a1_id, m.player_a2_id, m.score_a, m.score_b],
-        [m.player_a2_id, m.player_a1_id, m.score_a, m.score_b],
-        [m.player_b1_id, m.player_b2_id, m.score_b, m.score_a],
-        [m.player_b2_id, m.player_b1_id, m.score_b, m.score_a],
-      ] as [string | null, string | null, number | null, number | null][];
-
       if (m.score_a == null || m.score_b == null) continue;
-
-      for (const [pid, , pf, pa] of players) {
-        if (!pid) continue;
-        ensure(pid);
-        const row = map.get(pid)!;
-        row.pf += pf ?? 0;
-        row.pa += pa ?? 0;
-      }
-
-      // Win/loss per player
+      const sideAIds = [m.player_a1_id, m.player_a2_id].filter(Boolean) as string[];
+      const sideBIds = [m.player_b1_id, m.player_b2_id].filter(Boolean) as string[];
+      for (const pid of sideAIds) { ensure(pid); map.get(pid)!.pf += m.score_a!; map.get(pid)!.pa += m.score_b!; }
+      for (const pid of sideBIds) { ensure(pid); map.get(pid)!.pf += m.score_b!; map.get(pid)!.pa += m.score_a!; }
       if (m.score_a !== m.score_b) {
-        const winnerPids = m.score_a > m.score_b
-          ? [m.player_a1_id, m.player_a2_id]
-          : [m.player_b1_id, m.player_b2_id];
-        const loserPids = m.score_a > m.score_b
-          ? [m.player_b1_id, m.player_b2_id]
-          : [m.player_a1_id, m.player_a2_id];
-
-        for (const pid of winnerPids) {
-          if (pid) { ensure(pid); map.get(pid)!.wins++; }
-        }
-        for (const pid of loserPids) {
-          if (pid) { ensure(pid); map.get(pid)!.losses++; }
-        }
+        const winnerIds = m.score_a > m.score_b ? sideAIds : sideBIds;
+        const loserIds  = m.score_a > m.score_b ? sideBIds : sideAIds;
+        const loserScore = m.score_a > m.score_b ? m.score_b : m.score_a;
+        for (const pid of winnerIds) { map.get(pid)!.wins++; }
+        for (const pid of loserIds)  { map.get(pid)!.losses++; map.get(pid)!.pfInLosses += loserScore!; }
       }
     }
   }
 
-  // Sort: wins desc, then points_against asc (tiebreaker)
   const rows = [...map.entries()].map(([id, s]) => ({
     id,
     wins: s.wins,
     losses: s.losses,
     pointsFor: s.pf,
     pointsAgainst: s.pa,
+    pointsForInLosses: s.pfInLosses,
     rank: 0,
   }));
 
   rows.sort((a, b) => {
     if (b.wins !== a.wins) return b.wins - a.wins;
-    // Tiebreaker: fewer points against is better
-    return a.pointsAgainst - b.pointsAgainst;
+    if (a.pointsAgainst !== b.pointsAgainst) return a.pointsAgainst - b.pointsAgainst;
+    return b.pointsForInLosses - a.pointsForInLosses;
   });
 
   rows.forEach((r, i) => { r.rank = i + 1; });
@@ -101,9 +93,7 @@ export function computeStandings(
 /**
  * Par Match seeding: 1st vs last, 2nd vs 2nd-last, etc.
  */
-export function buildParMatchBracket(
-  rankedIds: string[]
-): Array<[string, string]> {
+export function buildParMatchBracket(rankedIds: string[]): Array<[string, string]> {
   const n = rankedIds.length;
   const pairs: Array<[string, string]> = [];
   for (let i = 0; i < Math.floor(n / 2); i++) {
