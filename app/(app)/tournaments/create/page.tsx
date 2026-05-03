@@ -106,8 +106,15 @@ export default function CreateTournamentPage() {
         joined_via: "invite",
       });
 
-      // For singles/doubles: also create a team for the creator
-      if (form.type !== "mixed") {
+      if (form.type === "doubles") {
+        // Create fixed empty team slots (max_players / 2). No one is placed yet —
+        // everyone (including the creator) picks a slot from the team grid.
+        const teamCount = Math.max(2, Math.floor(+form.max_players / 2));
+        for (let i = 1; i <= teamCount; i++) {
+          await supabase.from("teams").insert({ tournament_id: data.id, name: `Team ${i}` });
+        }
+      } else if (form.type === "singles") {
+        // Singles: creator auto-gets their own team (1 player = 1 team)
         const { data: profile } = await supabase
           .from("profiles")
           .select("first_name, last_name, email")
@@ -125,6 +132,7 @@ export default function CreateTournamentPage() {
           await supabase.from("team_members").insert({ team_id: team.id, user_id: user.id });
         }
       }
+      // mixed: no teams created
 
       toast("Tournament created!", "success");
       router.push(`/tournaments/${data.id}`);

@@ -10,6 +10,7 @@ import { AdminStatusActions } from "@/components/tournament/admin-status-actions
 import { AdminGenerateRound } from "@/components/tournament/admin-generate-round";
 import { AdminBracketActions } from "@/components/tournament/admin-bracket-actions";
 import { AdminAddPlayer } from "@/components/tournament/admin-add-player";
+import { DoublesTeamGrid } from "@/components/tournament/doubles-team-grid";
 import { ShareButton } from "@/components/tournament/share-button";
 import type { Profile, Tournament, Match, Team } from "@/types/database";
 
@@ -60,6 +61,26 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
     : { data: null };
   const teams = (teamsRaw ?? []) as any[];
   const teamsData = teams.map((t) => ({ id: t.id as string, memberCount: (t.team_members ?? []).length as number }));
+
+  // For doubles grid: compute who's already slotted and which team the admin is in
+  const existingMemberIds: string[] = teams.flatMap((t) => (t.team_members ?? []).map((m: any) => m.user_id as string));
+  let adminTeamId: string | null = null;
+  for (const t of teams) {
+    if ((t.team_members ?? []).some((m: any) => m.user_id === user.id)) {
+      adminTeamId = t.id as string;
+      break;
+    }
+  }
+  const doublesTeams = teams.map((t) => ({
+    id: t.id as string,
+    name: t.name as string | null,
+    members: (t.team_members ?? []).map((m: any) => ({
+      user_id: m.user_id as string,
+      first_name: m.profile?.first_name ?? null,
+      last_name: m.profile?.last_name ?? null,
+      avatar_url: m.profile?.avatar_url ?? null,
+    })),
+  }));
 
   // Fetch rounds to know if a schedule already exists
   const { data: roundsRaw } = await supabase
@@ -160,97 +181,71 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
           </Card>
         )}
 
-        {/* Add player by search */}
-        <AdminAddPlayer
-          tournament={tournament}
-          existingPlayerIds={(approvedPlayers ?? []).map((p: any) => p.user_id)}
-        />
-
-        {/* Approved players */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              Players ({(approvedPlayers ?? []).length} / {tournament.max_players})
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {(approvedPlayers ?? []).length === 0 ? (
-              <p className="text-sm text-gray-400">No approved players yet</p>
-            ) : (
-              (approvedPlayers ?? []).map((p: any) => {
-                const profile = p.profile as Profile;
-                return (
-                  <div key={p.id} className="flex items-center gap-3">
-                    <Avatar className="h-9 w-9">
-                      <AvatarImage src={profile.avatar_url ?? ""} />
-                      <AvatarFallback>{getInitials(profile.first_name, profile.last_name)}</AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-sm text-gray-900">
-                        {profile.first_name} {profile.last_name}
-                      </div>
-                      <div className="text-xs text-gray-400">{profile.email}</div>
-                    </div>
-                    <AdminPlayerActions tournamentPlayerId={p.id} status="approved" />
-                  </div>
-                );
-              })
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Teams section — doubles/singles only */}
-        {tournament.type !== "mixed" && teams.length > 0 && (
+        {/* Doubles: visual team slot grid */}
+        {tournament.type === "doubles" && (
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">
-                Teams ({teams.length})
-                {tournament.type === "doubles" && teams.some((t) => (t.team_members ?? []).length < 2) && (
-                  <span className="ml-2 text-xs font-normal text-amber-600">— some teams incomplete</span>
-                )}
+              <CardTitle className="text-base flex items-center justify-between">
+                <span>Teams ({doublesTeams.length})</span>
+                <span className="text-xs font-normal text-gray-400">
+                  {doublesTeams.filter((t) => t.members.length === 2).length} / {doublesTeams.length} complete
+                </span>
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {teams.map((team: any) => {
-                const members: any[] = team.team_members ?? [];
-                const isComplete = tournament.type !== "doubles" || members.length === 2;
-                return (
-                  <div
-                    key={team.id}
-                    className={`rounded-xl border px-3 py-2.5 ${isComplete ? "border-gray-100 bg-gray-50" : "border-amber-200 bg-amber-50"}`}
-                  >
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">
-                        {team.name ?? "Team"}
-                      </span>
-                      {!isComplete && (
-                        <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 rounded-full px-2 py-0.5">
-                          Needs partner
-                        </span>
-                      )}
-                    </div>
-                    <div className="space-y-1">
-                      {members.length === 0 && (
-                        <span className="text-xs text-gray-400">No members yet</span>
-                      )}
-                      {members.map((m: any) => {
-                        const p = m.profile as Profile;
-                        return (
-                          <div key={m.user_id} className="flex items-center gap-2">
-                            <Avatar className="h-6 w-6">
-                              <AvatarImage src={p?.avatar_url ?? ""} />
-                              <AvatarFallback className="text-[9px]">{getInitials(p?.first_name, p?.last_name)}</AvatarFallback>
-                            </Avatar>
-                            <span className="text-sm text-gray-800">{p?.first_name} {p?.last_name}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
+            <CardContent>
+              <DoublesTeamGrid
+                tournamentId={id}
+                teams={doublesTeams}
+                isAdmin={true}
+                currentUserId={user.id}
+                myTeamId={adminTeamId}
+                isApprovedPlayer={true}
+                existingMemberIds={existingMemberIds}
+              />
             </CardContent>
           </Card>
+        )}
+
+        {/* Singles / mixed: classic add-player search + approved list */}
+        {tournament.type !== "doubles" && (
+          <>
+            <AdminAddPlayer
+              tournament={tournament}
+              existingPlayerIds={(approvedPlayers ?? []).map((p: any) => p.user_id)}
+            />
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">
+                  Players ({(approvedPlayers ?? []).length} / {tournament.max_players})
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {(approvedPlayers ?? []).length === 0 ? (
+                  <p className="text-sm text-gray-400">No approved players yet</p>
+                ) : (
+                  (approvedPlayers ?? []).map((p: any) => {
+                    const profile = p.profile as Profile;
+                    return (
+                      <div key={p.id} className="flex items-center gap-3">
+                        <Avatar className="h-9 w-9">
+                          <AvatarImage src={profile.avatar_url ?? ""} />
+                          <AvatarFallback>{getInitials(profile.first_name, profile.last_name)}</AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-sm text-gray-900">
+                            {profile.first_name} {profile.last_name}
+                          </div>
+                          <div className="text-xs text-gray-400">{profile.email}</div>
+                        </div>
+                        <AdminPlayerActions tournamentPlayerId={p.id} status="approved" />
+                      </div>
+                    );
+                  })
+                )}
+              </CardContent>
+            </Card>
+          </>
         )}
 
         {/* Admin succession */}
