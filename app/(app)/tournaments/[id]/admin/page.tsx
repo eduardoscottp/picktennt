@@ -61,6 +61,13 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
   const teams = (teamsRaw ?? []) as any[];
   const teamsData = teams.map((t) => ({ id: t.id as string, memberCount: (t.team_members ?? []).length as number }));
 
+  // Fetch rounds to know if a schedule already exists
+  const { data: roundsRaw } = await supabase
+    .from("rounds")
+    .select("id")
+    .eq("tournament_id", id);
+  const hasExistingRounds = (roundsRaw ?? []).length > 0;
+
   // Fetch matches to determine if RR is complete
   const { data: allMatchesRaw } = await supabase
     .from("matches")
@@ -118,6 +125,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
             tournament={tournament}
             playerCount={(approvedPlayers ?? []).length}
             teamsData={tournament.type !== "mixed" ? teamsData : undefined}
+            hasExistingRounds={hasExistingRounds}
           />
         )}
 

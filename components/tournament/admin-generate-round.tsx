@@ -5,12 +5,11 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { generateMixedSchedule } from "@/lib/tournament/mixed-pairing";
 import { generateRoundRobinSchedule, roundsNeeded } from "@/lib/tournament/round-robin";
-import type { Tournament, RoundType } from "@/types/database";
-import { CalendarRange, ChevronRight } from "lucide-react";
+import type { Tournament } from "@/types/database";
+import { CalendarRange, CheckCircle2 } from "lucide-react";
 
 interface TeamInfo {
   id: string;
@@ -21,18 +20,32 @@ export function AdminGenerateRound({
   tournament,
   playerCount,
   teamsData,
+  hasExistingRounds,
 }: {
   tournament: Tournament;
   playerCount: number;
   teamsData?: TeamInfo[];
+  hasExistingRounds: boolean;
 }) {
-  const [roundType, setRoundType] = useState<RoundType>("round_robin");
   const [loading, setLoading] = useState(false);
-  const [loadingNext, setLoadingNext] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
 
-  // Fetch teams in a stable order so the circle method is deterministic
+  const isDoubles = tournament.type === "doubles";
+  const teamCount = teamsData ? teamsData.length : (isDoubles ? Math.floor(playerCount / 2) : playerCount);
+  const entityCount = isDoubles ? teamCount : playerCount;
+  const incompleteTeams = isDoubles ? (teamsData ?? []).filter((t) => t.memberCount < 2) : [];
+  const hasIncompleteTeams = incompleteTeams.length > 0;
+
+  const totalRounds =
+    tournament.type === "mixed"
+      ? (tournament.games_per_player ?? "?")
+      : roundsNeeded(
+          entityCount,
+          tournament.court_count,
+          tournament.games_per_player ?? Math.max(1, entityCount - 1)
+        );
+
   async function fetchTeamIds(supabase: ReturnType<typeof createClient>) {
     const { data, error } = await supabase
       .from("teams")
@@ -54,15 +67,6 @@ export function AdminGenerateRound({
     return (data ?? []).map((p: any) => p.user_id as string);
   }
 
-  async function deleteAllRounds(supabase: ReturnType<typeof createClient>) {
-    // Cascade delete: deleting rounds auto-removes their matches via ON DELETE CASCADE
-    const { error } = await supabase
-      .from("rounds")
-      .delete()
-      .eq("tournament_id", tournament.id);
-    if (error) throw error;
-  }
-
   async function insertRound(
     supabase: ReturnType<typeof createClient>,
     roundNumber: number,
@@ -73,7 +77,7 @@ export function AdminGenerateRound({
       .insert({
         tournament_id: tournament.id,
         round_number: roundNumber,
-        round_type: roundType,
+        round_type: "round_robin",
         status: "active",
       })
       .select()
@@ -87,7 +91,6 @@ export function AdminGenerateRound({
     }
   }
 
-  // Build the full schedule (array of match-insert rows per round, without round_id)
   function buildSinglesSchedule(teamIds: string[]) {
     const gamesPerTeam = tournament.games_per_player ?? (teamIds.length - 1);
     const maxRounds = roundsNeeded(teamIds.length, tournament.court_count, gamesPerTeam);
@@ -118,11 +121,10 @@ export function AdminGenerateRound({
     );
   }
 
-  async function generateFullSchedule() {
+  async function generateSchedule() {
     setLoading(true);
     try {
       const supabase = createClient();
-      await deleteAllRounds(supabase);
 
       const schedule =
         tournament.type === "mixed"
@@ -133,7 +135,7 @@ export function AdminGenerateRound({
         await insertRound(supabase, i + 1, schedule[i]);
       }
 
-      toast(`${schedule.length} rounds generated!`, "success");
+      toast(`Round Robin generated — ${schedule.length} rounds!`, "success");
       router.refresh();
     } catch (err: any) {
       toast(err.message ?? "Failed to generate schedule", "error");
@@ -142,63 +144,31 @@ export function AdminGenerateRound({
     }
   }
 
-  async function addNextRound() {
-    setLoadingNext(true);
-    try {
-      const supabase = createClient();
-
-      // Find next round number
-      const { data: existing } = await supabase
-        .from("rounds")
-        .select("round_number")
-        .eq("tournament_id", tournament.id)
-        .order("round_number", { ascending: false })
-        .limit(1);
-      const nextRoundNumber = ((existing?.[0]?.round_number) ?? 0) + 1;
-
-      // Use the same deterministic schedule — pick the next slot
-      const schedule =
-        tournament.type === "mixed"
-          ? buildMixedSchedule(await fetchPlayerIds(supabase))
-          : buildSinglesSchedule(await fetchTeamIds(supabase));
-
-      const roundIndex = nextRoundNumber - 1;
-      if (roundIndex >= schedule.length) {
-        toast("All rounds have already been generated.", "info");
-        return;
-      }
-
-      await insertRound(supabase, nextRoundNumber, schedule[roundIndex]);
-      toast(`Round ${nextRoundNumber} added!`, "success");
-      router.refresh();
-    } catch (err: any) {
-      toast(err.message ?? "Failed to add round", "error");
-    } finally {
-      setLoadingNext(false);
-    }
+  // ── Schedule already exists — read-only status ───────────────────────────
+  if (hasExistingRounds) {
+    return (
+      <Card className="border-green-200 bg-green-50/40">
+        <CardContent className="flex items-center gap-3 py-4 px-4">
+          <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-gray-900">Round Robin schedule generated</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {isDoubles ? `${teamCount} teams` : `${playerCount} players`} · {totalRounds} rounds ·
+              Scores must be entered to unlock the next phase
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
   }
 
-  const isDoubles = tournament.type === "doubles";
-  const teamCount = teamsData ? teamsData.length : (isDoubles ? Math.floor(playerCount / 2) : playerCount);
-  const entityCount = isDoubles ? teamCount : playerCount;
-  const incompleteTeams = isDoubles ? (teamsData ?? []).filter((t) => t.memberCount < 2) : [];
-  const hasIncompleteTeams = incompleteTeams.length > 0;
-
-  const totalRounds =
-    tournament.type === "mixed"
-      ? (tournament.games_per_player ?? "?")
-      : roundsNeeded(
-          entityCount,
-          tournament.court_count,
-          tournament.games_per_player ?? Math.max(1, entityCount - 1)
-        );
-
+  // ── No schedule yet — show generate button ───────────────────────────────
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
           <CalendarRange className="h-4 w-4 text-brand-500" />
-          Schedule Generator
+          Round Robin Schedule
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -211,46 +181,22 @@ export function AdminGenerateRound({
         {hasIncompleteTeams && (
           <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5 text-xs text-amber-800 font-medium">
             {incompleteTeams.length} team{incompleteTeams.length > 1 ? "s are" : " is"} missing a partner.
-            All teams must have exactly 2 players before the schedule can be generated.
+            All teams must have 2 players before the schedule can be generated.
           </div>
         )}
 
-        <Select value={roundType} onValueChange={(v) => setRoundType(v as RoundType)}>
-          <SelectTrigger label="Round Type">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="round_robin">Round Robin</SelectItem>
-            <SelectItem value="par_match">Par Match</SelectItem>
-            <SelectItem value="elimination">Elimination</SelectItem>
-            <SelectItem value="finals_gold">Finals — Gold Match</SelectItem>
-            <SelectItem value="finals_bronze">Finals — Bronze Match</SelectItem>
-          </SelectContent>
-        </Select>
-
         <Button
-          onClick={generateFullSchedule}
+          onClick={generateSchedule}
           loading={loading}
-          disabled={loadingNext || hasIncompleteTeams}
+          disabled={hasIncompleteTeams}
           className="w-full"
         >
           <CalendarRange className="h-4 w-4" />
-          Generate Full Schedule ({totalRounds} rounds)
+          Generate Round Robin ({totalRounds} rounds)
         </Button>
         <p className="text-xs text-gray-400 -mt-1">
-          Replaces any existing rounds. Every player faces each opponent exactly once.
+          This can only be done once. Every {isDoubles ? "team" : "player"} will face each other exactly once.
         </p>
-
-        <Button
-          onClick={addNextRound}
-          loading={loadingNext}
-          disabled={loading || hasIncompleteTeams}
-          className="w-full"
-          variant="secondary"
-        >
-          <ChevronRight className="h-4 w-4" />
-          Add Next Round Only
-        </Button>
       </CardContent>
     </Card>
   );
