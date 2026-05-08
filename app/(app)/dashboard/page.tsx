@@ -33,7 +33,7 @@ export default async function DashboardPage() {
 
   // Pending join requests for each tournament the user admins
   const adminTournamentIds = (adminRows ?? []).map((r: any) => r.tournament_id as string);
-  let pendingByTournament: Record<string, number> = {};
+  const pendingByTournament: Record<string, number> = {};
   if (adminTournamentIds.length > 0) {
     const { data: pendingRows } = await supabase
       .from("tournament_players")

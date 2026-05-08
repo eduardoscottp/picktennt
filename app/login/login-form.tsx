@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -58,9 +59,9 @@ export function LoginForm() {
 
       <p className="mt-6 text-brand-100 text-sm">
         Got a tournament link?{" "}
-        <a href="/tournaments" className="underline text-white font-medium">
+        <Link href="/tournaments" className="underline text-white font-medium">
           Browse tournaments
-        </a>
+        </Link>
       </p>
     </div>
   );

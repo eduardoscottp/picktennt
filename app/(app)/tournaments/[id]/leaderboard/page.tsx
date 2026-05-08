@@ -35,8 +35,8 @@ export default async function LeaderboardPage({ params }: { params: Promise<{ id
   const standings = computeStandings(allMatches, isMixed ? "player" : "team");
 
   // Fetch entity details
-  let entityMap = new Map<string, { name: string; avatar?: string; rating?: number | null }>();
-  let teamToMembers = new Map<string, string[]>();
+  const entityMap = new Map<string, { name: string; avatar?: string; rating?: number | null }>();
+  const teamToMembers = new Map<string, string[]>();
   let teamsForDoubles: any[] = [];
 
   if (isMixed) {
@@ -74,7 +74,7 @@ export default async function LeaderboardPage({ params }: { params: Promise<{ id
     : [];
 
   // Build profile map for individual standings (doubles)
-  let profileMap = new Map<string, Profile>();
+  const profileMap = new Map<string, Profile>();
   if (isDoubles && individualStandings.length > 0) {
     const pids = individualStandings.map((s) => s.id);
     const { data: profiles } = await supabase.from("profiles").select("*").in("id", pids);
