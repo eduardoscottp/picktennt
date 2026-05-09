@@ -23,6 +23,9 @@ interface Props {
   tournament: Tournament;
   playerCount: number;
   teamsData?: TeamInfo[];
+  currentUserId: string;
+  isCurrentUserPlayer: boolean;
+  currentUserTeamId?: string | null;
   hasExistingRounds: boolean;
   rrMatches: Match[];
   rrAllValidated: boolean;
@@ -34,6 +37,9 @@ export function AdminGenerateRound({
   tournament,
   playerCount,
   teamsData,
+  currentUserId,
+  isCurrentUserPlayer,
+  currentUserTeamId,
   hasExistingRounds,
   rrMatches,
   rrAllValidated,
@@ -41,14 +47,21 @@ export function AdminGenerateRound({
   advancingCount,
 }: Props) {
   const [loading, setLoading] = useState(false);
+  const [adminOptOut, setAdminOptOut] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
 
   const isDoubles = tournament.type === "doubles";
   const isMixed = tournament.type === "mixed";
-  const teamCount = teamsData ? teamsData.length : (isDoubles ? Math.floor(playerCount / 2) : playerCount);
-  const entityCount = isDoubles ? teamCount : playerCount;
-  const incompleteTeams = isDoubles ? (teamsData ?? []).filter((t) => t.memberCount < 2) : [];
+  const effectivePlayerCount = adminOptOut && isCurrentUserPlayer ? Math.max(0, playerCount - 1) : playerCount;
+  const teamCount = teamsData ? teamsData.length : (isDoubles ? Math.floor(effectivePlayerCount / 2) : effectivePlayerCount);
+  const entityCount = isDoubles ? teamCount : effectivePlayerCount;
+  const incompleteTeams = isDoubles
+    ? (teamsData ?? []).filter((t) => {
+        const memberCount = adminOptOut && t.id === currentUserTeamId ? Math.max(0, t.memberCount - 1) : t.memberCount;
+        return memberCount < 2;
+      })
+    : [];
   const hasIncompleteTeams = incompleteTeams.length > 0;
   const notEnoughEntities = entityCount < 2;
 
@@ -68,11 +81,13 @@ export function AdminGenerateRound({
   async function fetchTeamIds(supabase: ReturnType<typeof createClient>) {
     const { data, error } = await supabase
       .from("teams")
-      .select("id")
+      .select("id, team_members(user_id)")
       .eq("tournament_id", tournament.id)
       .order("created_at", { ascending: true });
     if (error) throw error;
-    return (data ?? []).map((t: any) => t.id as string);
+    return (data ?? [])
+      .filter((t: any) => (t.team_members ?? []).length >= (isDoubles ? 2 : 1))
+      .map((t: any) => t.id as string);
   }
 
   async function fetchPlayerIds(supabase: ReturnType<typeof createClient>) {
@@ -84,6 +99,36 @@ export function AdminGenerateRound({
       .order("created_at", { ascending: true });
     if (error) throw error;
     return (data ?? []).map((p: any) => p.user_id as string);
+  }
+
+  async function removeAdminAsPlayer(supabase: ReturnType<typeof createClient>) {
+    if (!adminOptOut || !isCurrentUserPlayer) return;
+
+    if (currentUserTeamId) {
+      await supabase
+        .from("team_members")
+        .delete()
+        .eq("team_id", currentUserTeamId)
+        .eq("user_id", currentUserId);
+
+      if (!isDoubles) {
+        const { data: remainingMembers } = await supabase
+          .from("team_members")
+          .select("user_id")
+          .eq("team_id", currentUserTeamId)
+          .limit(1);
+
+        if ((remainingMembers ?? []).length === 0) {
+          await supabase.from("teams").delete().eq("id", currentUserTeamId);
+        }
+      }
+    }
+
+    await supabase
+      .from("tournament_players")
+      .delete()
+      .eq("tournament_id", tournament.id)
+      .eq("user_id", currentUserId);
   }
 
   async function insertRound(
@@ -144,6 +189,8 @@ export function AdminGenerateRound({
     setLoading(true);
     try {
       const supabase = createClient();
+
+      await removeAdminAsPlayer(supabase);
 
       const ids = isMixed
         ? await fetchPlayerIds(supabase)
@@ -377,10 +424,27 @@ export function AdminGenerateRound({
       <CardContent className="space-y-3">
         <p className="text-sm text-gray-500">
           {isDoubles
-            ? `${teamCount} teams · ${playerCount} players`
-            : `${playerCount} ${isMixed ? "players" : "players"}`}{" "}
+            ? `${teamCount} teams · ${effectivePlayerCount} players`
+            : `${effectivePlayerCount} ${isMixed ? "players" : "players"}`}{" "}
           · {tournament.court_count} courts · {totalRounds} rounds
         </p>
+
+        {isCurrentUserPlayer && (
+          <label className="flex items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={adminOptOut}
+              onChange={(e) => setAdminOptOut(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded text-brand-500 accent-brand-500"
+            />
+            <span>
+              <span className="font-semibold text-gray-900">Do not include me as a player</span>
+              <span className="block text-xs text-gray-500">
+                When the schedule is generated, your admin account will be removed from the player list{currentUserTeamId ? " and team slot" : ""}.
+              </span>
+            </span>
+          </label>
+        )}
 
         {notEnoughEntities && (
           <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5 text-xs text-amber-800 font-medium flex items-center gap-2">
@@ -413,3 +477,4 @@ export function AdminGenerateRound({
     </Card>
   );
 }
+
