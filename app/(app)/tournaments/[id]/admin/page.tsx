@@ -104,6 +104,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
   const hasBracketAlready = allMatches.some((m) => m.bracket_next_winner_match_id !== null);
 
   const joinUrl = generateJoinUrl(tournament.join_code);
+  const currentUserPlayer = (approvedPlayers ?? []).find((p: any) => p.user_id === user.id);
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -136,6 +137,9 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
             tournament={tournament}
             playerCount={(approvedPlayers ?? []).length}
             teamsData={tournament.type !== "mixed" ? teamsData : undefined}
+            currentUserId={user.id}
+            isCurrentUserPlayer={!!currentUserPlayer}
+            currentUserTeamId={adminTeamId}
             hasExistingRounds={hasExistingRounds}
             rrMatches={rrMatches}
             rrAllValidated={rrAllValidated}
