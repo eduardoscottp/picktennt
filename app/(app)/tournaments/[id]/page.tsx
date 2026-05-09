@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { BookOpen, Settings, Users, Trophy, BarChart3 } from "lucide-react";
+import { BookOpen, CalendarClock, Clock3, Settings, Share2, Trophy, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,10 +16,49 @@ import { ShareButton } from "@/components/tournament/share-button";
 import { ScoreEntryButton } from "@/components/tournament/score-entry-button";
 import { PlayersDialog } from "@/components/tournament/players-dialog";
 import { DoublesTeamGrid } from "@/components/tournament/doubles-team-grid";
-import { TournamentBottomNav } from "@/components/tournament/tournament-bottom-nav";
-import type { Tournament, TournamentPlayer, Profile, Round } from "@/types/database";
+import { TournamentBottomNav, TournamentTopNav } from "@/components/tournament/tournament-bottom-nav";
+import { computeIndividualStandingsFromTeams, computeStandings } from "@/lib/tournament/standings";
+import type { Match, Profile, Round, Tournament } from "@/types/database";
 
 const ACTIVE_STATUSES = new Set(["active", "finals", "completed"]);
+
+const STAGE_STEPS = [
+  { key: "registration", label: "Registration" },
+  { key: "active", label: "Matches" },
+  { key: "finals", label: "Finals" },
+  { key: "completed", label: "Complete" },
+];
+
+function stageIndex(status: string) {
+  if (status === "draft" || status === "registration") return 0;
+  if (status === "active") return 1;
+  if (status === "finals") return 2;
+  if (status === "completed") return 3;
+  return 0;
+}
+
+function formatShortDateTime(value: string | null | undefined) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function hasPlayerInMatch(match: any, playerId: string, teamIds: Set<string>) {
+  return Boolean(
+    match.player_a1_id === playerId ||
+    match.player_a2_id === playerId ||
+    match.player_b1_id === playerId ||
+    match.player_b2_id === playerId ||
+    (match.team_a_id && teamIds.has(match.team_a_id)) ||
+    (match.team_b_id && teamIds.has(match.team_b_id))
+  );
+}
 
 export default async function TournamentPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -94,25 +133,66 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
     }));
   }
 
-  const statusColor = {
-    draft: "secondary", registration: "default",
-    active: "success", finals: "warning", completed: "secondary",
-  }[tournament.status] ?? "secondary";
+  const playerCountLabel = `${players.length} / ${tournament.max_players} players`;
+  const tournamentStartLabel = formatShortDateTime((tournament as any).starts_at ?? (tournament as any).start_time ?? null);
+
+  const stageProgress = (
+    <Card>
+      <CardContent className="py-4">
+        <div className="flex items-center justify-between gap-2">
+          {STAGE_STEPS.map((stage, index) => {
+            const currentIndex = stageIndex(tournament.status);
+            const isCurrent = index === currentIndex;
+            const isDone = index < currentIndex;
+            return (
+              <div key={stage.key} className="flex flex-1 items-center gap-2 last:flex-none">
+                <div className="flex flex-col items-center gap-1 min-w-0">
+                  <div className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-black ${
+                    isCurrent ? "bg-brand-500 text-white shadow-sm" : isDone ? "bg-brand-100 text-brand-700" : "bg-gray-100 text-gray-400"
+                  }`}>
+                    {index + 1}
+                  </div>
+                  <span className={`text-[10px] font-semibold truncate ${isCurrent ? "text-brand-600" : "text-gray-400"}`}>{stage.label}</span>
+                </div>
+                {index < STAGE_STEPS.length - 1 && (
+                  <div className={`h-1 flex-1 rounded-full ${isDone ? "bg-brand-300" : "bg-gray-100"}`} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
 
   // ── Header card (always shown) ──────────────────────────────────────────
   const headerCard = (
-    <Card className="overflow-hidden">
+    <Card className="overflow-hidden border-brand-100 shadow-sm">
       <div className="h-3 bg-gradient-to-r from-brand-400 to-brand-600" />
-      <CardContent className="pt-4 pb-4">
+      <CardContent className="pt-5 pb-5">
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
-            <h1 className="text-xl font-black text-gray-900 leading-tight">{tournament.name}</h1>
-            <div className="flex flex-wrap gap-2 mt-2">
-              <Badge variant={statusColor as any}>{statusLabel(tournament.status)}</Badge>
+            <h1 className="text-2xl font-black text-gray-900 leading-tight">{tournament.name}</h1>
+            <div className="flex flex-wrap gap-2 mt-3">
+              <Badge variant="default" className="text-xs">
+                <Users className="h-3 w-3 mr-1" />
+                {playerCountLabel}
+              </Badge>
               <Badge variant="secondary">{tournamentTypeLabel(tournament.type)}</Badge>
               <Badge variant="secondary">{tournament.court_count} courts</Badge>
             </div>
-            <p className="text-xs text-gray-400 mt-1">Created {formatDate(tournament.created_at)}</p>
+            <div className="mt-3 space-y-1 text-xs text-gray-500">
+              <p className="flex items-center gap-1.5">
+                <CalendarClock className="h-3.5 w-3.5" />
+                {tournamentStartLabel ? `Starts ${tournamentStartLabel}` : `Created ${formatDate(tournament.created_at)}`}
+              </p>
+              {!tournamentStartLabel && (
+                <p className="flex items-center gap-1.5 text-gray-400">
+                  <Clock3 className="h-3.5 w-3.5" />
+                  Start date/time is not configured for this tournament.
+                </p>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             {isActive && (isMember || isAdmin) && (
@@ -121,15 +201,31 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
                 maxPlayers={tournament.max_players}
               />
             )}
-            <ShareButton joinUrl={joinUrl} joinCode={tournament.join_code} />
             {isAdmin && (
               <Link href={`/tournaments/${id}/admin`}>
-                <Button variant="outline" size="icon">
+                <Button variant="outline" size="icon" aria-label="Tournament settings">
                   <Settings className="h-4 w-4" />
                 </Button>
               </Link>
             )}
           </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <ShareButton joinUrl={joinUrl} joinCode={tournament.join_code} />
+          {isAdmin ? (
+            <Link href={`/tournaments/${id}/admin`}>
+              <Button variant="outline" className="w-full">
+                <Settings className="h-4 w-4" />
+                Settings
+              </Button>
+            </Link>
+          ) : (
+            <div className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-500 flex items-center justify-center gap-1">
+              <Share2 className="h-3.5 w-3.5" />
+              Code {tournament.join_code}
+            </div>
+          )}
         </div>
 
         {user && !isMember && !isAdmin && (
@@ -247,11 +343,117 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
       );
     }
 
+    const teamToMembers = new Map<string, string[]>();
+    const playerToTeams = new Map<string, Set<string>>();
+    for (const team of allTeams) {
+      const memberIds = (team.team_members ?? []).map((tm: any) => tm.user_id as string);
+      teamToMembers.set(team.id as string, memberIds);
+      for (const memberId of memberIds) {
+        if (!playerToTeams.has(memberId)) playerToTeams.set(memberId, new Set());
+        playerToTeams.get(memberId)!.add(team.id as string);
+      }
+    }
+
+    const standings = isMixed
+      ? computeStandings(matches as Match[], "player")
+      : computeIndividualStandingsFromTeams(matches as Match[], teamToMembers);
+    const standingsByPlayer = new Map(standings.map((row) => [row.id, row]));
+    const roundById = new Map((rounds ?? []).map((round: Round) => [round.id, round]));
+    const playerStats = players.map((player: any) => {
+      const teamIds = playerToTeams.get(player.user_id as string) ?? new Set<string>();
+      const playerMatches = matches.filter((match) => hasPlayerInMatch(match, player.user_id as string, teamIds));
+      const remainingMatches = playerMatches.filter((match) => match.status !== "validated");
+      const nextMatch = remainingMatches
+        .slice()
+        .sort((a, b) => {
+          const roundA = roundById.get(a.round_id)?.round_number ?? 999;
+          const roundB = roundById.get(b.round_id)?.round_number ?? 999;
+          return roundA === roundB ? (a.court_number ?? 999) - (b.court_number ?? 999) : roundA - roundB;
+        })[0];
+      return {
+        player,
+        standing: standingsByPlayer.get(player.user_id as string),
+        remainingMatches: remainingMatches.length,
+        nextMatch,
+      };
+    }).sort((a, b) => (a.standing?.rank ?? 999) - (b.standing?.rank ?? 999));
+
+    function opponentLabel(match: any, playerId: string) {
+      if (!match) return "No scheduled match";
+      const teamIds = playerToTeams.get(playerId) ?? new Set<string>();
+      const isSideA = match.player_a1_id === playerId || match.player_a2_id === playerId || (match.team_a_id && teamIds.has(match.team_a_id));
+      const opposingTeam = isSideA ? match.team_b : match.team_a;
+      if (isMixed) {
+        const profiles = isSideA ? [match.player_b1, match.player_b2] : [match.player_a1, match.player_a2];
+        return profiles.filter(Boolean).map((profile: Profile) => `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim()).join(" / ") || "TBD";
+      }
+      return (opposingTeam?.team_members ?? [])
+        .map((tm: any) => `${tm.profile?.first_name ?? ""} ${tm.profile?.last_name ?? ""}`.trim())
+        .filter(Boolean)
+        .join(" / ") || "TBD";
+    }
+
+    const playerStatsSection = (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Trophy className="h-4 w-4 text-brand-500" />
+            Player stats
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {playerStats.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-4">Stats appear once players join and matches are generated.</p>
+          ) : (
+            playerStats.map(({ player, standing, remainingMatches, nextMatch }) => {
+              const profile = player.profile as Profile;
+              const round = nextMatch ? roundById.get(nextMatch.round_id) : null;
+              return (
+                <div key={player.user_id} className="rounded-xl border border-gray-100 p-3">
+                  <div className="flex items-start gap-3">
+                    <Avatar className="h-10 w-10">
+                      <AvatarImage src={profile.avatar_url ?? ""} />
+                      <AvatarFallback>{getInitials(profile.first_name, profile.last_name)}</AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="font-bold text-gray-900 truncate">{profile.first_name} {profile.last_name}</p>
+                        <Badge variant="secondary">#{standing?.rank ?? "—"}</Badge>
+                      </div>
+                      <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                        <div className="rounded-lg bg-gray-50 p-2">
+                          <p className="text-[10px] uppercase tracking-wide text-gray-400 font-bold">W/L</p>
+                          <p className="font-black text-gray-900">{standing?.wins ?? 0}-{standing?.losses ?? 0}</p>
+                        </div>
+                        <div className="rounded-lg bg-gray-50 p-2">
+                          <p className="text-[10px] uppercase tracking-wide text-gray-400 font-bold">Remaining</p>
+                          <p className="font-black text-gray-900">{remainingMatches}</p>
+                        </div>
+                        <div className="rounded-lg bg-gray-50 p-2">
+                          <p className="text-[10px] uppercase tracking-wide text-gray-400 font-bold">Next</p>
+                          <p className="font-black text-gray-900">{round ? `R${round.round_number}` : "—"}</p>
+                        </div>
+                      </div>
+                      <p className="mt-2 text-xs text-gray-500">
+                        {nextMatch ? `Next match: ${opponentLabel(nextMatch, player.user_id)}${nextMatch.court_number ? ` · Court ${nextMatch.court_number}` : ""}` : "No upcoming match scheduled."}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </CardContent>
+      </Card>
+    );
+
     return (
       <div className="max-w-2xl mx-auto">
         <MobileHeader title={tournament.name} back="/tournaments" />
         <div className="px-4 py-4 pb-32 space-y-4">
+          <TournamentTopNav tournamentId={id} isAdmin={isAdmin} />
           {headerCard}
+          {stageProgress}
 
           {/* Team grid for doubles: show slot picker if player has no team yet */}
           {isDoubles && isMember && !myTeamId && (
@@ -276,23 +478,16 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
             </Card>
           )}
 
-          {/* Navigation strip */}
-          <div className="flex gap-2">
-            <Link href={`/tournaments/${id}/leaderboard`} className="flex-1">
-              <Button variant="outline" size="sm" className="w-full">
-                <BarChart3 className="h-4 w-4" />
-                Standings
+          {playerStatsSection}
+
+          {tournament.rules_text && (
+            <Link href="#rules" className="block">
+              <Button variant="secondary" size="sm" className="w-full">
+                <BookOpen className="h-4 w-4" />
+                View rules
               </Button>
             </Link>
-            {tournament.rules_text && (
-              <Link href="#rules" className="flex-1">
-                <Button variant="secondary" size="sm" className="w-full">
-                  <BookOpen className="h-4 w-4" />
-                  Rules
-                </Button>
-              </Link>
-            )}
-          </div>
+          )}
 
           {/* Rounds + matches */}
           {(rounds ?? []).length === 0 ? (
@@ -454,7 +649,9 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
     <div className="max-w-2xl mx-auto">
       <MobileHeader title={tournament.name} back="/tournaments" />
       <div className="px-4 py-4 pb-32 space-y-4">
+        <TournamentTopNav tournamentId={id} isAdmin={isAdmin} />
         {headerCard}
+        {stageProgress}
 
         {tournament.rules_text && (
           <Card>
