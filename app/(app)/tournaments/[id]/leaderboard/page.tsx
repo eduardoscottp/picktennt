@@ -1,16 +1,15 @@
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import { MobileHeader } from "@/components/layout/navbar";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { getInitials, duprRatingColor, tournamentTypeLabel } from "@/lib/utils";
-import { computeStandings, computeIndividualStandingsFromTeams } from "@/lib/tournament/standings";
+import { computeStandings } from "@/lib/tournament/standings";
 import { TournamentBottomNav } from "@/components/tournament/tournament-bottom-nav";
-import type { Match, Profile, Team, Tournament } from "@/types/database";
-import { Trophy, Medal } from "lucide-react";
+import type { Match, Profile, Tournament } from "@/types/database";
+import { Trophy } from "lucide-react";
 
-const RANK_COLORS = ["text-yellow-500", "text-gray-400", "text-amber-600"];
 const RANK_ICONS = ["🥇", "🥈", "🥉"];
 
 export default async function LeaderboardPage({ params }: { params: Promise<{ id: string }> }) {
@@ -43,7 +42,6 @@ export default async function LeaderboardPage({ params }: { params: Promise<{ id
 
   // Fetch entity details
   const entityMap = new Map<string, { name: string; avatar?: string; rating?: number | null }>();
-  const teamToMembers = new Map<string, string[]>();
   let teamsForDoubles: any[] = [];
 
   if (isMixed) {
@@ -74,22 +72,9 @@ export default async function LeaderboardPage({ params }: { params: Promise<{ id
         .filter(Boolean)
         .join(" / ");
       entityMap.set(t.id, { name: names || "Team" });
-      teamToMembers.set(t.id, members.map((m: any) => m.user_id as string));
     }
   }
 
-  // For doubles: compute individual player standings too
-  const individualStandings = isDoubles
-    ? computeIndividualStandingsFromTeams(allMatches, teamToMembers)
-    : [];
-
-  // Build profile map for individual standings (doubles)
-  const profileMap = new Map<string, Profile>();
-  if (isDoubles && individualStandings.length > 0) {
-    const pids = individualStandings.map((s) => s.id);
-    const { data: profiles } = await supabase.from("profiles").select("*").in("id", pids);
-    for (const p of (profiles ?? []) as Profile[]) profileMap.set(p.id, p);
-  }
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -117,9 +102,9 @@ export default async function LeaderboardPage({ params }: { params: Promise<{ id
               const isTop3 = idx < 3;
               return (
                 <Card key={row.id} className={isTop3 ? "border-brand-200 shadow-md" : ""}>
-                  <CardContent className="flex items-center gap-3 py-3 px-4">
+                  <CardContent className="grid grid-cols-[2rem_minmax(0,1fr)_3rem] items-center gap-3 py-3 px-4">
                     {/* Rank */}
-                    <div className="w-8 text-center">
+                    <div className="text-center">
                       {idx < 3 ? (
                         <span className="text-xl">{RANK_ICONS[idx]}</span>
                       ) : (
@@ -127,33 +112,33 @@ export default async function LeaderboardPage({ params }: { params: Promise<{ id
                       )}
                     </div>
 
-                    {/* Avatar for mixed */}
-                    {isMixed && (
-                      <Avatar className="h-9 w-9">
-                        <AvatarImage src={entity?.avatar ?? ""} />
-                        <AvatarFallback>{getInitials(entity?.name?.split(" ")[0], entity?.name?.split(" ")[1])}</AvatarFallback>
-                      </Avatar>
-                    )}
-
                     {/* Name */}
-                    <div className="flex-1 min-w-0">
-                      <div className="font-bold text-gray-900 truncate">
-                        {entity?.name ?? row.id.slice(0, 8)}
-                      </div>
-                      <div className="text-xs text-gray-400">
-                        {row.wins}W – {row.losses}L · {row.pointsFor}:{row.pointsAgainst}
+                    <div className="flex items-center gap-2 min-w-0">
+                      {isMixed && (
+                        <Avatar className="h-9 w-9 flex-shrink-0">
+                          <AvatarImage src={entity?.avatar ?? ""} />
+                          <AvatarFallback>{getInitials(entity?.name?.split(" ")[0], entity?.name?.split(" ")[1])}</AvatarFallback>
+                        </Avatar>
+                      )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="font-bold text-gray-900 truncate whitespace-nowrap min-w-0">
+                            {entity?.name ?? row.id.slice(0, 8)}
+                          </span>
+                          {isMixed && entity?.rating && (
+                            <span className={`text-xs font-bold flex-shrink-0 ${duprRatingColor(entity.rating)}`}>
+                              {entity.rating.toFixed(2)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-400">
+                          {row.wins}W – {row.losses}L · {row.pointsFor}:{row.pointsAgainst}
+                        </div>
                       </div>
                     </div>
 
-                    {/* DUPR */}
-                    {isMixed && entity?.rating && (
-                      <span className={`text-xs font-bold ${duprRatingColor(entity.rating)}`}>
-                        {entity.rating.toFixed(2)}
-                      </span>
-                    )}
-
                     {/* Win count */}
-                    <div className="text-right">
+                    <div className="text-right justify-self-end">
                       <div className="text-lg font-black text-brand-500">{row.wins}</div>
                       <div className="text-[10px] text-gray-400">wins</div>
                     </div>
@@ -169,51 +154,6 @@ export default async function LeaderboardPage({ params }: { params: Promise<{ id
           Tiebreaker: fewer points conceded against tied opponents ranks higher.
         </p>
 
-        {/* Individual player standings for doubles */}
-        {isDoubles && individualStandings.length > 0 && (
-          <>
-            <h2 className="text-lg font-black text-gray-900 pt-2">Individual Standings</h2>
-            <div className="space-y-2">
-              {individualStandings.map((row, idx) => {
-                const p = profileMap.get(row.id);
-                const name = p ? `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim() : row.id.slice(0, 8);
-                const isTop3 = idx < 3;
-                return (
-                  <Card key={row.id} className={isTop3 ? "border-brand-200 shadow-md" : ""}>
-                    <CardContent className="flex items-center gap-3 py-3 px-4">
-                      <div className="w-8 text-center">
-                        {idx < 3 ? (
-                          <span className="text-xl">{RANK_ICONS[idx]}</span>
-                        ) : (
-                          <span className="text-sm font-bold text-gray-400">#{row.rank}</span>
-                        )}
-                      </div>
-                      <Avatar className="h-9 w-9">
-                        <AvatarImage src={p?.avatar_url ?? ""} />
-                        <AvatarFallback>{getInitials(p?.first_name, p?.last_name)}</AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-bold text-gray-900 truncate">{name}</div>
-                        <div className="text-xs text-gray-400">
-                          {row.wins}W – {row.losses}L · {row.pointsFor}:{row.pointsAgainst}
-                        </div>
-                      </div>
-                      {p?.dupr_rating && (
-                        <span className={`text-xs font-bold ${duprRatingColor(p.dupr_rating)}`}>
-                          {p.dupr_rating.toFixed(2)}
-                        </span>
-                      )}
-                      <div className="text-right">
-                        <div className="text-lg font-black text-brand-500">{row.wins}</div>
-                        <div className="text-[10px] text-gray-400">wins</div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          </>
-        )}
       </div>
       <TournamentBottomNav tournamentId={id} isAdmin={isAdmin} />
     </div>
