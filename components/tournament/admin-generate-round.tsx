@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -62,6 +63,7 @@ export function AdminGenerateRound({
       );
 
   const pendingRRCount = rrMatches.filter((m) => m.status !== "validated").length;
+  const advancementOptions = [4, 8].filter((count) => count <= entityCount);
 
   async function fetchTeamIds(supabase: ReturnType<typeof createClient>) {
     const { data, error } = await supabase
@@ -184,8 +186,7 @@ export function AdminGenerateRound({
     }
   }
 
-  async function generateBracket() {
-    if (!advancingCount) return;
+  async function generateBracket(selectedAdvancingCount: number) {
     setLoading(true);
     try {
       const supabase = createClient();
@@ -197,19 +198,18 @@ export function AdminGenerateRound({
       const allMatches = (allMatchesRaw ?? []) as Match[];
 
       const standings = computeStandings(allMatches, isMixed ? "player" : "team");
-      const topIds = standings.slice(0, advancingCount).map((s) => s.id);
+      const topIds = standings.slice(0, selectedAdvancingCount).map((s) => s.id);
 
-      if (topIds.length < advancingCount) {
+      if (topIds.length < selectedAdvancingCount) {
         throw new Error(
-          `Not enough standings — need ${advancingCount}, got ${topIds.length}.`
+          `Not enough standings — need ${selectedAdvancingCount}, got ${topIds.length}.`
         );
       }
 
       const bracketRounds = buildBracket(topIds);
-      const reversedRounds = [...bracketRounds].reverse();
       const idMap = new Map<string, string>();
 
-      for (const round of reversedRounds) {
+      for (const round of bracketRounds) {
         const { data: lastRound } = await supabase
           .from("rounds")
           .select("round_number")
@@ -275,12 +275,17 @@ export function AdminGenerateRound({
         }
       }
 
+      await supabase
+        .from("tournaments")
+        .update({ advancement_count: selectedAdvancingCount })
+        .eq("id", tournament.id);
+
       const label =
-        advancingCount === 2
+        selectedAdvancingCount === 2
           ? "Final"
-          : advancingCount === 4
+          : selectedAdvancingCount === 4
           ? "Semifinals + Final"
-          : `Top-${advancingCount} bracket`;
+          : `Top-${selectedAdvancingCount} bracket`;
       toast(`${label} generated!`, "success");
       router.refresh();
     } catch (err: any) {
@@ -312,12 +317,18 @@ export function AdminGenerateRound({
             </div>
           </div>
 
-          {/* Bracket phase — only if tournament has an advancement_count */}
-          {!!advancingCount && advancingCount > 0 && (
+          <Link href={`/tournaments/${tournament.id}`}>
+            <Button variant="outline" className="w-full">
+              View Tournament
+            </Button>
+          </Link>
+
+          {/* Bracket phase */}
+          {advancementOptions.length > 0 && (
             <div className="border-t pt-3 space-y-2.5">
               <p className="text-sm font-semibold text-gray-700 flex items-center gap-2">
                 <Trophy className="h-4 w-4 text-brand-500" />
-                Knockout Bracket — Top {advancingCount}
+                Knockout Bracket{advancingCount ? ` — Top ${advancingCount}` : ""}
               </p>
 
               {hasBracketAlready ? (
@@ -336,10 +347,14 @@ export function AdminGenerateRound({
                   </span>
                 </div>
               ) : (
-                <Button onClick={generateBracket} loading={loading} className="w-full">
-                  <Trophy className="h-4 w-4" />
-                  Generate Bracket (Top {advancingCount})
-                </Button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {advancementOptions.map((count) => (
+                    <Button key={count} onClick={() => generateBracket(count)} loading={loading} className="w-full">
+                      <Trophy className="h-4 w-4" />
+                      Generate Top {count}
+                    </Button>
+                  ))}
+                </div>
               )}
             </div>
           )}

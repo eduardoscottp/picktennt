@@ -33,8 +33,8 @@ export function Navbar({ profile }: { profile: Profile | null }) {
       <header className="hidden md:flex items-center justify-between px-6 py-3 bg-white border-b border-gray-100 sticky top-0 z-40 shadow-sm">
         <Link href="/dashboard" className="flex items-center gap-2">
           <Image src="/images/logo.png" alt="Picktennt" width={32} height={32} className="object-contain" />
-          <span className="font-black text-xl tracking-tight text-gray-900">
-            PICK<span className="text-brand-500">TENNT</span>
+          <span className="font-black text-xl tracking-tight text-brand-500">
+            PICKTENNT
           </span>
         </Link>
 

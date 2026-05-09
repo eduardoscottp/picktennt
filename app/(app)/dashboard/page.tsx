@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDate, statusLabel, tournamentTypeLabel } from "@/lib/utils";
+import { computeValidatedPlayerStats } from "@/lib/tournament/player-stats";
 import type { Tournament, Profile } from "@/types/database";
 
 export default async function DashboardPage() {
@@ -48,14 +49,20 @@ export default async function DashboardPage() {
   // Stats
   const { data: validatedMatches } = await supabase
     .from("matches")
-    .select("id, score_a, score_b, team_a_id, team_b_id, player_a1_id, player_b1_id")
-    .eq("status", "validated")
-    .or(`player_a1_id.eq.${user!.id},player_b1_id.eq.${user!.id}`);
+    .select(`
+      id,
+      score_a,
+      score_b,
+      player_a1_id,
+      player_a2_id,
+      player_b1_id,
+      player_b2_id,
+      team_a:teams!matches_team_a_id_fkey(team_members(user_id)),
+      team_b:teams!matches_team_b_id_fkey(team_members(user_id))
+    `)
+    .eq("status", "validated");
 
-  const wins = (validatedMatches ?? []).filter((m: any) => {
-    if (m.player_a1_id === user!.id) return (m.score_a ?? 0) > (m.score_b ?? 0);
-    return (m.score_b ?? 0) > (m.score_a ?? 0);
-  }).length;
+  const playerStats = computeValidatedPlayerStats((validatedMatches ?? []) as any[], user!.id);
 
   const statusVariant = (s: string) => {
     if (s === "active" || s === "finals") return "success";
@@ -78,8 +85,8 @@ export default async function DashboardPage() {
       <div className="grid grid-cols-3 gap-3">
         {[
           { label: "Tournaments", value: myTournaments.length, icon: Trophy },
-          { label: "Matches",     value: validatedMatches?.length ?? 0, icon: Clock },
-          { label: "Wins",        value: wins, icon: CheckCircle },
+          { label: "Matches",     value: playerStats.matches, icon: Clock },
+          { label: "Wins",        value: playerStats.wins, icon: CheckCircle },
         ].map((s) => (
           <Card key={s.label} className="text-center">
             <CardContent className="pt-4 pb-3">

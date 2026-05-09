@@ -11,6 +11,7 @@ import { AdminGenerateRound } from "@/components/tournament/admin-generate-round
 import { AdminAddPlayer } from "@/components/tournament/admin-add-player";
 import { DoublesTeamGrid } from "@/components/tournament/doubles-team-grid";
 import { ShareButton } from "@/components/tournament/share-button";
+import { TournamentBottomNav } from "@/components/tournament/tournament-bottom-nav";
 import type { Profile, Tournament, Match } from "@/types/database";
 
 export default async function AdminPage({ params }: { params: Promise<{ id: string }> }) {
@@ -107,7 +108,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
   return (
     <div className="max-w-2xl mx-auto">
       <MobileHeader title="Admin Panel" back={`/tournaments/${id}`} />
-      <div className="px-4 py-6 space-y-5">
+      <div className="px-4 py-6 pb-32 space-y-5">
 
         {/* Status + actions */}
         <Card>
@@ -266,6 +267,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
           </CardContent>
         </Card>
       </div>
+      <TournamentBottomNav tournamentId={id} isAdmin />
     </div>
   );
 }

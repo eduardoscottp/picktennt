@@ -38,12 +38,12 @@ export default function LandingPage() {
             The complete pickleball tournament platform. Create, manage, and play — all in one place.
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <Link href="/login">
+            <Link href="/login?redirect=/dashboard">
               <Button size="xl" variant="white" className="w-full sm:w-auto font-black">
                 Get Started Free
               </Button>
             </Link>
-            <Link href="/tournaments">
+            <Link href="/login?redirect=/tournaments">
               <Button size="xl" variant="outline" className="w-full sm:w-auto border-white text-white hover:bg-white/10">
                 Browse Tournaments
               </Button>
@@ -71,7 +71,7 @@ export default function LandingPage() {
       <section className="bg-brand-500 text-white text-center py-16 px-6">
         <h2 className="text-3xl font-black mb-3">Ready to play?</h2>
         <p className="text-brand-100 mb-6">Join thousands of players managing their tournaments on Picktennt.</p>
-        <Link href="/login">
+        <Link href="/login?redirect=/dashboard">
           <Button size="lg" variant="white" className="font-bold">
             Sign in with Google
           </Button>

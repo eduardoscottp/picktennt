@@ -6,6 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { getInitials, duprRatingColor, tournamentTypeLabel } from "@/lib/utils";
 import { computeStandings, computeIndividualStandingsFromTeams } from "@/lib/tournament/standings";
+import { TournamentBottomNav } from "@/components/tournament/tournament-bottom-nav";
 import type { Match, Profile, Team, Tournament } from "@/types/database";
 import { Trophy, Medal } from "lucide-react";
 
@@ -15,6 +16,7 @@ const RANK_ICONS = ["🥇", "🥈", "🥉"];
 export default async function LeaderboardPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
   const { data: tournamentData } = await supabase
     .from("tournaments").select("*").eq("id", id).single();
@@ -23,6 +25,11 @@ export default async function LeaderboardPage({ params }: { params: Promise<{ id
 
   const isMixed = tournament.type === "mixed";
   const isDoubles = tournament.type === "doubles";
+
+  const { data: adminRow } = user
+    ? await supabase.from("tournament_admins").select("id").eq("tournament_id", id).eq("user_id", user.id).single()
+    : { data: null };
+  const isAdmin = !!adminRow;
 
   // Fetch all validated matches
   const { data: matches } = await supabase
@@ -62,8 +69,11 @@ export default async function LeaderboardPage({ params }: { params: Promise<{ id
 
     for (const t of teamsForDoubles) {
       const members: any[] = t.team_members ?? [];
-      const names = members.map((m: any) => `${m.profile?.first_name ?? ""} ${m.profile?.last_name?.[0] ?? ""}.`).join(" / ");
-      entityMap.set(t.id, { name: t.name ?? names });
+      const names = members
+        .map((m: any) => `${m.profile?.first_name ?? ""} ${m.profile?.last_name ?? ""}`.trim())
+        .filter(Boolean)
+        .join(" / ");
+      entityMap.set(t.id, { name: names || "Team" });
       teamToMembers.set(t.id, members.map((m: any) => m.user_id as string));
     }
   }
@@ -84,7 +94,7 @@ export default async function LeaderboardPage({ params }: { params: Promise<{ id
   return (
     <div className="max-w-2xl mx-auto">
       <MobileHeader title="Standings" back={`/tournaments/${id}`} />
-      <div className="px-4 py-6 space-y-5">
+      <div className="px-4 py-6 pb-32 space-y-5">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-black text-gray-900">Leaderboard</h1>
           <Badge variant="secondary">{tournamentTypeLabel(tournament.type)}</Badge>
@@ -205,6 +215,7 @@ export default async function LeaderboardPage({ params }: { params: Promise<{ id
           </>
         )}
       </div>
+      <TournamentBottomNav tournamentId={id} isAdmin={isAdmin} />
     </div>
   );
 }
