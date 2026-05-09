@@ -10,15 +10,21 @@ import { Button } from "@/components/ui/button";
 export function LoginForm() {
   const [loading, setLoading] = useState(false);
   const searchParams = useSearchParams();
-  const redirect = searchParams.get("redirect") ?? "/dashboard";
+  const rawRedirect = searchParams.get("redirect") ?? "/dashboard";
+  const redirect = rawRedirect.startsWith("/") && !rawRedirect.startsWith("//")
+    ? rawRedirect
+    : "/dashboard";
 
   async function signInWithGoogle() {
     setLoading(true);
     const supabase = createClient();
+    const callbackUrl = new URL("/auth/callback", window.location.origin);
+    callbackUrl.searchParams.set("next", redirect);
+
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=${redirect}`,
+        redirectTo: callbackUrl.toString(),
         queryParams: { access_type: "offline", prompt: "consent" },
       },
     });
@@ -30,8 +36,8 @@ export function LoginForm() {
         <div className="flex justify-center mb-4">
           <Image src="/images/logo.png" alt="Picktennt" width={56} height={56} className="object-contain" />
         </div>
-        <h1 className="text-2xl font-black text-gray-900 mb-1">
-          PICK<span className="text-brand-500">TENNT</span>
+        <h1 className="text-2xl font-black text-brand-500 mb-1">
+          PICKTENNT
         </h1>
         <p className="text-gray-500 text-sm mb-8">Sign in to manage your tournaments</p>
 

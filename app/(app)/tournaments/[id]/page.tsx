@@ -16,6 +16,7 @@ import { ShareButton } from "@/components/tournament/share-button";
 import { ScoreEntryButton } from "@/components/tournament/score-entry-button";
 import { PlayersDialog } from "@/components/tournament/players-dialog";
 import { DoublesTeamGrid } from "@/components/tournament/doubles-team-grid";
+import { TournamentBottomNav } from "@/components/tournament/tournament-bottom-nav";
 import type { Tournament, TournamentPlayer, Profile, Round } from "@/types/database";
 
 const ACTIVE_STATUSES = new Set(["active", "finals", "completed"]);
@@ -249,7 +250,7 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
     return (
       <div className="max-w-2xl mx-auto">
         <MobileHeader title={tournament.name} back="/tournaments" />
-        <div className="px-4 py-4 space-y-4">
+        <div className="px-4 py-4 pb-32 space-y-4">
           {headerCard}
 
           {/* Team grid for doubles: show slot picker if player has no team yet */}
@@ -418,6 +419,7 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
             </Card>
           )}
         </div>
+        <TournamentBottomNav tournamentId={id} isAdmin={isAdmin} />
       </div>
     );
   }
@@ -432,7 +434,7 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
   return (
     <div className="max-w-2xl mx-auto">
       <MobileHeader title={tournament.name} back="/tournaments" />
-      <div className="px-4 py-4 space-y-4">
+      <div className="px-4 py-4 pb-32 space-y-4">
         {headerCard}
 
         {tournament.rules_text && (
@@ -515,6 +517,7 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
           </Card>
         ) : null}
       </div>
+      <TournamentBottomNav tournamentId={id} isAdmin={isAdmin} />
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScoreEntryButton } from "@/components/tournament/score-entry-button";
+import { TournamentBottomNav } from "@/components/tournament/tournament-bottom-nav";
 import { getInitials, statusLabel, duprRatingColor } from "@/lib/utils";
 import type { Profile, Round, Match, Tournament } from "@/types/database";
 
@@ -102,7 +103,7 @@ export default async function MatchesPage({ params }: { params: Promise<{ id: st
   return (
     <div className="max-w-2xl mx-auto">
       <MobileHeader title="Matches" back={`/tournaments/${id}`} />
-      <div className="px-4 py-6 space-y-6">
+      <div className="px-4 py-6 pb-32 space-y-6">
         {(rounds ?? []).length === 0 && (
           <div className="text-center py-16 text-gray-400">
             <p className="font-semibold">No rounds scheduled yet</p>
@@ -179,6 +180,7 @@ export default async function MatchesPage({ params }: { params: Promise<{ id: st
           </div>
         ))}
       </div>
+      <TournamentBottomNav tournamentId={id} isAdmin={isAdmin} />
     </div>
   );
 }
