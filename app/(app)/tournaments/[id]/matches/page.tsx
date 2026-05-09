@@ -56,16 +56,16 @@ export default async function MatchesPage({ params }: { params: Promise<{ id: st
 
   function PlayerChip({ profile }: { profile: Profile }) {
     return (
-      <div className="flex items-center gap-1.5">
-        <Avatar className="h-6 w-6">
+      <div className="flex items-center gap-1.5 min-w-0">
+        <Avatar className="h-6 w-6 flex-shrink-0">
           <AvatarImage src={profile.avatar_url ?? ""} />
           <AvatarFallback className="text-xs">{getInitials(profile.first_name, profile.last_name)}</AvatarFallback>
         </Avatar>
-        <span className="text-xs font-medium text-gray-800 truncate max-w-[80px]">
+        <span className="text-xs font-medium text-gray-800 leading-tight break-words min-w-0">
           {profile.first_name} {profile.last_name?.[0]}.
         </span>
         {profile.dupr_rating && (
-          <span className={`text-[10px] font-bold ${duprRatingColor(profile.dupr_rating)}`}>
+          <span className={`text-[10px] font-bold flex-shrink-0 ${duprRatingColor(profile.dupr_rating)}`}>
             {profile.dupr_rating.toFixed(1)}
           </span>
         )}
@@ -134,23 +134,21 @@ export default async function MatchesPage({ params }: { params: Promise<{ id: st
                     </div>
 
                     <div className="p-3">
-                      <div className="flex items-center gap-2">
-                        {/* Team A */}
-                        <div className="flex-1">
+                      {/* Mobile: names stay left, score stays visible right */}
+                      <div className="grid grid-cols-[minmax(0,1fr)_4.5rem] gap-3 md:hidden">
+                        <div className="min-w-0 space-y-3">
                           <TeamDisplay match={match} side="a" />
+                          <TeamDisplay match={match} side="b" />
                         </div>
-
-                        {/* Score */}
-                        <div className="flex items-center gap-2 mx-2">
-                          <div className={`text-2xl font-black w-8 text-center ${
+                        <div className="flex flex-col items-end justify-center gap-3 border-l border-gray-100 pl-3">
+                          <div className={`text-2xl font-black w-10 text-center tabular-nums ${
                             match.score_a != null && match.score_b != null
                               ? match.score_a > match.score_b ? "text-brand-500" : "text-gray-400"
                               : "text-gray-300"
                           }`}>
                             {match.score_a ?? "–"}
                           </div>
-                          <div className="text-gray-300 text-sm font-bold">:</div>
-                          <div className={`text-2xl font-black w-8 text-center ${
+                          <div className={`text-2xl font-black w-10 text-center tabular-nums ${
                             match.score_a != null && match.score_b != null
                               ? match.score_b > match.score_a ? "text-brand-500" : "text-gray-400"
                               : "text-gray-300"
@@ -158,9 +156,31 @@ export default async function MatchesPage({ params }: { params: Promise<{ id: st
                             {match.score_b ?? "–"}
                           </div>
                         </div>
+                      </div>
 
-                        {/* Team B */}
-                        <div className="flex-1 flex justify-end">
+                      {/* Tablet/desktop: keep side-by-side layout */}
+                      <div className="hidden md:flex items-center gap-2">
+                        <div className="flex-1 min-w-0">
+                          <TeamDisplay match={match} side="a" />
+                        </div>
+                        <div className="flex items-center gap-2 mx-2 flex-shrink-0">
+                          <div className={`text-2xl font-black w-8 text-center tabular-nums ${
+                            match.score_a != null && match.score_b != null
+                              ? match.score_a > match.score_b ? "text-brand-500" : "text-gray-400"
+                              : "text-gray-300"
+                          }`}>
+                            {match.score_a ?? "–"}
+                          </div>
+                          <div className="text-gray-300 text-sm font-bold">:</div>
+                          <div className={`text-2xl font-black w-8 text-center tabular-nums ${
+                            match.score_a != null && match.score_b != null
+                              ? match.score_b > match.score_a ? "text-brand-500" : "text-gray-400"
+                              : "text-gray-300"
+                          }`}>
+                            {match.score_b ?? "–"}
+                          </div>
+                        </div>
+                        <div className="flex-1 min-w-0 flex justify-end">
                           <TeamDisplay match={match} side="b" />
                         </div>
                       </div>
