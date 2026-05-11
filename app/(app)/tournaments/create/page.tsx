@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -76,66 +75,28 @@ export default function CreateTournamentPage() {
     if (!validateStep()) return;
     setLoading(true);
     try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
-
-      const { data, error } = await supabase.from("tournaments").insert({
-        name: form.name.trim(),
-        created_by: user.id,
-        court_count: +form.court_count,
-        max_players: +form.max_players,
-        type: form.type as TournamentType,
-        games_per_player: form.type ? +form.games_per_player : null,
-        second_round_format: "none" as SecondRoundFormat,
-        advancement_count: form.advancement_count && +form.advancement_count > 0 ? +form.advancement_count : null,
-        finals_format: "none" as FinalsFormat,
-        finals_trigger: "none" as FinalsTrigger,
-        rules_text: form.rules_text.trim() || null,
-        is_public: form.is_public,
-        status: "registration",
-      }).select().single();
-
-      if (error) throw error;
-
-      // Auto-join creator as an approved player
-      await supabase.from("tournament_players").insert({
-        tournament_id: data.id,
-        user_id: user.id,
-        status: "approved",
-        joined_via: "invite",
+      const response = await fetch("/api/tournaments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: form.name.trim(),
+          court_count: +form.court_count,
+          max_players: +form.max_players,
+          type: form.type as TournamentType,
+          games_per_player: form.type ? +form.games_per_player : null,
+          advancement_count: form.advancement_count && +form.advancement_count > 0 ? +form.advancement_count : null,
+          rules_text: form.rules_text.trim() || null,
+          is_public: form.is_public,
+        }),
       });
+      const result = await response.json();
 
-      if (form.type === "doubles") {
-        // Create fixed empty team slots (max_players / 2). No one is placed yet —
-        // everyone (including the creator) picks a slot from the team grid.
-        const teamCount = Math.max(2, Math.floor(+form.max_players / 2));
-        for (let i = 1; i <= teamCount; i++) {
-          await supabase.from("teams").insert({ tournament_id: data.id, name: `Team ${i}` });
-        }
-      } else if (form.type === "singles") {
-        // Singles: creator auto-gets their own team (1 player = 1 team)
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("first_name, last_name, email")
-          .eq("id", user.id)
-          .single();
-        const teamName = profile
-          ? [profile.first_name, profile.last_name].filter(Boolean).join(" ") || profile.email
-          : user.email ?? "Creator";
-        const { data: team } = await supabase
-          .from("teams")
-          .insert({ tournament_id: data.id, name: teamName })
-          .select()
-          .single();
-        if (team) {
-          await supabase.from("team_members").insert({ team_id: team.id, user_id: user.id });
-        }
+      if (!response.ok) {
+        throw { code: response.status === 409 ? "23505" : undefined, message: result.error ?? "Failed to create tournament" };
       }
-      // mixed: no teams created
 
       toast("Tournament created!", "success");
-      router.push(`/tournaments/${data.id}`);
+      router.push(`/tournaments/${result.tournament.id}`);
     } catch (err: any) {
       if (err.code === "23505" || err.message?.includes("tournaments_name_key")) {
         setErrors({ name: "This tournament name is already taken. Please choose another." });
