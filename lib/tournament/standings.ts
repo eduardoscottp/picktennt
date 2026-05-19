@@ -1,4 +1,4 @@
-import type { Match } from "@/types/database";
+import type { Match, Round } from "@/types/database";
 
 export interface StandingRow {
   id: string; // team or player id
@@ -137,6 +137,85 @@ export function computeIndividualStandingsFromTeams(
   });
   rows.forEach((r, i) => { r.rank = i + 1; });
   return rows;
+}
+
+/**
+ * Given validated bracket matches and their round types, returns entity_id → final position
+ * for entities with a determined bracket result.
+ * entityKey "team" → uses team_a_id/team_b_id; "player" → uses player_a1_id/player_b1_id.
+ * rrRows is used to sort losers within the same elimination round by their RR seed.
+ */
+export function computeBracketFinishPositions(
+  bracketMatches: Match[],
+  rounds: Pick<Round, "id" | "round_type" | "round_number">[],
+  entityKey: "team" | "player",
+  rrRows: StandingRow[]
+): Map<string, number> {
+  const roundById = new Map(rounds.map((r) => [r.id, r]));
+  const rrRankById = new Map(rrRows.map((r) => [r.id, r.rank]));
+  const positions = new Map<string, number>();
+
+  function entities(m: Match): [string | null, string | null] {
+    return entityKey === "team"
+      ? [m.team_a_id, m.team_b_id]
+      : [m.player_a1_id, m.player_b1_id];
+  }
+
+  function winnerLoser(m: Match): [string, string] | null {
+    const [a, b] = entities(m);
+    if (!a || !b || m.score_a == null || m.score_b == null) return null;
+    return m.score_a >= m.score_b ? [a, b] : [b, a];
+  }
+
+  // Gold and bronze finals
+  for (const m of bracketMatches) {
+    if (m.status !== "validated") continue;
+    const round = roundById.get(m.round_id);
+    if (!round) continue;
+    const wl = winnerLoser(m);
+    if (!wl) continue;
+    const [winner, loser] = wl;
+    if (round.round_type === "finals_gold") {
+      positions.set(winner, 1);
+      positions.set(loser, 2);
+    } else if (round.round_type === "finals_bronze") {
+      positions.set(winner, 3);
+      positions.set(loser, 4);
+    }
+  }
+
+  // Permanently-eliminated losers (elimination rounds where losers don't go to bronze)
+  const elimLosers = bracketMatches
+    .filter((m) => {
+      if (m.status !== "validated") return false;
+      const round = roundById.get(m.round_id);
+      return round?.round_type === "elimination" && m.bracket_next_loser_match_id === null;
+    });
+
+  // Group by round_id, sort groups by round_number descending (QF before R16 = higher positions first)
+  const byRound = new Map<string, { roundNumber: number; losers: string[] }>();
+  for (const m of elimLosers) {
+    const round = roundById.get(m.round_id)!;
+    const wl = winnerLoser(m);
+    if (!wl) continue;
+    const loser = wl[1];
+    if (!byRound.has(m.round_id)) {
+      byRound.set(m.round_id, { roundNumber: round.round_number, losers: [] });
+    }
+    byRound.get(m.round_id)!.losers.push(loser);
+  }
+
+  const sortedGroups = [...byRound.values()].sort((a, b) => b.roundNumber - a.roundNumber);
+
+  let basePosition = 5; // positions 1-4 already assigned from gold/bronze
+  for (const group of sortedGroups) {
+    // Sort within the group by RR rank ascending (better seed = better sub-rank)
+    group.losers.sort((a, b) => (rrRankById.get(a) ?? 999) - (rrRankById.get(b) ?? 999));
+    group.losers.forEach((id, idx) => positions.set(id, basePosition + idx));
+    basePosition += group.losers.length;
+  }
+
+  return positions;
 }
 
 /**

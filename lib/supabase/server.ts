@@ -1,6 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 400; // 400 days
+
 export async function createClient() {
   const cookieStore = await cookies();
 
@@ -15,7 +17,7 @@ export async function createClient() {
         setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
+              cookieStore.set(name, value, { maxAge: COOKIE_MAX_AGE, ...options })
             );
           } catch {}
         },
@@ -38,7 +40,7 @@ export async function createAdminClient() {
         setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
+              cookieStore.set(name, value, { maxAge: COOKIE_MAX_AGE, ...options })
             );
           } catch {}
         },

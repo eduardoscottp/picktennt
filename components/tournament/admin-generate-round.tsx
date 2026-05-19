@@ -64,6 +64,8 @@ export function AdminGenerateRound({
     : [];
   const hasIncompleteTeams = incompleteTeams.length > 0;
   const notEnoughEntities = entityCount < 2;
+  const rosterFull = playerCount >= tournament.max_players;
+  const missingPlayers = Math.max(0, tournament.max_players - playerCount);
 
   const totalRounds = entityCount < 2
     ? "?"
@@ -76,7 +78,7 @@ export function AdminGenerateRound({
       );
 
   const pendingRRCount = rrMatches.filter((m) => m.status !== "validated").length;
-  const advancementOptions = [4, 8].filter((count) => count <= entityCount);
+  const advancementOptions = [2, 4, 8].filter((count) => count <= entityCount);
 
   async function fetchTeamIds(supabase: ReturnType<typeof createClient>) {
     const { data, error } = await supabase
@@ -214,14 +216,6 @@ export function AdminGenerateRound({
 
       for (let i = 0; i < schedule.length; i++) {
         await insertRound(supabase, i + 1, schedule[i]);
-      }
-
-      // Auto-activate tournament if still in registration
-      if (tournament.status === "registration") {
-        await supabase
-          .from("tournaments")
-          .update({ status: "active" })
-          .eq("id", tournament.id);
       }
 
       toast(`Round Robin generated — ${schedule.length} rounds!`, "success");
@@ -398,7 +392,7 @@ export function AdminGenerateRound({
                   {advancementOptions.map((count) => (
                     <Button key={count} onClick={() => generateBracket(count)} loading={loading} className="w-full">
                       <Trophy className="h-4 w-4" />
-                      Generate Top {count}
+                      {count === 2 ? "Final Only (Top 2)" : `Generate Top ${count}`}
                     </Button>
                   ))}
                 </div>
@@ -411,7 +405,7 @@ export function AdminGenerateRound({
   }
 
   // ── No schedule yet ────────────────────────────────────────────────────────
-  const canGenerate = !notEnoughEntities && !hasIncompleteTeams;
+  const canGenerate = rosterFull && !notEnoughEntities && !hasIncompleteTeams;
 
   return (
     <Card>
@@ -444,6 +438,13 @@ export function AdminGenerateRound({
               </span>
             </span>
           </label>
+        )}
+
+        {!rosterFull && (
+          <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5 text-xs text-amber-800 font-medium flex items-center gap-2">
+            <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
+            {missingPlayers} player{missingPlayers !== 1 ? "s" : ""} still need{missingPlayers === 1 ? "s" : ""} to join before the schedule can be generated.
+          </div>
         )}
 
         {notEnoughEntities && (

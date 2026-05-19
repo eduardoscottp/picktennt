@@ -11,7 +11,7 @@ import { AdminGenerateRound } from "@/components/tournament/admin-generate-round
 import { AdminAddPlayer } from "@/components/tournament/admin-add-player";
 import { DoublesTeamGrid } from "@/components/tournament/doubles-team-grid";
 import { ShareButton } from "@/components/tournament/share-button";
-import { TournamentBottomNav } from "@/components/tournament/tournament-bottom-nav";
+import { TournamentBottomNav, TournamentTopNav } from "@/components/tournament/tournament-bottom-nav";
 import type { Profile, Tournament, Match } from "@/types/database";
 
 export default async function AdminPage({ params }: { params: Promise<{ id: string }> }) {
@@ -85,7 +85,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
   // Fetch rounds to know if a schedule already exists
   const { data: roundsRaw } = await supabase
     .from("rounds")
-    .select("id")
+    .select("id, round_type")
     .eq("tournament_id", id);
   const hasExistingRounds = (roundsRaw ?? []).length > 0;
 
@@ -101,7 +101,9 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
       && m.bracket_winner_fills_side === null
   );
   const rrAllValidated = rrMatches.length > 0 && rrMatches.every((m) => m.status === "validated");
-  const hasBracketAlready = allMatches.some((m) => m.bracket_next_winner_match_id !== null);
+  const bracketRoundTypes = new Set(["elimination", "finals_gold", "finals_bronze"]);
+  const hasBracketAlready = (roundsRaw ?? []).some((r: any) => bracketRoundTypes.has(r.round_type));
+  const allMatchesValidated = allMatches.length > 0 && allMatches.every((m) => m.status === "validated");
 
   const joinUrl = generateJoinUrl(tournament.join_code);
   const currentUserPlayer = (approvedPlayers ?? []).find((p: any) => p.user_id === user.id);
@@ -110,6 +112,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
     <div className="max-w-2xl mx-auto">
       <MobileHeader title="Admin Panel" back={`/tournaments/${id}`} />
       <div className="px-4 py-6 pb-32 space-y-5">
+        <TournamentTopNav tournamentId={id} isAdmin={true} />
 
         {/* Status + actions */}
         <Card>
@@ -122,7 +125,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <AdminStatusActions tournament={tournament} />
+            <AdminStatusActions tournament={tournament} hasExistingRounds={hasExistingRounds} allMatchesValidated={allMatchesValidated} />
             <div className="flex items-center gap-2 text-sm text-gray-500">
               <span>Join code:</span>
               <span className="font-mono font-bold text-brand-600">{tournament.join_code}</span>
