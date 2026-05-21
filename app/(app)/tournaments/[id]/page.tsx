@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { BookOpen, CalendarClock, Clock3, Settings, Share2, Trophy, Users } from "lucide-react";
+import { BookOpen, CalendarClock, Clock3, Trophy, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,8 +14,6 @@ import {
 import { JoinButton } from "@/components/tournament/join-button";
 import { ShareButton } from "@/components/tournament/share-button";
 import { ScoreEntryButton } from "@/components/tournament/score-entry-button";
-import { AdminStatusActions } from "@/components/tournament/admin-status-actions";
-import { AdminGenerateRound } from "@/components/tournament/admin-generate-round";
 import { PlayersDialog } from "@/components/tournament/players-dialog";
 import { DoublesTeamGrid } from "@/components/tournament/doubles-team-grid";
 import { TournamentBottomNav, TournamentTopNav } from "@/components/tournament/tournament-bottom-nav";
@@ -204,31 +202,11 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
                 maxPlayers={tournament.max_players}
               />
             )}
-            {isAdmin && (
-              <Link href={`/tournaments/${id}/admin`}>
-                <Button variant="outline" size="icon" aria-label="Tournament settings">
-                  <Settings className="h-4 w-4" />
-                </Button>
-              </Link>
-            )}
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          <ShareButton joinUrl={joinUrl} joinCode={tournament.join_code} />
-          {isAdmin ? (
-            <Link href={`/tournaments/${id}/admin`}>
-              <Button variant="outline" className="w-full">
-                <Settings className="h-4 w-4" />
-                Settings
-              </Button>
-            </Link>
-          ) : (
-            <div className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-500 flex items-center justify-center gap-1">
-              <Share2 className="h-3.5 w-3.5" />
-              Code {tournament.join_code}
-            </div>
-          )}
+        <div className="mt-4">
+          <ShareButton joinUrl={joinUrl} joinCode={tournament.join_code} large />
         </div>
 
         {user && !isMember && !isAdmin && (
@@ -357,21 +335,14 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
       }
     }
 
-    const allMatchesValidated = matches.length > 0 && matches.every((m: any) => m.status === "validated");
-
-    // Admin setup data (computed from already-fetched matches/rounds)
+    // Data for standings computation
     const activeRrMatches = matches.filter((m: any) =>
       m.bracket_next_winner_match_id === null &&
       m.bracket_next_loser_match_id === null &&
       m.bracket_winner_fills_side === null
     ) as Match[];
-    const activeHasExistingRounds = (rounds ?? []).length > 0;
-    const activeRrAllValidated = activeRrMatches.length > 0 && activeRrMatches.every((m: any) => m.status === "validated");
     const bracketRoundTypes = new Set(["elimination", "finals_gold", "finals_bronze"]);
     const activeHasBracketAlready = (rounds ?? []).some((r: any) => bracketRoundTypes.has(r.round_type));
-    const teamsDataForAdmin = !isMixed
-      ? allTeams.map((t) => ({ id: t.id as string, memberCount: (t.team_members ?? []).length as number }))
-      : undefined;
 
     // Standings: RR-only as baseline, bracket positions overlaid when bracket exists
     const rrStandings = isMixed
@@ -511,28 +482,6 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
           <TournamentTopNav tournamentId={id} isAdmin={isAdmin} />
           {headerCard}
           {stageProgress}
-
-          {/* Admin setup controls */}
-          {isAdmin && (
-            <div className="space-y-3">
-              <AdminStatusActions tournament={tournament} hasExistingRounds={activeHasExistingRounds} allMatchesValidated={allMatchesValidated} />
-              {tournament.status !== "completed" && (
-                <AdminGenerateRound
-                  tournament={tournament}
-                  playerCount={players.length}
-                  teamsData={teamsDataForAdmin}
-                  currentUserId={user!.id}
-                  isCurrentUserPlayer={isMember}
-                  currentUserTeamId={myTeamId}
-                  hasExistingRounds={activeHasExistingRounds}
-                  rrMatches={activeRrMatches}
-                  rrAllValidated={activeRrAllValidated}
-                  hasBracketAlready={activeHasBracketAlready}
-                  advancingCount={tournament.advancement_count ?? null}
-                />
-              )}
-            </div>
-          )}
 
           {/* Team grid for doubles: show slot picker if player has no team yet */}
           {isDoubles && isMember && !myTeamId && (
@@ -718,33 +667,6 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
   }
 
   // ── REGISTRATION / DRAFT: show player list + join ───────────────────────
-  const { data: admins } = await supabase
-    .from("tournament_admins")
-    .select("*, profile:profiles(*)")
-    .eq("tournament_id", id)
-    .order("succession_order");
-
-  // Admin setup data
-  let regHasExistingRounds = false;
-  let regRrMatches: Match[] = [];
-  let regRrAllValidated = false;
-  let regHasBracketAlready = false;
-  if (isAdmin) {
-    const { data: roundsRaw } = await supabase.from("rounds").select("id").eq("tournament_id", id);
-    regHasExistingRounds = (roundsRaw ?? []).length > 0;
-    const { data: allMatchesRaw } = await supabase.from("matches").select("*").eq("tournament_id", id);
-    const allMatches = (allMatchesRaw ?? []) as Match[];
-    regRrMatches = allMatches.filter((m) =>
-      m.bracket_next_winner_match_id === null &&
-      m.bracket_next_loser_match_id === null &&
-      m.bracket_winner_fills_side === null
-    );
-    regRrAllValidated = regRrMatches.length > 0 && regRrMatches.every((m) => m.status === "validated");
-    regHasBracketAlready = allMatches.some((m) => m.bracket_next_winner_match_id !== null);
-  }
-  const regTeamsDataForAdmin = !isMixed
-    ? allTeams.map((t) => ({ id: t.id as string, memberCount: (t.team_members ?? []).length as number }))
-    : undefined;
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -753,28 +675,6 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
         <TournamentTopNav tournamentId={id} isAdmin={isAdmin} />
         {headerCard}
         {stageProgress}
-
-        {/* Admin setup controls */}
-        {isAdmin && (
-          <div className="space-y-3">
-            <AdminStatusActions tournament={tournament} hasExistingRounds={regHasExistingRounds} />
-            {tournament.status !== "completed" && (
-              <AdminGenerateRound
-                tournament={tournament}
-                playerCount={players.length}
-                teamsData={regTeamsDataForAdmin}
-                currentUserId={user!.id}
-                isCurrentUserPlayer={isMember}
-                currentUserTeamId={myTeamId}
-                hasExistingRounds={regHasExistingRounds}
-                rrMatches={regRrMatches}
-                rrAllValidated={regRrAllValidated}
-                hasBracketAlready={regHasBracketAlready}
-                advancingCount={tournament.advancement_count ?? null}
-              />
-            )}
-          </div>
-        )}
 
         {tournament.rules_text && (
           <Card>

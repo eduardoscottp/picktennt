@@ -85,6 +85,13 @@ export function ScoreEntryButton({ match, userId, isAdmin, isMixed }: Props) {
       const { error } = await supabase.from("matches").update(update).eq("id", match.id);
       if (error) throw error;
 
+      // First score entered → auto-promote tournament out of registration.
+      await supabase
+        .from("tournaments")
+        .update({ status: "active" })
+        .eq("id", match.tournament_id)
+        .in("status", ["draft", "registration"]);
+
       // Auto-advance bracket when admin validates a bracket match
       if (isAdmin && update.status === "validated") {
         await advanceBracket(supabase, sa, sb);

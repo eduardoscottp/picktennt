@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -218,6 +217,13 @@ export function AdminGenerateRound({
         await insertRound(supabase, i + 1, schedule[i]);
       }
 
+      // Auto-start the tournament once a schedule exists.
+      await supabase
+        .from("tournaments")
+        .update({ status: "active" })
+        .eq("id", tournament.id)
+        .in("status", ["draft", "registration"]);
+
       toast(`Round Robin generated — ${schedule.length} rounds!`, "success");
       router.refresh();
     } catch (err: any) {
@@ -357,12 +363,6 @@ export function AdminGenerateRound({
               </p>
             </div>
           </div>
-
-          <Link href={`/tournaments/${tournament.id}`}>
-            <Button variant="outline" className="w-full">
-              View Tournament
-            </Button>
-          </Link>
 
           {/* Bracket phase */}
           {advancementOptions.length > 0 && (

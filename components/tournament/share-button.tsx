@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 
-export function ShareButton({ joinUrl, joinCode }: { joinUrl: string; joinCode: string }) {
+export function ShareButton({ joinUrl, joinCode, large = false }: { joinUrl: string; joinCode: string; large?: boolean }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const { toast } = useToast();
@@ -30,9 +30,16 @@ export function ShareButton({ joinUrl, joinCode }: { joinUrl: string; joinCode: 
 
   return (
     <>
-      <Button variant="outline" size="icon" onClick={share}>
-        <Share2 className="h-4 w-4" />
-      </Button>
+      {large ? (
+        <Button onClick={share} className="w-full h-12 text-base">
+          <Share2 className="h-5 w-5" />
+          Share Tournament · Code {joinCode}
+        </Button>
+      ) : (
+        <Button variant="outline" size="icon" onClick={share}>
+          <Share2 className="h-4 w-4" />
+        </Button>
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
