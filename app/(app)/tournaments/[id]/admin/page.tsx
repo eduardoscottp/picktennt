@@ -9,6 +9,7 @@ import { AdminPlayerActions } from "@/components/tournament/admin-player-actions
 import { AdminStatusActions } from "@/components/tournament/admin-status-actions";
 import { AdminGenerateRound } from "@/components/tournament/admin-generate-round";
 import { AdminAddPlayer } from "@/components/tournament/admin-add-player";
+import { AdminUploadDupr } from "@/components/tournament/admin-upload-dupr";
 import { DoublesTeamGrid } from "@/components/tournament/doubles-team-grid";
 import { ShareButton } from "@/components/tournament/share-button";
 import { TournamentBottomNav, TournamentTopNav } from "@/components/tournament/tournament-bottom-nav";
@@ -133,6 +134,11 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
             </div>
           </CardContent>
         </Card>
+
+        {/* DUPR upload — only shown for completed tournaments */}
+        {tournament.status === "completed" && (
+          <AdminUploadDupr tournamentId={id} />
+        )}
 
         {/* Schedule card — handles RR generation, validation, and bracket phase */}
         {tournament.status !== "draft" && tournament.status !== "completed" && (

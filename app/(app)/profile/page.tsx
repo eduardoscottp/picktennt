@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { EditProfileForm } from "@/components/auth/edit-profile-form";
+import { DuprIdCard } from "@/components/auth/dupr-id-card";
 import { AccountActions } from "@/components/auth/account-actions";
 import { getInitials, duprRatingColor, statusLabel, tournamentTypeLabel, formatDate } from "@/lib/utils";
 import { Trophy, TrendingUp, Target, Calendar } from "lucide-react";
@@ -99,6 +100,12 @@ export default async function ProfilePage() {
                     </span>
                   </div>
                 )}
+                {profile?.dupr_id && (
+                  <div className="flex items-center gap-1 mt-0.5">
+                    <span className="text-xs text-gray-400">DUPR ID</span>
+                    <span className="text-xs font-mono font-bold text-gray-700">{profile.dupr_id}</span>
+                  </div>
+                )}
               </div>
             </div>
             <div className="mt-4 space-y-3">
@@ -107,6 +114,9 @@ export default async function ProfilePage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* DUPR ID — always-visible quick edit */}
+        <DuprIdCard profileId={user.id} currentDuprId={profile?.dupr_id ?? null} />
 
         {/* Stats */}
         <div className="grid grid-cols-4 gap-2">
