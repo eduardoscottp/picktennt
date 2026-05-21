@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
 import { MobileHeader } from "@/components/layout/navbar";
@@ -53,11 +52,15 @@ export default function CreateTournamentPage() {
       if (!form.name.trim()) e.name = "Tournament name is required";
       if (!form.court_count || +form.court_count < 1) e.court_count = "At least 1 court";
       if (!form.max_players || +form.max_players < 2) e.max_players = "At least 2 players";
+      if ((form.type === "doubles" || form.type === "mixed") && +form.max_players % 2 !== 0)
+        e.max_players = "Must be an even number for doubles/mixed";
     }
     if (step === 1) {
       if (!form.type) e.type = "Select a tournament type";
       if (form.type && (!form.games_per_player || +form.games_per_player < 1))
         e.games_per_player = "Must be at least 1";
+      if ((form.type === "doubles" || form.type === "mixed") && +form.max_players % 2 !== 0)
+        e.max_players = "Max players must be an even number for doubles/mixed — go back to fix it";
     }
     if (step === 2) {
       const adv = +form.advancement_count;
@@ -150,6 +153,7 @@ export default function CreateTournamentPage() {
                   value={form.max_players}
                   onChange={(e) => set("max_players", e.target.value)}
                   error={errors.max_players}
+                  hint={(form.type === "doubles" || form.type === "mixed") ? "Must be even" : undefined}
                 />
               </div>
               <div className="flex items-center gap-3">
@@ -206,6 +210,10 @@ export default function CreateTournamentPage() {
                   ))}
                 </div>
               </div>
+
+              {errors.max_players && (
+                <p className="text-xs text-red-500 -mt-1">{errors.max_players}</p>
+              )}
 
               {form.type && (
                 <Input

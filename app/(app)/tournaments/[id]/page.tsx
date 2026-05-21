@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { BookOpen, CalendarClock, Clock3, Settings, Share2, Trophy, Users } from "lucide-react";
+import { BookOpen, CalendarClock, Clock3, Trophy, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,8 @@ import { ScoreEntryButton } from "@/components/tournament/score-entry-button";
 import { PlayersDialog } from "@/components/tournament/players-dialog";
 import { DoublesTeamGrid } from "@/components/tournament/doubles-team-grid";
 import { TournamentBottomNav, TournamentTopNav } from "@/components/tournament/tournament-bottom-nav";
-import { computeIndividualStandingsFromTeams, computeStandings } from "@/lib/tournament/standings";
+import { computeIndividualStandingsFromTeams, computeStandings, computeBracketFinishPositions } from "@/lib/tournament/standings";
+import type { StandingRow } from "@/lib/tournament/standings";
 import type { Match, Profile, Round, Tournament } from "@/types/database";
 
 const ACTIVE_STATUSES = new Set(["active", "finals", "completed"]);
@@ -201,31 +202,11 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
                 maxPlayers={tournament.max_players}
               />
             )}
-            {isAdmin && (
-              <Link href={`/tournaments/${id}/admin`}>
-                <Button variant="outline" size="icon" aria-label="Tournament settings">
-                  <Settings className="h-4 w-4" />
-                </Button>
-              </Link>
-            )}
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          <ShareButton joinUrl={joinUrl} joinCode={tournament.join_code} />
-          {isAdmin ? (
-            <Link href={`/tournaments/${id}/admin`}>
-              <Button variant="outline" className="w-full">
-                <Settings className="h-4 w-4" />
-                Settings
-              </Button>
-            </Link>
-          ) : (
-            <div className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-500 flex items-center justify-center gap-1">
-              <Share2 className="h-3.5 w-3.5" />
-              Code {tournament.join_code}
-            </div>
-          )}
+        <div className="mt-4">
+          <ShareButton joinUrl={joinUrl} joinCode={tournament.join_code} large />
         </div>
 
         {user && !isMember && !isAdmin && (
@@ -354,10 +335,57 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
       }
     }
 
-    const standings = isMixed
-      ? computeStandings(matches as Match[], "player")
-      : computeIndividualStandingsFromTeams(matches as Match[], teamToMembers);
-    const standingsByPlayer = new Map(standings.map((row) => [row.id, row]));
+    // Data for standings computation
+    const activeRrMatches = matches.filter((m: any) =>
+      m.bracket_next_winner_match_id === null &&
+      m.bracket_next_loser_match_id === null &&
+      m.bracket_winner_fills_side === null
+    ) as Match[];
+    const bracketRoundTypes = new Set(["elimination", "finals_gold", "finals_bronze"]);
+    const activeHasBracketAlready = (rounds ?? []).some((r: any) => bracketRoundTypes.has(r.round_type));
+
+    // Standings: RR-only as baseline, bracket positions overlaid when bracket exists
+    const rrStandings = isMixed
+      ? computeStandings(activeRrMatches, "player")
+      : computeIndividualStandingsFromTeams(activeRrMatches, teamToMembers);
+
+    let standingsByPlayer: Map<string, StandingRow>;
+    if (activeHasBracketAlready) {
+      const roundTypeById = new Map((rounds ?? []).map((r: any) => [r.id, r.round_type]));
+      const bracketMatches = matches.filter((m: any) =>
+        roundTypeById.get(m.round_id) !== "round_robin"
+      ) as Match[];
+
+
+      const bracketPositions = computeBracketFinishPositions(
+        bracketMatches,
+        rounds ?? [],
+        isMixed ? "player" : "team",
+        rrStandings
+      );
+
+
+      const playerBracketRank = new Map<string, number>();
+      if (isMixed) {
+        for (const [pid, rank] of bracketPositions) playerBracketRank.set(pid, rank);
+      } else {
+        for (const [teamId, rank] of bracketPositions) {
+          for (const memberId of (teamToMembers.get(teamId) ?? [])) {
+            playerBracketRank.set(memberId, rank);
+          }
+        }
+      }
+
+
+      const finalRows = rrStandings.map((row) => ({
+        ...row,
+        rank: playerBracketRank.has(row.id) ? playerBracketRank.get(row.id)! : row.rank,
+      }));
+      standingsByPlayer = new Map(finalRows.map((r) => [r.id, r]));
+    } else {
+      standingsByPlayer = new Map(rrStandings.map((r) => [r.id, r]));
+    }
+
     const roundById = new Map((rounds ?? []).map((round: Round) => [round.id, round]));
     const playerStats = players.map((player: any) => {
       const teamIds = playerToTeams.get(player.user_id as string) ?? new Set<string>();
@@ -639,11 +667,6 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
   }
 
   // ── REGISTRATION / DRAFT: show player list + join ───────────────────────
-  const { data: admins } = await supabase
-    .from("tournament_admins")
-    .select("*, profile:profiles(*)")
-    .eq("tournament_id", id)
-    .order("succession_order");
 
   return (
     <div className="max-w-2xl mx-auto">

@@ -5,8 +5,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { getInitials, duprRatingColor, tournamentTypeLabel } from "@/lib/utils";
-import { computeStandings } from "@/lib/tournament/standings";
-import { TournamentBottomNav } from "@/components/tournament/tournament-bottom-nav";
+import { computeStandings, computeBracketFinishPositions } from "@/lib/tournament/standings";
+import { TournamentBottomNav, TournamentTopNav } from "@/components/tournament/tournament-bottom-nav";
 import type { Match, Profile, Tournament } from "@/types/database";
 import { Trophy } from "lucide-react";
 
@@ -30,7 +30,14 @@ export default async function LeaderboardPage({ params }: { params: Promise<{ id
     : { data: null };
   const isAdmin = !!adminRow;
 
-  // Fetch all validated matches
+  // Fetch rounds (for bracket detection) and all validated matches
+  const { data: roundsRaw } = await supabase
+    .from("rounds")
+    .select("id, round_type, round_number")
+    .eq("tournament_id", id)
+    .order("round_number");
+  const rounds = (roundsRaw ?? []) as any[];
+
   const { data: matches } = await supabase
     .from("matches")
     .select("*")
@@ -38,7 +45,27 @@ export default async function LeaderboardPage({ params }: { params: Promise<{ id
     .eq("status", "validated");
 
   const allMatches = (matches ?? []) as Match[];
-  const standings = computeStandings(allMatches, isMixed ? "player" : "team");
+
+  const bracketRoundTypes = new Set(["elimination", "finals_gold", "finals_bronze"]);
+  const hasBracket = rounds.some((r) => bracketRoundTypes.has(r.round_type));
+  const roundTypeById = new Map(rounds.map((r) => [r.id, r.round_type]));
+  const rrMatches = allMatches.filter((m) => roundTypeById.get(m.round_id) === "round_robin");
+  const bracketMatches = allMatches.filter((m) => roundTypeById.get(m.round_id) !== "round_robin");
+
+  const baseStandings = computeStandings(rrMatches, isMixed ? "player" : "team");
+
+  let standings = baseStandings;
+  if (hasBracket) {
+    const bracketPositions = computeBracketFinishPositions(
+      bracketMatches,
+      rounds,
+      isMixed ? "player" : "team",
+      baseStandings
+    );
+    standings = baseStandings.map((row) =>
+      bracketPositions.has(row.id) ? { ...row, rank: bracketPositions.get(row.id)! } : row
+    ).sort((a, b) => a.rank - b.rank);
+  }
 
   // Fetch entity details
   const entityMap = new Map<string, { name: string; avatar?: string; rating?: number | null }>();
@@ -80,6 +107,7 @@ export default async function LeaderboardPage({ params }: { params: Promise<{ id
     <div className="max-w-2xl mx-auto">
       <MobileHeader title="Standings" back={`/tournaments/${id}`} />
       <div className="px-4 py-6 pb-32 space-y-5">
+        <TournamentTopNav tournamentId={id} isAdmin={isAdmin} />
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-black text-gray-900">Leaderboard</h1>
           <Badge variant="secondary">{tournamentTypeLabel(tournament.type)}</Badge>
