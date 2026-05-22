@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -73,12 +73,15 @@ export function AdminUploadDupr({ tournamentId }: { tournamentId: string }) {
   const [confirmText, setConfirmText] = useState("");
   const { toast } = useToast();
 
-  async function loadPreflight() {
-    setLoadingPreflight(true);
+  async function fetchPreflight() {
+    const res = await fetch(`/api/tournaments/${tournamentId}/upload-dupr/preflight`);
+    return (await res.json()) as PreflightResponse;
+  }
+
+  async function loadPreflight(options?: { showLoading?: boolean }) {
+    if (options?.showLoading ?? true) setLoadingPreflight(true);
     try {
-      const res = await fetch(`/api/tournaments/${tournamentId}/upload-dupr/preflight`);
-      const body = await res.json();
-      setPreflight(body);
+      setPreflight(await fetchPreflight());
     } catch (err: any) {
       toast(err.message ?? "Preflight failed", "error");
     } finally {
@@ -86,9 +89,23 @@ export function AdminUploadDupr({ tournamentId }: { tournamentId: string }) {
     }
   }
 
+  const loadPreflightEffect = useEffectEvent(async () => {
+    setLoadingPreflight(true);
+    try {
+      setPreflight(await fetchPreflight());
+    } catch (err: any) {
+      toast(err.message ?? "Preflight failed", "error");
+    } finally {
+      setLoadingPreflight(false);
+    }
+  });
+
   useEffect(() => {
-    loadPreflight();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const timeoutId = window.setTimeout(() => {
+      void loadPreflightEffect();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
   }, [tournamentId]);
 
   async function upload() {
@@ -165,7 +182,7 @@ export function AdminUploadDupr({ tournamentId }: { tournamentId: string }) {
                 <p className="text-[11px] text-red-600 pl-5">
                   Ask each player to add their DUPR ID in their profile, then refresh.
                 </p>
-                <Button variant="outline" size="sm" onClick={loadPreflight} className="w-full">
+                <Button variant="outline" size="sm" onClick={() => { void loadPreflight(); }} className="w-full">
                   Refresh
                 </Button>
               </div>
@@ -190,7 +207,7 @@ export function AdminUploadDupr({ tournamentId }: { tournamentId: string }) {
                 <p className="text-[11px] text-red-600 pl-5">
                   Add these players to the DUPR club, or correct their DUPR ID in profile.
                 </p>
-                <Button variant="outline" size="sm" onClick={loadPreflight} className="w-full">
+                <Button variant="outline" size="sm" onClick={() => { void loadPreflight(); }} className="w-full">
                   Refresh
                 </Button>
               </div>

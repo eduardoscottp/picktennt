@@ -44,7 +44,7 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
     }
   }
 
-  let notInClub: { id: string; first_name: string | null; last_name: string | null; email: string; duprId: string }[] = [];
+  const notInClub: { id: string; first_name: string | null; last_name: string | null; email: string; duprId: string }[] = [];
   let clubLookupError: string | null = null;
 
   if (missing.length === 0 && matches.length > 0) {
