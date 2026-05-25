@@ -39,6 +39,9 @@ export interface Tournament {
   rules_text: string | null;
   status: TournamentStatus;
   is_public: boolean;
+  tournament_date: string | null;
+  court_name: string | null;
+  court_address: string | null;
   created_at: string;
   updated_at: string;
 }
