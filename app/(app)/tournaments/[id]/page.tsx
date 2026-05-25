@@ -1,7 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { BookOpen, CalendarClock, Clock3, Trophy, Users } from "lucide-react";
+import { BookOpen, CalendarClock, MapPin, Trophy, Users } from "lucide-react";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,17 +39,6 @@ function stageIndex(status: string) {
   return 0;
 }
 
-function formatShortDateTime(value: string | null | undefined) {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
-}
 
 function hasPlayerInMatch(match: any, playerId: string, teamIds: Set<string>) {
   return Boolean(
@@ -135,7 +125,6 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
   }
 
   const playerCountLabel = `${players.length} / ${tournament.max_players} players`;
-  const tournamentStartLabel = formatShortDateTime((tournament as any).starts_at ?? (tournament as any).start_time ?? null);
 
   const stageProgress = (
     <Card>
@@ -185,12 +174,18 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
             <div className="mt-3 space-y-1 text-xs text-gray-500">
               <p className="flex items-center gap-1.5">
                 <CalendarClock className="h-3.5 w-3.5" />
-                {tournamentStartLabel ? `Starts ${tournamentStartLabel}` : `Created ${formatDate(tournament.created_at)}`}
+                {tournament.tournament_date
+                  ? new Date(tournament.tournament_date + "T00:00:00").toLocaleDateString(undefined, { weekday: "short", year: "numeric", month: "long", day: "numeric" })
+                  : `Created ${formatDate(tournament.created_at)}`}
               </p>
-              {!tournamentStartLabel && (
-                <p className="flex items-center gap-1.5 text-gray-400">
-                  <Clock3 className="h-3.5 w-3.5" />
-                  Start date/time is not configured for this tournament.
+              {(tournament.court_name || tournament.court_address) && (
+                <p className="flex items-start gap-1.5">
+                  <MapPin className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+                  <span>
+                    {tournament.court_name && <span className="font-medium text-gray-700">{tournament.court_name}</span>}
+                    {tournament.court_name && tournament.court_address && " · "}
+                    {tournament.court_address}
+                  </span>
                 </p>
               )}
             </div>

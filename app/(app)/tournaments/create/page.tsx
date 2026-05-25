@@ -14,6 +14,9 @@ const STEPS = ["Basic Info", "Format", "Rounds & Finals", "Rules"];
 
 interface FormState {
   name: string;
+  tournament_date: string;
+  court_name: string;
+  court_address: string;
   court_count: string;
   max_players: string;
   type: TournamentType | "";
@@ -27,7 +30,8 @@ interface FormState {
 }
 
 const INITIAL: FormState = {
-  name: "", court_count: "2", max_players: "8", type: "",
+  name: "", tournament_date: "", court_name: "", court_address: "",
+  court_count: "2", max_players: "8", type: "",
   games_per_player: "4", second_round_format: "none",
   advancement_count: "0", finals_format: "none",
   finals_trigger: "none", rules_text: "", is_public: true,
@@ -50,6 +54,9 @@ export default function CreateTournamentPage() {
     const e: typeof errors = {};
     if (step === 0) {
       if (!form.name.trim()) e.name = "Tournament name is required";
+      if (!form.tournament_date) e.tournament_date = "Tournament date is required";
+      if (!form.court_name.trim()) e.court_name = "Venue / court name is required";
+      if (!form.court_address.trim()) e.court_address = "Venue address is required";
       if (!form.court_count || +form.court_count < 1) e.court_count = "At least 1 court";
       if (!form.max_players || +form.max_players < 2) e.max_players = "At least 2 players";
       if ((form.type === "doubles" || form.type === "mixed") && +form.max_players % 2 !== 0)
@@ -83,6 +90,9 @@ export default function CreateTournamentPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: form.name.trim(),
+          tournament_date: form.tournament_date || null,
+          court_name: form.court_name.trim() || null,
+          court_address: form.court_address.trim() || null,
           court_count: +form.court_count,
           max_players: +form.max_players,
           type: form.type as TournamentType,
@@ -138,6 +148,27 @@ export default function CreateTournamentPage() {
                 value={form.name}
                 onChange={(e) => set("name", e.target.value)}
                 error={errors.name}
+              />
+              <Input
+                label="Tournament Date"
+                type="date"
+                value={form.tournament_date}
+                onChange={(e) => set("tournament_date", e.target.value)}
+                error={errors.tournament_date}
+              />
+              <Input
+                label="Venue / Court Name"
+                placeholder="e.g. Bayfront Park Courts"
+                value={form.court_name}
+                onChange={(e) => set("court_name", e.target.value)}
+                error={errors.court_name}
+              />
+              <Input
+                label="Venue Address"
+                placeholder="e.g. 301 Biscayne Blvd, Miami, FL"
+                value={form.court_address}
+                onChange={(e) => set("court_address", e.target.value)}
+                error={errors.court_address}
               />
               <div className="grid grid-cols-2 gap-3">
                 <Input

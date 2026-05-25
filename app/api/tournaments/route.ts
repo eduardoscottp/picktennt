@@ -5,6 +5,9 @@ import type { FinalsFormat, FinalsTrigger, SecondRoundFormat, TournamentType } f
 
 type CreateTournamentBody = {
   name?: string;
+  tournament_date?: string | null;
+  court_name?: string | null;
+  court_address?: string | null;
   court_count?: number;
   max_players?: number;
   type?: TournamentType;
@@ -68,6 +71,9 @@ export async function POST(request: Request) {
     rules_text: body.rules_text?.trim() || null,
     is_public: body.is_public ?? true,
     status: "registration",
+    tournament_date: body.tournament_date ?? null,
+    court_name: body.court_name?.trim() || null,
+    court_address: body.court_address?.trim() || null,
   }).select().single();
 
   if (tournamentError) {
