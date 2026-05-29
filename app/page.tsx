@@ -13,6 +13,28 @@ const FEATURES = [
 export default function LandingPage() {
   return (
     <div className="flex flex-col min-h-dvh bg-white">
+
+      {/* Top Navbar */}
+      <nav className="sticky top-0 z-50 bg-white border-b border-gray-100 shadow-sm">
+        <div className="max-w-4xl mx-auto px-6 h-14 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Image
+              src="/images/logo.png"
+              alt="Picktennt Logo"
+              width={28}
+              height={28}
+              className="object-contain"
+            />
+            <span className="font-black text-brand-600 tracking-tight text-lg">PICKTENNT</span>
+          </div>
+          <a href="https://app.picktennt.com">
+            <Button size="sm" variant="primary" className="font-semibold">
+              Login
+            </Button>
+          </a>
+        </div>
+      </nav>
+
       {/* Hero */}
       <header className="relative overflow-hidden bg-gradient-to-br from-brand-500 to-brand-700 text-white">
         <div className="absolute inset-0 opacity-10"
@@ -38,16 +60,16 @@ export default function LandingPage() {
             The complete pickleball tournament platform. Create, manage, and play — all in one place.
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <Link href="/login?redirect=/dashboard">
+            <a href="https://app.picktennt.com">
               <Button size="xl" variant="white" className="w-full sm:w-auto font-black">
                 Get Started Free
               </Button>
-            </Link>
-            <Link href="/login?redirect=/tournaments">
+            </a>
+            <a href="https://app.picktennt.com/tournaments">
               <Button size="xl" variant="outline" className="w-full sm:w-auto border-white text-white hover:bg-white/10">
                 Browse Tournaments
               </Button>
-            </Link>
+            </a>
           </div>
         </div>
       </header>
@@ -71,11 +93,11 @@ export default function LandingPage() {
       <section className="bg-brand-500 text-white text-center py-16 px-6">
         <h2 className="text-3xl font-black mb-3">Ready to play?</h2>
         <p className="text-brand-100 mb-6">Join thousands of players managing their tournaments on Picktennt.</p>
-        <Link href="/login?redirect=/dashboard">
+        <a href="https://app.picktennt.com">
           <Button size="lg" variant="white" className="font-bold">
             Sign in with Google
           </Button>
-        </Link>
+        </a>
       </section>
 
       <footer className="text-center py-6 text-sm text-gray-400">
