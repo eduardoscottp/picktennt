@@ -52,6 +52,7 @@ export interface TournamentAdmin {
   user_id: string;
   succession_order: number;
   granted_by: string | null;
+  is_playing: boolean;
   created_at: string;
   profile?: Profile;
 }

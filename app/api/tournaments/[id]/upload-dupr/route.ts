@@ -66,6 +66,16 @@ export async function POST(_request: Request, ctx: { params: Promise<{ id: strin
   }
 
   const userIds = await collectMatchUserIds(admin, matches);
+
+  // Exclude non-playing admins from the DUPR submission
+  const { data: nonPlayingAdmins } = await admin
+    .from("tournament_admins")
+    .select("user_id")
+    .eq("tournament_id", id)
+    .eq("is_playing", false);
+  const nonPlayingIds = new Set((nonPlayingAdmins ?? []).map((a: any) => a.user_id));
+  for (const uid of nonPlayingIds) userIds.delete(uid);
+
   const profiles = await fetchProfiles(admin, Array.from(userIds));
 
   // VALIDATION GATE 1 — every player has dupr_id in our profile.

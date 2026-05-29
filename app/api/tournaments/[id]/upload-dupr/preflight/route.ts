@@ -33,6 +33,16 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
   const matches = (matchesRaw ?? []) as Match[];
 
   const userIds = await collectMatchUserIds(admin, matches);
+
+  // Exclude non-playing admins
+  const { data: nonPlayingAdmins } = await admin
+    .from("tournament_admins")
+    .select("user_id")
+    .eq("tournament_id", id)
+    .eq("is_playing", false);
+  const nonPlayingIds = new Set((nonPlayingAdmins ?? []).map((a: any) => a.user_id));
+  for (const uid of nonPlayingIds) userIds.delete(uid);
+
   const profiles = await fetchProfiles(admin, Array.from(userIds));
 
   const missing: Pick<Profile, "id" | "first_name" | "last_name" | "email">[] = [];

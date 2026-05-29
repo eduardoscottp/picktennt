@@ -14,7 +14,8 @@ import { AdminTournamentInfo } from "@/components/tournament/admin-tournament-in
 import { DoublesTeamGrid } from "@/components/tournament/doubles-team-grid";
 import { ShareButton } from "@/components/tournament/share-button";
 import { TournamentBottomNav, TournamentTopNav } from "@/components/tournament/tournament-bottom-nav";
-import type { Profile, Tournament, Match } from "@/types/database";
+import { AdminManageAdmins } from "@/components/tournament/admin-manage-admins";
+import type { Profile, Tournament, TournamentAdmin, Match } from "@/types/database";
 
 export default async function AdminPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -259,30 +260,12 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
           </>
         )}
 
-        {/* Admin succession */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Administrators</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {(admins ?? []).map((a: any, idx: number) => {
-              const profile = a.profile as Profile;
-              return (
-                <div key={a.id} className="flex items-center gap-3">
-                  <div className="w-6 text-xs font-bold text-gray-400">#{a.succession_order}</div>
-                  <Avatar className="h-8 w-8">
-                    <AvatarImage src={profile?.avatar_url ?? ""} />
-                    <AvatarFallback className="text-xs">{getInitials(profile?.first_name, profile?.last_name)}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 text-sm font-medium text-gray-900">
-                    {profile?.first_name} {profile?.last_name}
-                    {idx === 0 && <span className="ml-2 text-xs text-brand-500">Primary</span>}
-                  </div>
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
+        {/* Admin management */}
+        <AdminManageAdmins
+          tournamentId={id}
+          admins={(admins ?? []) as (TournamentAdmin & { profile: Profile })[]}
+          currentUserId={user.id}
+        />
       </div>
       <TournamentBottomNav tournamentId={id} isAdmin />
     </div>
