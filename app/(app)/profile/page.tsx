@@ -116,7 +116,7 @@ export default async function ProfilePage() {
         </Card>
 
         {/* DUPR ID — always-visible quick edit */}
-        <DuprIdCard profileId={user.id} currentDuprId={profile?.dupr_id ?? null} />
+        <DuprIdCard profileId={user.id} currentDuprId={profile?.dupr_id ?? null} firstName={profile?.first_name} lastName={profile?.last_name} />
 
         {/* Stats */}
         <div className="grid grid-cols-4 gap-2">
