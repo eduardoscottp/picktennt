@@ -28,7 +28,7 @@ export default function LandingPage() {
             <span className="font-black text-brand-600 tracking-tight text-lg">PICKTENNT</span>
           </div>
           <a href="https://app.picktennt.com">
-            <Button size="sm" variant="primary" className="font-semibold">
+            <Button size="sm" variant="default" className="font-semibold">
               Login
             </Button>
           </a>
