@@ -25,7 +25,6 @@ export function LoginForm() {
       provider: "google",
       options: {
         redirectTo: callbackUrl.toString(),
-        queryParams: { access_type: "offline", prompt: "consent" },
       },
     });
   }
