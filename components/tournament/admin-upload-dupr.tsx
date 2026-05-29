@@ -11,7 +11,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
-import { AlertCircle, AlertTriangle, CheckCircle2, Upload } from "lucide-react";
+import { AlertCircle, AlertTriangle, CheckCircle2, Upload, Search } from "lucide-react";
 
 interface MissingPlayer {
   id: string;
@@ -22,6 +22,14 @@ interface MissingPlayer {
 
 interface NotInClubPlayer extends MissingPlayer {
   duprId: string;
+}
+
+interface DuprCandidate {
+  id: number;
+  duprId: string;
+  fullName: string;
+  shortAddress: string | null;
+  ratings?: { singles?: number | null; doubles?: number | null } | null;
 }
 
 interface PreviewMatch {
@@ -71,6 +79,13 @@ export function AdminUploadDupr({ tournamentId }: { tournamentId: string }) {
   const [result, setResult] = useState<UploadResponse | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmText, setConfirmText] = useState("");
+
+  const [lookupPlayer, setLookupPlayer] = useState<MissingPlayer | null>(null);
+  const [lookupResults, setLookupResults] = useState<DuprCandidate[]>([]);
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+  const [savingDuprId, setSavingDuprId] = useState<string | null>(null);
+
   const { toast } = useToast();
 
   async function loadPreflight() {
@@ -90,6 +105,48 @@ export function AdminUploadDupr({ tournamentId }: { tournamentId: string }) {
     loadPreflight();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tournamentId]);
+
+  async function openLookup(player: MissingPlayer) {
+    setLookupPlayer(player);
+    setLookupResults([]);
+    setLookupError(null);
+    setLookupLoading(true);
+    try {
+      const res = await fetch(`/api/tournaments/${tournamentId}/lookup-dupr`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile_id: player.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setLookupResults(data.results ?? []);
+    } catch (err: any) {
+      setLookupError(err.message ?? "Search failed");
+    } finally {
+      setLookupLoading(false);
+    }
+  }
+
+  async function assignDuprId(duprId: string) {
+    if (!lookupPlayer) return;
+    setSavingDuprId(duprId);
+    try {
+      const res = await fetch(`/api/tournaments/${tournamentId}/lookup-dupr`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile_id: lookupPlayer.id, dupr_id: duprId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast(`DUPR ID ${duprId} saved for ${lookupPlayer.first_name ?? lookupPlayer.email}`, "success");
+      setLookupPlayer(null);
+      await loadPreflight();
+    } catch (err: any) {
+      toast(err.message ?? "Failed to save DUPR ID", "error");
+    } finally {
+      setSavingDuprId(null);
+    }
+  }
 
   async function upload() {
     setUploading(true);
@@ -152,19 +209,25 @@ export function AdminUploadDupr({ tournamentId }: { tournamentId: string }) {
                     Cannot upload — {preflight.missing.length} player(s) missing DUPR ID
                   </span>
                 </div>
-                <ul className="space-y-1 pl-5">
+                <ul className="space-y-1.5 pl-5">
                   {preflight.missing.map((p) => (
-                    <li key={p.id} className="text-xs text-red-700">
-                      <span className="font-medium">
-                        {(p.first_name ?? "") + " " + (p.last_name ?? "")}
-                      </span>
-                      <span className="text-red-500"> · {p.email}</span>
+                    <li key={p.id} className="flex items-center gap-2">
+                      <div className="flex-1 min-w-0">
+                        <span className="text-xs font-medium text-red-700">
+                          {(p.first_name ?? "") + " " + (p.last_name ?? "")}
+                        </span>
+                        <span className="text-xs text-red-500"> · {p.email}</span>
+                      </div>
+                      <button
+                        onClick={() => openLookup(p)}
+                        className="flex items-center gap-1 text-[11px] font-medium text-brand-600 hover:text-brand-700 bg-white border border-brand-200 rounded-lg px-2 py-1 transition-colors flex-shrink-0"
+                      >
+                        <Search className="h-3 w-3" />
+                        Find on DUPR
+                      </button>
                     </li>
                   ))}
                 </ul>
-                <p className="text-[11px] text-red-600 pl-5">
-                  Ask each player to add their DUPR ID in their profile, then refresh.
-                </p>
                 <Button variant="outline" size="sm" onClick={loadPreflight} className="w-full">
                   Refresh
                 </Button>
@@ -265,6 +328,73 @@ export function AdminUploadDupr({ tournamentId }: { tournamentId: string }) {
         )}
       </CardContent>
 
+      {/* DUPR Lookup Dialog */}
+      <Dialog open={!!lookupPlayer} onOpenChange={(open) => { if (!open) setLookupPlayer(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Search className="h-5 w-5 text-brand-500" />
+              Find DUPR Profile
+            </DialogTitle>
+            <DialogDescription>
+              Searching DUPR for{" "}
+              <span className="font-semibold text-gray-900">
+                {lookupPlayer?.first_name} {lookupPlayer?.last_name}
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            {lookupLoading && (
+              <p className="text-sm text-gray-400 text-center py-4">Searching DUPR…</p>
+            )}
+
+            {lookupError && (
+              <div className="rounded-xl bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-800">
+                {lookupError}
+              </div>
+            )}
+
+            {!lookupLoading && !lookupError && lookupResults.length === 0 && (
+              <div className="text-center py-4 space-y-2">
+                <p className="text-sm text-gray-500">No players found on DUPR</p>
+                <p className="text-xs text-gray-400">
+                  The player may not have a DUPR account, or their name may be different on DUPR.
+                </p>
+              </div>
+            )}
+
+            {lookupResults.length > 0 && (
+              <ul className="space-y-2 max-h-80 overflow-y-auto">
+                {lookupResults.map((c) => (
+                  <li key={c.duprId} className="rounded-xl border border-gray-200 p-3 hover:bg-gray-50 transition-colors">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-gray-900">{c.fullName}</div>
+                        {c.shortAddress && (
+                          <div className="text-xs text-gray-500 mt-0.5">{c.shortAddress}</div>
+                        )}
+                        <div className="text-xs text-gray-400 mt-0.5 font-mono">
+                          DUPR ID: {c.duprId}
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        loading={savingDuprId === c.duprId}
+                        onClick={() => assignDuprId(c.duprId)}
+                      >
+                        Select
+                      </Button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Upload Confirmation Dialog */}
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent>
           <DialogHeader>

@@ -162,6 +162,34 @@ export async function resolveDuprNumericIds(
   return map;
 }
 
+export interface DuprPlayerSearchResult {
+  id: number;
+  duprId: string;
+  fullName: string;
+  shortAddress: string | null;
+  ratings?: {
+    singles?: number | null;
+    doubles?: number | null;
+  };
+}
+
+export async function searchDuprPlayers(query: string, limit = 10): Promise<DuprPlayerSearchResult[]> {
+  const res = await authedFetch("/player/v1.0/search", {
+    method: "POST",
+    body: JSON.stringify({ query, limit, offset: 0, exclude: [], filter: {} }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new DuprError(`DUPR player search failed: ${res.status}`, res.status, body);
+  const hits = ((body as any)?.result?.hits ?? []) as any[];
+  return hits.map((h) => ({
+    id: h.id,
+    duprId: h.duprId ?? "",
+    fullName: h.fullName ?? "",
+    shortAddress: h.shortAddress ?? null,
+    ratings: h.ratings ?? null,
+  }));
+}
+
 export function clearDuprToken() {
   cachedToken = null;
 }
