@@ -50,7 +50,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
   // Admins
   const { data: admins } = await supabase
     .from("tournament_admins")
-    .select("*, profile:profiles(*)")
+    .select("*, profile:profiles!tournament_admins_user_id_fkey(*)")
     .eq("tournament_id", id)
     .order("succession_order");
 
