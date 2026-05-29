@@ -63,7 +63,7 @@ export default async function TournamentsPage({
                   <div className="flex-1 min-w-0">
                     <div className="font-bold text-gray-900 truncate">{t.name}</div>
                     <div className="text-xs text-gray-400 mt-0.5">
-                      {tournamentTypeLabel(t.type)} · {t.max_players} players · {t.court_count} courts · {formatDate(t.created_at)}
+                      {tournamentTypeLabel(t.type)} · {t.max_players} players · {t.court_count} courts · {t.tournament_date ? formatDate(t.tournament_date) : formatDate(t.created_at)}
                     </div>
                   </div>
                   <Badge variant={statusVariant(t.status) as any}>

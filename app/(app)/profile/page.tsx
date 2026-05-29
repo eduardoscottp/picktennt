@@ -152,7 +152,7 @@ export default async function ProfilePage() {
                   <div className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
                     <div>
                       <div className="text-sm font-semibold text-gray-900">{t.name}</div>
-                      <div className="text-xs text-gray-400">{tournamentTypeLabel(t.type)} · {formatDate(t.created_at)}</div>
+                      <div className="text-xs text-gray-400">{tournamentTypeLabel(t.type)} · {t.tournament_date ? formatDate(t.tournament_date) : formatDate(t.created_at)}</div>
                     </div>
                     <Badge variant={t.status === "completed" ? "secondary" : "default"} className="text-[10px]">
                       {statusLabel(t.status)}
