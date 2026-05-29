@@ -46,6 +46,20 @@ export async function GET(request: NextRequest) {
         avatar_url: meta.avatar_url ?? meta.picture ?? null,
       }, { onConflict: "id" });
 
+      // Redirect new users (no DUPR ID) to setup
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("dupr_id")
+        .eq("id", user.id)
+        .single();
+      if (!profile?.dupr_id && next === "/dashboard") {
+        const setupResponse = NextResponse.redirect(`${origin}/setup`);
+        supabaseResponse.cookies.getAll().forEach(({ name, value }) => {
+          setupResponse.cookies.set(name, value, { maxAge: COOKIE_MAX_AGE });
+        });
+        return setupResponse;
+      }
+
       return supabaseResponse;
     }
   }
