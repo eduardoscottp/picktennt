@@ -12,7 +12,14 @@ export default async function JoinByCodePage({ params }: { params: Promise<{ cod
   const { code } = await params;
   const supabase = await createClient();
 
-  const { data: tournament } = await supabase
+  // Use service role to look up tournament — unauthenticated users can't read via RLS
+  const admin = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+
+  const { data: tournament } = await admin
     .from("tournaments")
     .select("id, name, type, status, max_players, court_count")
     .eq("join_code", code.toUpperCase())
@@ -23,7 +30,7 @@ export default async function JoinByCodePage({ params }: { params: Promise<{ cod
   // Logged-in user with valid tournament: auto-approve and redirect
   if (user && tournament) {
     // Check if already a player
-    const { data: existing } = await supabase
+    const { data: existing } = await admin
       .from("tournament_players")
       .select("id")
       .eq("tournament_id", tournament.id)
@@ -31,13 +38,6 @@ export default async function JoinByCodePage({ params }: { params: Promise<{ cod
       .single();
 
     if (!existing) {
-      // Use service role to bypass RLS for team creation
-      const admin = createSupabaseClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!,
-        { auth: { autoRefreshToken: false, persistSession: false } }
-      );
-
       await admin.from("tournament_players").insert({
         tournament_id: tournament.id,
         user_id: user.id,
