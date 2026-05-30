@@ -170,6 +170,9 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
               </Badge>
               <Badge variant="secondary">{tournamentTypeLabel(tournament.type)}</Badge>
               <Badge variant="secondary">{tournament.court_count} courts</Badge>
+              {tournament.is_open && (
+                <Badge variant="success">Open Registration</Badge>
+              )}
             </div>
             <div className="mt-3 space-y-1 text-xs text-gray-500">
               <p className="flex items-center gap-1.5">
@@ -210,6 +213,8 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
               tournamentId={id}
               userId={user.id}
               pendingRowId={myPlayerRow?.status === "pending" ? myPlayerRow.id : undefined}
+              autoApprove={tournament.is_open}
+              tournamentType={tournament.type}
             />
           </div>
         )}

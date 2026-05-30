@@ -11,9 +11,11 @@ interface Props {
   tournamentId: string;
   userId: string;
   pendingRowId?: string; // present when a request is pending — shows cancel state
+  autoApprove?: boolean; // true when tournament is_open or user came via invitation link
+  tournamentType?: "singles" | "doubles" | "mixed"; // needed to auto-create team for singles
 }
 
-export function JoinButton({ tournamentId, userId, pendingRowId }: Props) {
+export function JoinButton({ tournamentId, userId, pendingRowId, autoApprove, tournamentType }: Props) {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
@@ -22,14 +24,39 @@ export function JoinButton({ tournamentId, userId, pendingRowId }: Props) {
     setLoading(true);
     try {
       const supabase = createClient();
+      const status = autoApprove ? "approved" : "pending";
       const { error } = await supabase.from("tournament_players").insert({
         tournament_id: tournamentId,
         user_id: userId,
-        status: "pending",
+        status,
         joined_via: "link",
       });
       if (error) throw error;
-      toast("Join request sent! Waiting for admin approval.", "success");
+
+      // Singles auto-approve: create a team for the player
+      if (autoApprove && tournamentType === "singles") {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("first_name, last_name, email")
+          .eq("id", userId)
+          .single();
+        const teamName = profile
+          ? [profile.first_name, profile.last_name].filter(Boolean).join(" ") || profile.email
+          : "Player";
+        const { data: team, error: teamErr } = await supabase
+          .from("teams")
+          .insert({ tournament_id: tournamentId, name: teamName })
+          .select()
+          .single();
+        if (!teamErr && team) {
+          await supabase.from("team_members").insert({ team_id: team.id, user_id: userId });
+        }
+      }
+
+      toast(
+        autoApprove ? "You're in! Welcome to the tournament." : "Join request sent! Waiting for admin approval.",
+        "success"
+      );
       router.refresh();
     } catch (err: any) {
       toast(err.message ?? "Failed to join", "error");
@@ -80,7 +107,7 @@ export function JoinButton({ tournamentId, userId, pendingRowId }: Props) {
 
   return (
     <Button onClick={join} loading={loading} className="w-full">
-      Request to Join
+      {autoApprove ? "Join Tournament" : "Request to Join"}
     </Button>
   );
 }

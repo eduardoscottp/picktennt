@@ -16,6 +16,7 @@ export function AdminTournamentInfo({ tournament }: Props) {
   const [date, setDate] = useState(tournament.tournament_date ?? "");
   const [courtName, setCourtName] = useState(tournament.court_name ?? "");
   const [courtAddress, setCourtAddress] = useState(tournament.court_address ?? "");
+  const [isOpen, setIsOpen] = useState(tournament.is_open);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
@@ -30,6 +31,7 @@ export function AdminTournamentInfo({ tournament }: Props) {
           tournament_date: date || null,
           court_name: courtName.trim() || null,
           court_address: courtAddress.trim() || null,
+          is_open: isOpen,
         }),
       });
       const result = await res.json();
@@ -67,6 +69,20 @@ export function AdminTournamentInfo({ tournament }: Props) {
           value={courtAddress}
           onChange={(e) => setCourtAddress(e.target.value)}
         />
+        <div className="flex items-center gap-3">
+          <input
+            id="admin_is_open" type="checkbox"
+            checked={isOpen}
+            onChange={(e) => setIsOpen(e.target.checked)}
+            className="h-4 w-4 rounded text-brand-500 accent-brand-500"
+          />
+          <div>
+            <label htmlFor="admin_is_open" className="text-sm font-medium text-gray-700">
+              Open Registration
+            </label>
+            <p className="text-xs text-gray-400">Anyone can join without admin approval</p>
+          </div>
+        </div>
         <Button onClick={save} loading={loading} className="w-full">
           Save
         </Button>

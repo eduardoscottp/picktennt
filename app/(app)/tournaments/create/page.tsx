@@ -27,6 +27,7 @@ interface FormState {
   finals_trigger: FinalsTrigger | "";
   rules_text: string;
   is_public: boolean;
+  is_open: boolean;
 }
 
 const INITIAL: FormState = {
@@ -34,7 +35,7 @@ const INITIAL: FormState = {
   court_count: "2", max_players: "8", type: "",
   games_per_player: "4", second_round_format: "none",
   advancement_count: "0", finals_format: "none",
-  finals_trigger: "none", rules_text: "", is_public: true,
+  finals_trigger: "none", rules_text: "", is_public: true, is_open: false,
 };
 
 export default function CreateTournamentPage() {
@@ -100,6 +101,7 @@ export default function CreateTournamentPage() {
           advancement_count: form.advancement_count && +form.advancement_count > 0 ? +form.advancement_count : null,
           rules_text: form.rules_text.trim() || null,
           is_public: form.is_public,
+          is_open: form.is_open,
         }),
       });
       const result = await response.json();
@@ -197,6 +199,20 @@ export default function CreateTournamentPage() {
                 <label htmlFor="is_public" className="text-sm font-medium text-gray-700">
                   Show tournament name in public search
                 </label>
+              </div>
+              <div className="flex items-center gap-3">
+                <input
+                  id="is_open" type="checkbox"
+                  checked={form.is_open}
+                  onChange={(e) => set("is_open", e.target.checked)}
+                  className="h-4 w-4 rounded text-brand-500 accent-brand-500"
+                />
+                <div>
+                  <label htmlFor="is_open" className="text-sm font-medium text-gray-700">
+                    Open Registration
+                  </label>
+                  <p className="text-xs text-gray-400">Anyone can join without admin approval</p>
+                </div>
               </div>
             </CardContent>
           </Card>

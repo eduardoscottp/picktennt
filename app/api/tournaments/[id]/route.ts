@@ -33,13 +33,15 @@ export async function PATCH(
     { auth: { autoRefreshToken: false, persistSession: false } }
   );
 
+  const updates: Record<string, any> = {};
+  if ("tournament_date" in body) updates.tournament_date = body.tournament_date ?? null;
+  if ("court_name" in body) updates.court_name = body.court_name?.trim() || null;
+  if ("court_address" in body) updates.court_address = body.court_address?.trim() || null;
+  if ("is_open" in body) updates.is_open = !!body.is_open;
+
   const { data, error } = await admin
     .from("tournaments")
-    .update({
-      tournament_date: body.tournament_date ?? null,
-      court_name: body.court_name?.trim() || null,
-      court_address: body.court_address?.trim() || null,
-    })
+    .update(updates)
     .eq("id", id)
     .select()
     .single();

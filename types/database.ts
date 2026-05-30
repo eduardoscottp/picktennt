@@ -39,6 +39,7 @@ export interface Tournament {
   rules_text: string | null;
   status: TournamentStatus;
   is_public: boolean;
+  is_open: boolean;
   tournament_date: string | null;
   court_name: string | null;
   court_address: string | null;

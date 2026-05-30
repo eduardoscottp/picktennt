@@ -15,6 +15,7 @@ type CreateTournamentBody = {
   advancement_count?: number | null;
   rules_text?: string | null;
   is_public?: boolean;
+  is_open?: boolean;
 };
 
 function jsonError(message: string, status = 400) {
@@ -70,6 +71,7 @@ export async function POST(request: Request) {
     finals_trigger: "none" as FinalsTrigger,
     rules_text: body.rules_text?.trim() || null,
     is_public: body.is_public ?? true,
+    is_open: body.is_open ?? false,
     status: "registration",
     tournament_date: body.tournament_date ?? null,
     court_name: body.court_name?.trim() || null,

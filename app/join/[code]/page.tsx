@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import Link from "next/link";
 import { Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -19,8 +20,52 @@ export default async function JoinByCodePage({ params }: { params: Promise<{ cod
 
   const { data: { user } } = await supabase.auth.getUser();
 
-  // If user is logged in, redirect to tournament page so they can join there
+  // Logged-in user with valid tournament: auto-approve and redirect
   if (user && tournament) {
+    // Check if already a player
+    const { data: existing } = await supabase
+      .from("tournament_players")
+      .select("id")
+      .eq("tournament_id", tournament.id)
+      .eq("user_id", user.id)
+      .single();
+
+    if (!existing) {
+      // Use service role to bypass RLS for team creation
+      const admin = createSupabaseClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        { auth: { autoRefreshToken: false, persistSession: false } }
+      );
+
+      await admin.from("tournament_players").insert({
+        tournament_id: tournament.id,
+        user_id: user.id,
+        status: "approved",
+        joined_via: "link",
+      });
+
+      // Singles: auto-create a team for the player
+      if (tournament.type === "singles") {
+        const { data: profile } = await admin
+          .from("profiles")
+          .select("first_name, last_name, email")
+          .eq("id", user.id)
+          .single();
+        const teamName = profile
+          ? [profile.first_name, profile.last_name].filter(Boolean).join(" ") || profile.email
+          : user.email ?? "Player";
+        const { data: team } = await admin
+          .from("teams")
+          .insert({ tournament_id: tournament.id, name: teamName })
+          .select()
+          .single();
+        if (team) {
+          await admin.from("team_members").insert({ team_id: team.id, user_id: user.id });
+        }
+      }
+    }
+
     redirect(`/tournaments/${tournament.id}`);
   }
 
@@ -54,7 +99,7 @@ export default async function JoinByCodePage({ params }: { params: Promise<{ cod
                 <p className="text-sm text-gray-500 mb-6">
                   Sign in to join this tournament and track your matches.
                 </p>
-                <Link href={`/login?redirect=/tournaments/${tournament.id}`}>
+                <Link href={`/login?redirect=/join/${code}`}>
                   <Button className="w-full" size="lg">
                     Sign in to Join
                   </Button>
