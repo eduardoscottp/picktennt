@@ -31,7 +31,14 @@ export function JoinButton({ tournamentId, userId, pendingRowId, autoApprove, to
         status,
         joined_via: "link",
       });
-      if (error) throw error;
+      if (error) {
+        // Already exists — just refresh to show current state
+        if (error.code === "23505") {
+          router.refresh();
+          return;
+        }
+        throw error;
+      }
 
       // Singles auto-approve: create a team for the player
       if (autoApprove && tournamentType === "singles") {
