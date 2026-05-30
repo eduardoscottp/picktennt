@@ -4,6 +4,7 @@ import { MobileHeader } from "@/components/layout/navbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Users } from "lucide-react";
 import { getInitials, generateJoinUrl, statusLabel } from "@/lib/utils";
 import { AdminPlayerActions } from "@/components/tournament/admin-player-actions";
 import { AdminStatusActions } from "@/components/tournament/admin-status-actions";
@@ -192,6 +193,46 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
             </CardContent>
           </Card>
         )}
+
+        {/* Doubles: unassigned players (approved but no team yet) */}
+        {tournament.type === "doubles" && (() => {
+          const existingSet = new Set(existingMemberIds);
+          const unassigned = (approvedPlayers ?? []).filter((p: any) => !existingSet.has(p.user_id));
+          if (unassigned.length === 0) return null;
+          return (
+            <Card className="border-amber-200">
+              <CardHeader>
+                <CardTitle className="text-base flex items-center justify-between">
+                  <span className="flex items-center gap-2 text-amber-700">
+                    <Users className="h-4 w-4" />
+                    Unassigned Players ({unassigned.length})
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-xs text-gray-400">Approved players not yet assigned to a team. Drag them into a slot above or remove from tournament.</p>
+                {unassigned.map((p: any) => {
+                  const profile = p.profile as Profile;
+                  return (
+                    <div key={p.id} className="flex items-center gap-3">
+                      <Avatar className="h-9 w-9">
+                        <AvatarImage src={profile.avatar_url ?? ""} />
+                        <AvatarFallback>{getInitials(profile.first_name, profile.last_name)}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-sm text-gray-900">
+                          {profile.first_name} {profile.last_name}
+                        </div>
+                        <div className="text-xs text-gray-400">{profile.email}</div>
+                      </div>
+                      <AdminPlayerActions tournamentPlayerId={p.id} status="approved" />
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         {/* Doubles: visual team slot grid */}
         {tournament.type === "doubles" && (
