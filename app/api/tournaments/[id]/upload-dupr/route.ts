@@ -8,7 +8,7 @@ import {
 } from "@/lib/dupr/tournament-helpers";
 import {
   submitDuprMatch,
-  resolveDuprNumericIds,
+  resolveDuprNumericIdsBySearch,
   DuprError,
   type DuprMatchPayload,
 } from "@/lib/dupr/client";
@@ -94,40 +94,19 @@ export async function POST(_request: Request, ctx: { params: Promise<{ id: strin
     );
   }
 
-  // VALIDATION GATE 2 — resolve dupr_id text → numeric id via club roster.
+  // Resolve dupr_id text → numeric id via player search (no club membership required).
   const duprCodes = Array.from(userIds)
     .map((uid) => profiles.get(uid)?.dupr_id)
     .filter((s): s is string => !!s);
 
   let numericMap: Map<string, number>;
   try {
-    numericMap = await resolveDuprNumericIds(clubId, duprCodes);
+    numericMap = await resolveDuprNumericIdsBySearch(duprCodes);
   } catch (err) {
     const e = err as DuprError;
     return NextResponse.json(
       { ok: false, reason: "dupr_login_failed", status: e.status, body: e.body },
       { status: 502 }
-    );
-  }
-
-  const notInClub: { id: string; first_name: string | null; last_name: string | null; email: string; duprId: string }[] = [];
-  for (const uid of userIds) {
-    const p = profiles.get(uid);
-    if (!p || !p.dupr_id) continue;
-    if (!numericMap.has(p.dupr_id)) {
-      notInClub.push({
-        id: p.id,
-        first_name: p.first_name,
-        last_name: p.last_name,
-        email: p.email,
-        duprId: p.dupr_id,
-      });
-    }
-  }
-  if (notInClub.length > 0) {
-    return NextResponse.json(
-      { ok: false, reason: "players_not_in_club", clubId, notInClub },
-      { status: 409 }
     );
   }
 

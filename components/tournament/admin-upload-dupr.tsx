@@ -20,10 +20,6 @@ interface MissingPlayer {
   email: string;
 }
 
-interface NotInClubPlayer extends MissingPlayer {
-  duprId: string;
-}
-
 interface DuprCandidate {
   id: number;
   duprId: string;
@@ -46,8 +42,6 @@ interface PreflightResponse {
   validatedMatchCount: number;
   totalPlayers: number;
   missing: MissingPlayer[];
-  notInClub: NotInClubPlayer[];
-  clubLookupError: string | null;
   preview: PreviewMatch[];
 }
 
@@ -231,36 +225,6 @@ export function AdminUploadDupr({ tournamentId }: { tournamentId: string }) {
                 <Button variant="outline" size="sm" onClick={loadPreflight} className="w-full">
                   Refresh
                 </Button>
-              </div>
-            ) : preflight.notInClub.length > 0 ? (
-              <div className="rounded-xl bg-red-50 border border-red-200 px-3 py-2.5 space-y-2">
-                <div className="flex items-start gap-2 text-xs text-red-800">
-                  <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
-                  <span className="font-semibold">
-                    Cannot upload — {preflight.notInClub.length} player(s) not in DUPR club
-                  </span>
-                </div>
-                <ul className="space-y-1 pl-5">
-                  {preflight.notInClub.map((p) => (
-                    <li key={p.id} className="text-xs text-red-700">
-                      <span className="font-medium">
-                        {(p.first_name ?? "") + " " + (p.last_name ?? "")}
-                      </span>
-                      <span className="text-red-500"> · DUPR {p.duprId}</span>
-                    </li>
-                  ))}
-                </ul>
-                <p className="text-[11px] text-red-600 pl-5">
-                  Add these players to the DUPR club, or correct their DUPR ID in profile.
-                </p>
-                <Button variant="outline" size="sm" onClick={loadPreflight} className="w-full">
-                  Refresh
-                </Button>
-              </div>
-            ) : preflight.clubLookupError ? (
-              <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5 text-xs text-amber-800 flex items-start gap-2">
-                <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
-                <span>{preflight.clubLookupError}</span>
               </div>
             ) : (
               <div className="rounded-xl bg-green-50 border border-green-200 px-3 py-2.5 flex items-start gap-2 text-xs text-green-800">

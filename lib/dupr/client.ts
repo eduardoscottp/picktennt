@@ -198,4 +198,17 @@ export function clearDuprClubRoster() {
   cachedClubRoster = null;
 }
 
+/** Resolve DUPR referral codes → numeric IDs via player search (no club membership required). */
+export async function resolveDuprNumericIdsBySearch(
+  duprCodes: string[]
+): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  for (const code of duprCodes) {
+    const results = await searchDuprPlayers(code, 10);
+    const match = results.find((r) => r.duprId?.toLowerCase() === code.toLowerCase());
+    if (match) map.set(code, match.id);
+  }
+  return map;
+}
+
 export { DuprError };
