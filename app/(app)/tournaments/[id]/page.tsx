@@ -251,6 +251,31 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
 
     const matches = (matchesRaw ?? []) as any[];
 
+    // Nullified players — excluded from standings (withdrew/retired mid-RR)
+    const { data: nullifiedTPs } = await supabase
+      .from("tournament_players")
+      .select("user_id")
+      .eq("tournament_id", id)
+      .eq("nullified_from_standings", true);
+
+    const nullifiedUserIds = new Set((nullifiedTPs ?? []).map((p: any) => p.user_id as string));
+
+    // For team-based: resolve user IDs → team IDs
+    const nullifiedTeamIds = new Set<string>();
+    if (tournament.type !== "mixed" && nullifiedUserIds.size > 0) {
+      const { data: nullifiedTMs } = await supabase
+        .from("team_members")
+        .select("user_id, team_id")
+        .in("user_id", Array.from(nullifiedUserIds));
+      for (const tm of nullifiedTMs ?? []) {
+        nullifiedTeamIds.add((tm as any).team_id as string);
+      }
+    }
+
+    const nullifiedEntityIds = tournament.type === "mixed"
+      ? nullifiedUserIds
+      : nullifiedTeamIds;
+
     // Group matches by round
     const matchesByRound = new Map<string, any[]>();
     for (const m of matches) {
@@ -346,8 +371,8 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
 
     // Standings: RR-only as baseline, bracket positions overlaid when bracket exists
     const rrStandings = isMixed
-      ? computeStandings(activeRrMatches, "player")
-      : computeIndividualStandingsFromTeams(activeRrMatches, teamToMembers);
+      ? computeStandings(activeRrMatches, "player", nullifiedEntityIds)
+      : computeIndividualStandingsFromTeams(activeRrMatches, teamToMembers, nullifiedUserIds);
 
     let standingsByPlayer: Map<string, StandingRow>;
     if (activeHasBracketAlready) {
