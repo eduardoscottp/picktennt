@@ -9,13 +9,18 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import { getInitials } from "@/lib/utils";
-import { Plus, X, Search, Users } from "lucide-react";
+import { Plus, Search, Users } from "lucide-react";
+import { RemovePlayerDialog } from "@/components/tournament/remove-player-dialog";
 
 export interface TeamMemberData {
   user_id: string;
   first_name: string | null;
   last_name: string | null;
   avatar_url: string | null;
+  tournament_player_id: string | null;
+  removal_path: "A" | "B" | "C";
+  games_played: number;
+  in_progress_match_id: string | null;
 }
 
 export interface TeamData {
@@ -32,6 +37,7 @@ interface Props {
   myTeamId: string | null;
   isApprovedPlayer: boolean;
   existingMemberIds: string[];
+  anyTournamentScores?: boolean;
   readonly?: boolean;
 }
 
@@ -51,6 +57,7 @@ export function DoublesTeamGrid({
   myTeamId,
   isApprovedPlayer,
   existingMemberIds,
+  anyTournamentScores = false,
   readonly = false,
 }: Props) {
   const [activeSlot, setActiveSlot] = useState<{ teamId: string } | null>(null);
@@ -158,21 +165,6 @@ export function DoublesTeamGrid({
     }
   }
 
-  async function removeFromSlot(teamId: string, userId: string) {
-    try {
-      const supabase = createClient();
-      const { error } = await supabase
-        .from("team_members")
-        .delete()
-        .eq("team_id", teamId)
-        .eq("user_id", userId);
-      if (error) throw error;
-      toast("Player removed from slot.", "success");
-      router.refresh();
-    } catch (err: any) {
-      toast(err.message ?? "Failed to remove player", "error");
-    }
-  }
 
   const canSelfAssign = isApprovedPlayer && !myTeamId && !!currentUserId && !readonly;
 
@@ -206,14 +198,16 @@ export function DoublesTeamGrid({
                           {member.first_name} {member.last_name}
                           {isMySlot && <span className="ml-1 text-brand-500">(you)</span>}
                         </span>
-                        {isAdmin && !readonly && (
-                          <button
-                            onClick={() => removeFromSlot(team.id, member.user_id)}
-                            className="text-gray-300 hover:text-red-400 transition-colors flex-shrink-0"
-                            title="Remove player"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
+                        {isAdmin && !readonly && member.tournament_player_id && (
+                          <RemovePlayerDialog
+                            tournamentPlayerId={member.tournament_player_id}
+                            tournamentId={tournamentId}
+                            playerName={`${member.first_name ?? ""} ${member.last_name ?? ""}`.trim()}
+                            path={member.removal_path}
+                            anyTournamentScores={anyTournamentScores}
+                            gamesPlayed={member.games_played}
+                            inProgressMatchId={member.in_progress_match_id}
+                          />
                         )}
                       </div>
                     );

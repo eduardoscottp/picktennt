@@ -75,16 +75,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
       break;
     }
   }
-  const doublesTeams = teams.map((t) => ({
-    id: t.id as string,
-    name: t.name as string | null,
-    members: (t.team_members ?? []).map((m: any) => ({
-      user_id: m.user_id as string,
-      first_name: m.profile?.first_name ?? null,
-      last_name: m.profile?.last_name ?? null,
-      avatar_url: m.profile?.avatar_url ?? null,
-    })),
-  }));
+  // doublesTeams is built later (after helper functions) so it can include removal context
 
   // Fetch rounds to know if a schedule already exists
   const { data: roundsRaw } = await supabase
@@ -137,10 +128,14 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
     .eq("tournament_id", tournament.id)
     .eq("status", "in_progress");
 
-  // Fetch team_members to map player → team for doubles/singles
-  const { data: allTeamMembers } = await supabase
-    .from("team_members")
-    .select("user_id, team_id");
+  // Fetch team_members scoped to this tournament via known team IDs
+  const teamIds = teams.map((t) => t.id as string);
+  const { data: allTeamMembers } = teamIds.length > 0
+    ? await supabase
+        .from("team_members")
+        .select("user_id, team_id")
+        .in("team_id", teamIds)
+    : { data: [] };
 
   const playerToTeamId = new Map<string, string>();
   for (const tm of allTeamMembers ?? []) {
@@ -171,6 +166,26 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
     if (gamesPlayedForPlayer(userId) > 0) return "C";
     return "B";
   }
+
+  // Build doublesTeams here (after helpers) so members include removal context
+  const tpIdByUserId = new Map<string, string>();
+  for (const p of approvedPlayers ?? []) {
+    tpIdByUserId.set((p as any).user_id, (p as any).id);
+  }
+  const doublesTeams = teams.map((t) => ({
+    id: t.id as string,
+    name: t.name as string | null,
+    members: (t.team_members ?? []).map((m: any) => ({
+      user_id: m.user_id as string,
+      first_name: m.profile?.first_name ?? null,
+      last_name: m.profile?.last_name ?? null,
+      avatar_url: m.profile?.avatar_url ?? null,
+      tournament_player_id: tpIdByUserId.get(m.user_id as string) ?? null,
+      removal_path: removalPath(m.user_id as string),
+      games_played: gamesPlayedForPlayer(m.user_id as string),
+      in_progress_match_id: inProgressMatchForPlayer(m.user_id as string),
+    })),
+  }));
 
   // Nullified players — they have status='rejected' so we query separately
   const { data: nullifiedTPs } = await supabase
@@ -348,6 +363,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
                 myTeamId={adminTeamId}
                 isApprovedPlayer={true}
                 existingMemberIds={existingMemberIds}
+                anyTournamentScores={anyTournamentScores}
               />
             </CardContent>
           </Card>
