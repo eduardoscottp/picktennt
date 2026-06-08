@@ -30,6 +30,7 @@ interface Props {
   rrAllValidated: boolean;
   hasBracketAlready: boolean;
   advancingCount: number | null;
+  nullifiedEntityIds?: string[];
 }
 
 export function AdminGenerateRound({
@@ -44,6 +45,7 @@ export function AdminGenerateRound({
   rrAllValidated,
   hasBracketAlready,
   advancingCount,
+  nullifiedEntityIds = [],
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [adminOptOut, setAdminOptOut] = useState(false);
@@ -244,7 +246,11 @@ export function AdminGenerateRound({
         .eq("tournament_id", tournament.id);
       const allMatches = (allMatchesRaw ?? []) as Match[];
 
-      const standings = computeStandings(allMatches, isMixed ? "player" : "team");
+      const standings = computeStandings(
+        allMatches,
+        isMixed ? "player" : "team",
+        new Set(nullifiedEntityIds)
+      );
       const topIds = standings.slice(0, selectedAdvancingCount).map((s) => s.id);
 
       if (topIds.length < selectedAdvancingCount) {
@@ -377,14 +383,23 @@ export function AdminGenerateRound({
                   <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
                   <span className="text-sm text-green-700 font-medium">Bracket generated</span>
                 </div>
-              ) : !rrAllValidated ? (
+              ) : !rrAllValidated || (nullifiedEntityIds.length > 0 && !hasBracketAlready) ? (
                 <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5 text-xs text-amber-800 flex items-start gap-2">
                   <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
                   <span>
-                    <span className="font-semibold">
-                      {pendingRRCount} match{pendingRRCount !== 1 ? "es" : ""} still need{pendingRRCount === 1 ? "s" : ""} scores.
-                    </span>{" "}
-                    Enter all round robin results before generating the bracket.
+                    {!rrAllValidated ? (
+                      <>
+                        <span className="font-semibold">
+                          {pendingRRCount} match{pendingRRCount !== 1 ? "es" : ""} still need{pendingRRCount === 1 ? "s" : ""} scores.
+                        </span>{" "}
+                        Enter all round robin results before generating the bracket.
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-semibold">A player was withdrawn during the round robin.</span>{" "}
+                        Standings have been updated — review before generating the bracket.
+                      </>
+                    )}
                   </span>
                 </div>
               ) : (
