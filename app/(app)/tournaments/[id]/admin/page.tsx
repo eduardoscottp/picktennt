@@ -266,7 +266,12 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
                       </div>
                       <div className="text-xs text-gray-400">{profile.email}</div>
                     </div>
-                    <AdminPlayerActions tournamentPlayerId={p.id} status="pending" />
+                    <AdminPlayerActions
+                      tournamentPlayerId={p.id}
+                      tournamentId={tournament.id}
+                      playerName={`${profile.first_name} ${profile.last_name}`}
+                      status="pending"
+                    />
                   </div>
                 );
               })}
