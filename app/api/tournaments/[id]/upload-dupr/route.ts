@@ -58,7 +58,8 @@ export async function POST(_request: Request, ctx: { params: Promise<{ id: strin
     .from("matches")
     .select("*")
     .eq("tournament_id", id)
-    .eq("status", "validated");
+    .eq("status", "validated")
+    .eq("submit_to_dupr", true);
   const matches = (matchesRaw ?? []) as Match[];
 
   if (matches.length === 0) {

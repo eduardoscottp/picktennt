@@ -28,7 +28,8 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
     .from("matches")
     .select("*")
     .eq("tournament_id", id)
-    .eq("status", "validated");
+    .eq("status", "validated")
+    .eq("submit_to_dupr", true);
   const matches = (matchesRaw ?? []) as Match[];
 
   const userIds = await collectMatchUserIds(admin, matches);
