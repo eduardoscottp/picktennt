@@ -26,9 +26,22 @@ interface StandingData {
  */
 export function computeStandings(
   matches: Match[],
-  entityKey: "team" | "player"
+  entityKey: "team" | "player",
+  nullifiedEntityIds?: Set<string>
 ): StandingRow[] {
-  const validated = matches.filter((m) => m.status === "validated");
+  const validated = matches.filter((m) => {
+    if (m.status !== "validated") return false;
+    if (!nullifiedEntityIds?.size) return true;
+    if (entityKey === "team") {
+      if (m.team_a_id && nullifiedEntityIds.has(m.team_a_id)) return false;
+      if (m.team_b_id && nullifiedEntityIds.has(m.team_b_id)) return false;
+    } else {
+      for (const id of [m.player_a1_id, m.player_a2_id, m.player_b1_id, m.player_b2_id]) {
+        if (id && nullifiedEntityIds.has(id)) return false;
+      }
+    }
+    return true;
+  });
   const map = new Map<string, StandingData>();
 
   function ensure(id: string) {
@@ -96,9 +109,18 @@ export function computeStandings(
  */
 export function computeIndividualStandingsFromTeams(
   matches: Match[],
-  teamToMembers: Map<string, string[]>
+  teamToMembers: Map<string, string[]>,
+  nullifiedEntityIds?: Set<string>
 ): StandingRow[] {
-  const validated = matches.filter((m) => m.status === "validated");
+  const validated = matches.filter((m) => {
+    if (m.status !== "validated") return false;
+    if (!nullifiedEntityIds?.size) return true;
+    const membersA = teamToMembers.get(m.team_a_id ?? "") ?? [];
+    const membersB = teamToMembers.get(m.team_b_id ?? "") ?? [];
+    if (membersA.some((id) => nullifiedEntityIds.has(id))) return false;
+    if (membersB.some((id) => nullifiedEntityIds.has(id))) return false;
+    return true;
+  });
   const map = new Map<string, StandingData>();
 
   function ensure(id: string) {
