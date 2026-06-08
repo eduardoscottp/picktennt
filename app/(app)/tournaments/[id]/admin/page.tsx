@@ -44,7 +44,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
   // Approved players
   const { data: approvedPlayers } = await supabase
     .from("tournament_players")
-    .select("*, profile:profiles(*)")
+    .select("*, nullified_from_standings, profile:profiles(*)")
     .eq("tournament_id", id)
     .eq("status", "approved");
 
@@ -112,6 +112,78 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
   const joinUrl = generateJoinUrl(tournament.join_code);
   const currentUserPlayer = (approvedPlayers ?? []).find((p: any) => p.user_id === user.id);
 
+  // ── Removal context ────────────────────────────────────────────────────────
+
+  // Does any match in this tournament have a score?
+  const { count: scoredMatchCount } = await supabase
+    .from("matches")
+    .select("id", { count: "exact", head: true })
+    .eq("tournament_id", tournament.id)
+    .in("status", ["score_entered", "validated", "in_progress"]);
+
+  const anyTournamentScores = (scoredMatchCount ?? 0) > 0;
+
+  // Fetch all scored matches (for per-player games-played count)
+  const { data: scoredMatches } = await supabase
+    .from("matches")
+    .select("id, status, player_a1_id, player_a2_id, player_b1_id, player_b2_id, team_a_id, team_b_id")
+    .eq("tournament_id", tournament.id)
+    .in("status", ["score_entered", "validated", "in_progress"]);
+
+  // Fetch team_members to map player → team for doubles/singles
+  const { data: allTeamMembers } = await supabase
+    .from("team_members")
+    .select("user_id, team_id");
+
+  const playerToTeamId = new Map<string, string>();
+  for (const tm of allTeamMembers ?? []) {
+    playerToTeamId.set(tm.user_id, tm.team_id);
+  }
+
+  function gamesPlayedForPlayer(userId: string): number {
+    const teamId = playerToTeamId.get(userId);
+    return (scoredMatches ?? []).filter((m) => {
+      if ([m.player_a1_id, m.player_a2_id, m.player_b1_id, m.player_b2_id].includes(userId)) return true;
+      if (teamId && (m.team_a_id === teamId || m.team_b_id === teamId)) return true;
+      return false;
+    }).length;
+  }
+
+  function inProgressMatchForPlayer(userId: string): string | null {
+    const teamId = playerToTeamId.get(userId);
+    const found = (scoredMatches ?? []).find(
+      (m) =>
+        m.status === "in_progress" &&
+        (
+          [m.player_a1_id, m.player_a2_id, m.player_b1_id, m.player_b2_id].includes(userId) ||
+          (teamId && (m.team_a_id === teamId || m.team_b_id === teamId))
+        )
+    );
+    return found?.id ?? null;
+  }
+
+  function removalPath(userId: string): "A" | "B" | "C" {
+    if (!hasExistingRounds) return "A";
+    if (gamesPlayedForPlayer(userId) > 0) return "C";
+    return "B";
+  }
+
+  // Nullified entity IDs for standings (players with nullified_from_standings = true)
+  const nullifiedPlayers = (approvedPlayers ?? []).filter(
+    (p: any) => p.nullified_from_standings === true
+  );
+  const nullifiedUserIds = new Set(nullifiedPlayers.map((p: any) => p.user_id as string));
+
+  const nullifiedTeamIds = new Set<string>();
+  for (const userId of nullifiedUserIds) {
+    const teamId = playerToTeamId.get(userId);
+    if (teamId) nullifiedTeamIds.add(teamId);
+  }
+
+  const nullifiedEntityIds = tournament.type === "mixed"
+    ? Array.from(nullifiedUserIds)
+    : Array.from(nullifiedTeamIds);
+
   return (
     <div className="max-w-2xl mx-auto">
       <MobileHeader title="Admin Panel" back={`/tournaments/${id}`} />
@@ -160,6 +232,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
             rrAllValidated={rrAllValidated}
             hasBracketAlready={hasBracketAlready}
             advancingCount={tournament.advancement_count ?? null}
+            nullifiedEntityIds={nullifiedEntityIds}
           />
         )}
 
@@ -225,7 +298,16 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
                         </div>
                         <div className="text-xs text-gray-400">{profile.email}</div>
                       </div>
-                      <AdminPlayerActions tournamentPlayerId={p.id} status="approved" />
+                      <AdminPlayerActions
+                        tournamentPlayerId={p.id}
+                        tournamentId={tournament.id}
+                        playerName={`${profile.first_name} ${profile.last_name}`}
+                        status="approved"
+                        removalPath={removalPath(p.user_id)}
+                        anyTournamentScores={anyTournamentScores}
+                        gamesPlayed={gamesPlayedForPlayer(p.user_id)}
+                        inProgressMatchId={inProgressMatchForPlayer(p.user_id)}
+                      />
                     </div>
                   );
                 })}
@@ -291,7 +373,16 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
                           </div>
                           <div className="text-xs text-gray-400">{profile.email}</div>
                         </div>
-                        <AdminPlayerActions tournamentPlayerId={p.id} status="approved" />
+                        <AdminPlayerActions
+                          tournamentPlayerId={p.id}
+                          tournamentId={tournament.id}
+                          playerName={`${profile.first_name} ${profile.last_name}`}
+                          status="approved"
+                          removalPath={removalPath(p.user_id)}
+                          anyTournamentScores={anyTournamentScores}
+                          gamesPlayed={gamesPlayedForPlayer(p.user_id)}
+                          inProgressMatchId={inProgressMatchForPlayer(p.user_id)}
+                        />
                       </div>
                     );
                   })
