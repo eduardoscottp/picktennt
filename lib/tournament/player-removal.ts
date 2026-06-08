@@ -68,8 +68,9 @@ export async function removePlayerSimple(tournamentPlayerId: string): Promise<vo
 
   const { data: tm } = await supabase
     .from("team_members")
-    .select("team_id")
+    .select("team_id, teams!inner(tournament_id)")
     .eq("user_id", tp.user_id)
+    .eq("teams.tournament_id", tp.tournament_id)
     .maybeSingle();
 
   if (tm?.team_id) {
@@ -145,7 +146,10 @@ export async function removePlayerWithWalkovers(tournamentPlayerId: string): Pro
 
 // ─── Path C ───────────────────────────────────────────────────────────────────
 
-export async function processWithdrawal(tournamentPlayerId: string): Promise<void> {
+export async function processWithdrawal(
+  tournamentPlayerId: string,
+  exitReason: "withdrew" | "retired" = "withdrew"
+): Promise<void> {
   const supabase = await createClient();
 
   const { data: tp } = await supabase
@@ -174,7 +178,7 @@ export async function processWithdrawal(tournamentPlayerId: string): Promise<voi
     .from("tournament_players")
     .update({
       status: "rejected",
-      exit_reason: "withdrew",
+      exit_reason: exitReason,
       nullified_from_standings: !rrComplete,
     })
     .eq("id", tournamentPlayerId);
@@ -200,10 +204,5 @@ export async function processRetirement(
       .eq("id", retiredMatchId);
   }
 
-  await processWithdrawal(tournamentPlayerId);
-
-  await supabase
-    .from("tournament_players")
-    .update({ exit_reason: "retired" })
-    .eq("id", tournamentPlayerId);
+  await processWithdrawal(tournamentPlayerId, "retired");
 }

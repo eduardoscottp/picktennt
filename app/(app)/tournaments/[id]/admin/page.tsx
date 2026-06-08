@@ -119,16 +119,23 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
     .from("matches")
     .select("id", { count: "exact", head: true })
     .eq("tournament_id", tournament.id)
-    .in("status", ["score_entered", "validated", "in_progress"]);
+    .in("status", ["score_entered", "validated"]);
 
   const anyTournamentScores = (scoredMatchCount ?? 0) > 0;
 
-  // Fetch all scored matches (for per-player games-played count)
-  const { data: scoredMatches } = await supabase
+  // Finished scored matches (for games-played count)
+  const { data: finishedMatches } = await supabase
     .from("matches")
     .select("id, status, player_a1_id, player_a2_id, player_b1_id, player_b2_id, team_a_id, team_b_id")
     .eq("tournament_id", tournament.id)
-    .in("status", ["score_entered", "validated", "in_progress"]);
+    .in("status", ["score_entered", "validated"]);
+
+  // In-progress matches (for retirement detection)
+  const { data: activeMatches } = await supabase
+    .from("matches")
+    .select("id, status, player_a1_id, player_a2_id, player_b1_id, player_b2_id, team_a_id, team_b_id")
+    .eq("tournament_id", tournament.id)
+    .eq("status", "in_progress");
 
   // Fetch team_members to map player → team for doubles/singles
   const { data: allTeamMembers } = await supabase
@@ -142,7 +149,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
 
   function gamesPlayedForPlayer(userId: string): number {
     const teamId = playerToTeamId.get(userId);
-    return (scoredMatches ?? []).filter((m) => {
+    return (finishedMatches ?? []).filter((m) => {
       if ([m.player_a1_id, m.player_a2_id, m.player_b1_id, m.player_b2_id].includes(userId)) return true;
       if (teamId && (m.team_a_id === teamId || m.team_b_id === teamId)) return true;
       return false;
@@ -151,13 +158,10 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
 
   function inProgressMatchForPlayer(userId: string): string | null {
     const teamId = playerToTeamId.get(userId);
-    const found = (scoredMatches ?? []).find(
+    const found = (activeMatches ?? []).find(
       (m) =>
-        m.status === "in_progress" &&
-        (
-          [m.player_a1_id, m.player_a2_id, m.player_b1_id, m.player_b2_id].includes(userId) ||
-          (teamId && (m.team_a_id === teamId || m.team_b_id === teamId))
-        )
+        [m.player_a1_id, m.player_a2_id, m.player_b1_id, m.player_b2_id].includes(userId) ||
+        (teamId && (m.team_a_id === teamId || m.team_b_id === teamId))
     );
     return found?.id ?? null;
   }
@@ -168,11 +172,14 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
     return "B";
   }
 
-  // Nullified entity IDs for standings (players with nullified_from_standings = true)
-  const nullifiedPlayers = (approvedPlayers ?? []).filter(
-    (p: any) => p.nullified_from_standings === true
-  );
-  const nullifiedUserIds = new Set(nullifiedPlayers.map((p: any) => p.user_id as string));
+  // Nullified players — they have status='rejected' so we query separately
+  const { data: nullifiedTPs } = await supabase
+    .from("tournament_players")
+    .select("user_id")
+    .eq("tournament_id", tournament.id)
+    .eq("nullified_from_standings", true);
+
+  const nullifiedUserIds = new Set((nullifiedTPs ?? []).map((p: any) => p.user_id as string));
 
   const nullifiedTeamIds = new Set<string>();
   for (const userId of nullifiedUserIds) {
