@@ -3,7 +3,7 @@ export type TournamentStatus = "draft" | "registration" | "active" | "finals" | 
 export type SecondRoundFormat = "round_robin" | "par_match" | "none";
 export type FinalsFormat = "top2" | "top4" | "none";
 export type FinalsTrigger = "after_elimination" | "after_round_robin" | "none";
-export type MatchStatus = "scheduled" | "in_progress" | "score_entered" | "validated" | "disputed";
+export type MatchStatus = "scheduled" | "in_progress" | "score_entered" | "validated" | "disputed" | "walkover";
 export type RoundType = "round_robin" | "par_match" | "elimination" | "finals_gold" | "finals_bronze";
 export type RoundStatus = "pending" | "active" | "completed";
 export type PlayerStatus = "pending" | "approved" | "rejected";
@@ -63,6 +63,8 @@ export interface TournamentPlayer {
   tournament_id: string;
   user_id: string;
   status: PlayerStatus;
+  exit_reason: "withdrew" | "retired" | "disqualified" | null;
+  nullified_from_standings: boolean;
   joined_via: JoinVia | null;
   created_at: string;
   profile?: Profile;
@@ -108,6 +110,7 @@ export interface Match {
   score_a: number | null;
   score_b: number | null;
   status: MatchStatus;
+  submit_to_dupr: boolean;
   entered_by: string | null;
   validated_by: string | null;
   scheduled_at: string | null;
