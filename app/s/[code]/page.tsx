@@ -85,7 +85,9 @@ export default async function SessionInvitationPage({ params }: Props) {
   }
 
   const state = invitationState(session);
-  const invitationUrl = `https://app.picktennt.com/s/${session.join_code}`;
+  // Safari keeps same-domain universal links in the browser. This explicit
+  // action opens the installed app; shared URLs remain HTTPS invitations.
+  const invitationUrl = `picktennt://session/${session.join_code}`;
   const appStoreUrl = process.env.NEXT_PUBLIC_APP_STORE_URL;
 
   return (
