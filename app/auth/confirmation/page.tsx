@@ -86,6 +86,7 @@ export default async function ConfirmationPage({
                   width={34}
                   height={34}
                   className="object-contain"
+                  style={{ width: "auto", height: "auto" }}
                   priority
                 />
               </span>
