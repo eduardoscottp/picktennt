@@ -10,6 +10,7 @@ Implemented on `codex/session-games`. iPhone/Watch baseline: `372f3ba`, version 
 - Manual and Watch results await confirmation by an opponent of the submitter or the organizer. Only the organizer resolves disputes; corrections require confirmation again. Unfinished games do not count as wins/losses.
 - Confirmed games appear in every participant's history with session attribution and the correct outcome. Canonical game IDs prevent duplicates. Personal hiding/deletion preserves the shared result; roster departures preserve historical attribution. Health remains private.
 - A durable, health-free iPhone outbox owns Watch results before acknowledgement. Compatible transfer/recovery fields preserve session identity and assignment revision. Account-generation checks reject stale commands without blocking a valid current connection.
+- Ordinary Quick Game backup retries now target the unique account/game key. A live duplicate upload previously returned HTTP 409 and left the queue pending; the corrected retry updates one row and passes a dedicated regression test.
 - Fixed credential-field focus loss on Login, invitation-page Button composition, and app-link routing from any iPhone tab. Watch empty rosters show guidance and Refresh. Errors are visible, primary save/create controls are blue, and navigation labels reflect their destination.
 
 ## Deployment
@@ -27,7 +28,7 @@ Devices: **Session Games Build 27 QA**, iPhone 17 / iOS 26.5, paired with **Sess
 | Core scoring and transfer models | 52 passing tests: 9 XCTest + 43 Swift Testing |
 | Actual SQL migrations in isolated PostgreSQL/WASM | 79 passing lifecycle, permission and boundary assertions |
 | Production backend, four real QA accounts | 47 passing lifecycle assertions + 8 concurrency/idempotency assertions |
-| iPhone unit tests | 51 passing tests in the final regression run |
+| iPhone unit tests | 52 passing tests in the final regression run |
 | Watch unit tests | 71 passing tests in 16 suites in the final regression run |
 | Web production build | Next.js webpack build passed |
 | iPhone and Watch release build | Release build passed for both apps |
