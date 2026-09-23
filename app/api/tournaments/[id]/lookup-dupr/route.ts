@@ -18,7 +18,16 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
   if (!adminRow) return NextResponse.json({ error: "Not a tournament admin" }, { status: 403 });
 
   const body = await request.json().catch(() => null);
-  if (!body?.profile_id) return NextResponse.json({ error: "profile_id is required" }, { status: 400 });
+  if (typeof body?.profile_id !== "string" || !/^[0-9a-f-]{36}$/i.test(body.profile_id)) return NextResponse.json({ error: "profile_id is required" }, { status: 400 });
+
+  // Being an admin of one tournament never grants access to arbitrary profiles.
+  const { data: targetMember } = await supabase.from("tournament_players")
+    .select("id").eq("tournament_id", id).eq("user_id", body.profile_id).maybeSingle();
+  const { data: targetAdmin } = await supabase.from("tournament_admins")
+    .select("id").eq("tournament_id", id).eq("user_id", body.profile_id).maybeSingle();
+  if (!targetMember && !targetAdmin) {
+    return NextResponse.json({ error: "Player is not in this tournament" }, { status: 403 });
+  }
 
   const admin = createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -28,7 +37,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
 
   const { data: profile } = await admin
     .from("profiles")
-    .select("id, first_name, last_name, email")
+    .select("id, first_name, last_name")
     .eq("id", body.profile_id)
     .single();
   if (!profile) return NextResponse.json({ error: "Profile not found" }, { status: 404 });
@@ -63,8 +72,17 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
   if (!adminRow) return NextResponse.json({ error: "Not a tournament admin" }, { status: 403 });
 
   const body = await request.json().catch(() => null);
-  if (!body?.profile_id || !body?.dupr_id) {
+  if (typeof body?.profile_id !== "string" || !/^[0-9a-f-]{36}$/i.test(body.profile_id) || typeof body?.dupr_id !== "string" || !body.dupr_id || body.dupr_id.length > 64) {
     return NextResponse.json({ error: "profile_id and dupr_id are required" }, { status: 400 });
+  }
+
+  // Being an admin of one tournament never grants access to arbitrary profiles.
+  const { data: targetMember } = await supabase.from("tournament_players")
+    .select("id").eq("tournament_id", id).eq("user_id", body.profile_id).maybeSingle();
+  const { data: targetAdmin } = await supabase.from("tournament_admins")
+    .select("id").eq("tournament_id", id).eq("user_id", body.profile_id).maybeSingle();
+  if (!targetMember && !targetAdmin) {
+    return NextResponse.json({ error: "Player is not in this tournament" }, { status: 403 });
   }
 
   const admin = createSupabaseClient(
