@@ -4,6 +4,14 @@ import { NextResponse, type NextRequest } from "next/server";
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 400; // 400 days
 
 export async function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+  const protectedPaths = ["/dashboard", "/profile", "/tournaments"];
+  const isProtected = protectedPaths.some((path) => pathname.startsWith(path));
+
+  if (!isProtected) {
+    return NextResponse.next({ request });
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -34,13 +42,7 @@ export async function proxy(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { pathname } = request.nextUrl;
-
-  // Protected routes
-  const protectedPaths = ["/dashboard", "/profile", "/tournaments"];
-  const isProtected = protectedPaths.some((p) => pathname.startsWith(p));
-
-  if (isProtected && !user) {
+  if (!user) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
     loginUrl.searchParams.set("redirect", `${pathname}${request.nextUrl.search}`);
