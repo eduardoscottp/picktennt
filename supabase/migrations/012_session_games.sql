@@ -156,7 +156,6 @@ END;
 $$;
 REVOKE ALL ON FUNCTION session_game_mutate(text,uuid,integer,uuid,jsonb) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION session_game_mutate(text,uuid,integer,uuid,jsonb) TO authenticated;
-COMMIT;
 
 -- Expose only the public roster fields. Direct profiles joins are intentionally
 -- restricted by the production profile privacy policy.
@@ -177,3 +176,5 @@ END;
 $$;
 REVOKE ALL ON FUNCTION play_session_detail(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION play_session_detail(uuid) TO authenticated;
+
+COMMIT;
