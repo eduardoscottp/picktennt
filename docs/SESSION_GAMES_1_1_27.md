@@ -11,6 +11,7 @@ Implemented on `codex/session-games`. iPhone/Watch baseline: `372f3ba`, version 
 - Confirmed games appear in every participant's history with session attribution and the correct outcome. Canonical game IDs prevent duplicates. Personal hiding/deletion preserves the shared result; roster departures preserve historical attribution. Health remains private.
 - A durable, health-free iPhone outbox owns Watch results before acknowledgement. Compatible transfer/recovery fields preserve session identity and assignment revision. Account-generation checks reject stale commands without blocking a valid current connection.
 - Ordinary Quick Game backup retries now target the unique account/game key. A live duplicate upload previously returned HTTP 409 and left the queue pending; the corrected retry updates one row and passes a dedicated regression test.
+- Rejected refresh tokens now finish launch restoration and show sign-in instead of leaving an endless spinner. The expired/revoked-session regression is covered alongside valid-session restoration.
 - Fixed credential-field focus loss on Login, invitation-page Button composition, and app-link routing from any iPhone tab. Watch empty rosters show guidance and Refresh. Errors are visible, primary save/create controls are blue, and navigation labels reflect their destination.
 
 ## Deployment
@@ -28,7 +29,7 @@ Devices: **Session Games Build 27 QA**, iPhone 17 / iOS 26.5, paired with **Sess
 | Core scoring and transfer models | 52 passing tests: 9 XCTest + 43 Swift Testing |
 | Actual SQL migrations in isolated PostgreSQL/WASM | 79 passing lifecycle, permission and boundary assertions |
 | Production backend, four real QA accounts | 47 passing lifecycle assertions + 8 concurrency/idempotency assertions |
-| iPhone unit tests | 52 passing tests in the final regression run |
+| iPhone unit tests | 53 passing tests in the final regression run |
 | Watch unit tests | 71 passing tests in 16 suites in the final regression run |
 | Web production build | Next.js webpack build passed |
 | iPhone and Watch release build | Release build passed for both apps |
@@ -46,6 +47,7 @@ All live UI workflows below passed using normal password sign-in/sign-out and fo
 | Teammate cannot confirm; participant disputes; organizer resolves; correction/reconfirmation; private history deletion; history → game → session | Passing method `testLiveDisputeCorrectionAndSharedHistoryDeletion` in the same bundle |
 | Shared URL opens from History; another account leaves/rejoins; Share Invite → Copy; back to session list | `Test-PicktenntUITests-2026.09.23_10-28-08--0400.xcresult` |
 | Quick Game retains serve/side choices; incoming invitation does not interrupt active scoring | `Test-PicktenntWatchUITests-2026.09.23_10-29-41--0400.xcresult` |
+| Ordinary Quick Game backup retry clears, sync shows Updated, valid saved account survives cold relaunch | `Test-PicktenntUITests-2026.09.23_10-45-15--0400.xcresult`; the real QA backup queue was independently verified empty |
 
 The combined 10:17 bundle also contains an initial share-test failure caused by assuming the system share sheet had a Close button. The corrected test uses Copy and passed separately at 10:28. Earlier failed runs exposed and led to the login-focus and invitation fixes; other failures were simulator signing, screen-lock, storage or automation-navigation issues. Live offline upload was independently observed transitioning from prepared to pending after reconnection.
 
