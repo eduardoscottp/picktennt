@@ -75,7 +75,7 @@ export default async function LeaderboardPage({ params }: { params: Promise<{ id
     const playerIds = standings.map((s) => s.id);
     if (playerIds.length > 0) {
       const { data: profiles } = await supabase
-        .from("profiles").select("*").in("id", playerIds);
+        .from("player_profiles").select("*").in("id", playerIds);
       for (const p of (profiles ?? []) as Profile[]) {
         entityMap.set(p.id, {
           name: `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim(),
@@ -88,7 +88,7 @@ export default async function LeaderboardPage({ params }: { params: Promise<{ id
     // Fetch all teams in the tournament (not just ranked ones) to get member data
     const { data: teamsRaw } = await supabase
       .from("teams")
-      .select("*, team_members(user_id, profile:profiles(id, first_name, last_name, avatar_url, dupr_rating))")
+      .select("*, team_members(user_id, profile:player_profiles(id, first_name, last_name, avatar_url, dupr_rating))")
       .eq("tournament_id", id);
     teamsForDoubles = (teamsRaw ?? []) as any[];
 

@@ -20,7 +20,7 @@ interface ProfileResult {
   id: string;
   first_name: string | null;
   last_name: string | null;
-  email: string;
+  username: string | null;
   avatar_url: string | null;
 }
 
@@ -36,16 +36,17 @@ export function AdminAddPlayer({ tournament, existingPlayerIds }: Props) {
   async function search(q: string) {
     setQuery(q);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!q.trim()) { setResults([]); return; }
+    const term = q.trim().replace(/[(),.%_\\]/g, "").slice(0, 100);
+    if (term.length < 2) { setResults([]); return; }
 
     debounceRef.current = setTimeout(async () => {
       setSearching(true);
       try {
         const supabase = createClient();
         const { data } = await supabase
-          .from("profiles")
-          .select("id, first_name, last_name, email, avatar_url")
-          .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,email.ilike.%${q}%`)
+          .from("player_profiles")
+          .select("id, first_name, last_name, username, avatar_url")
+          .or(`first_name.ilike.%${term}%,last_name.ilike.%${term}%,username.ilike.%${term}%`)
           .not("id", "in", `(${existingPlayerIds.join(",") || "00000000-0000-0000-0000-000000000000"})`)
           .limit(8);
         setResults((data ?? []) as ProfileResult[]);
@@ -70,7 +71,7 @@ export function AdminAddPlayer({ tournament, existingPlayerIds }: Props) {
 
       // Singles: auto-create a team for the player
       if (tournament.type === "singles") {
-        const name = [profile.first_name, profile.last_name].filter(Boolean).join(" ") || profile.email;
+        const name = [profile.first_name, profile.last_name].filter(Boolean).join(" ") || (profile.username ?? "Player");
         const { data: team, error: teamErr } = await supabase
           .from("teams")
           .insert({ tournament_id: tournament.id, name })
@@ -80,7 +81,7 @@ export function AdminAddPlayer({ tournament, existingPlayerIds }: Props) {
         await supabase.from("team_members").insert({ team_id: team.id, user_id: profile.id });
       }
 
-      toast(`${profile.first_name ?? profile.email} added!`, "success");
+      toast(`${profile.first_name ?? (profile.username ?? "Player")} added!`, "success");
       setResults((r) => r.filter((p) => p.id !== profile.id));
       setQuery("");
       router.refresh();
@@ -105,7 +106,7 @@ export function AdminAddPlayer({ tournament, existingPlayerIds }: Props) {
           <input
             value={query}
             onChange={(e) => search(e.target.value)}
-            placeholder="Search by name or email…"
+            placeholder="Search by name or username…"
             className="w-full h-11 rounded-xl border border-gray-200 bg-white pl-10 pr-10 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
           />
           {query && (
@@ -132,7 +133,7 @@ export function AdminAddPlayer({ tournament, existingPlayerIds }: Props) {
                   <div className="text-sm font-medium text-gray-900 truncate">
                     {p.first_name} {p.last_name}
                   </div>
-                  <div className="text-xs text-gray-400 truncate">{p.email}</div>
+                  <div className="text-xs text-gray-400 truncate">{p.username}</div>
                 </div>
                 <Button size="sm" loading={adding === p.id} onClick={() => addPlayer(p)}>
                   Add

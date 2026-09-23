@@ -37,21 +37,21 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
   // Pending players
   const { data: pendingPlayers } = await supabase
     .from("tournament_players")
-    .select("*, profile:profiles(*)")
+    .select("*, profile:player_profiles(*)")
     .eq("tournament_id", id)
     .eq("status", "pending");
 
   // Approved players
   const { data: approvedPlayers } = await supabase
     .from("tournament_players")
-    .select("*, nullified_from_standings, profile:profiles(*)")
+    .select("*, nullified_from_standings, profile:player_profiles(*)")
     .eq("tournament_id", id)
     .eq("status", "approved");
 
   // Admins
   const { data: admins } = await supabase
     .from("tournament_admins")
-    .select("*, profile:profiles!tournament_admins_user_id_fkey(*)")
+    .select("*, profile:player_profiles!tournament_admins_user_id_fkey(*)")
     .eq("tournament_id", id)
     .order("succession_order");
 
@@ -59,7 +59,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
   const { data: teamsRaw } = tournament.type !== "mixed"
     ? await supabase
         .from("teams")
-        .select("id, name, team_members(user_id, profile:profiles(first_name, last_name, avatar_url))")
+        .select("id, name, team_members(user_id, profile:player_profiles(first_name, last_name, avatar_url))")
         .eq("tournament_id", id)
         .order("created_at")
     : { data: null };

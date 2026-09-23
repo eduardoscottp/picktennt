@@ -76,7 +76,7 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
 
   const { data: playersData } = await supabase
     .from("tournament_players")
-    .select("*, profile:profiles(*)")
+    .select("*, profile:player_profiles(*)")
     .eq("tournament_id", id)
     .eq("status", "approved")
     .order("created_at");
@@ -98,7 +98,7 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
   if (!isMixed) {
     const { data: teamsRaw } = await supabase
       .from("teams")
-      .select("id, name, team_members(user_id, profile:profiles(first_name, last_name, avatar_url))")
+      .select("id, name, team_members(user_id, profile:player_profiles(first_name, last_name, avatar_url))")
       .eq("tournament_id", id)
       .order("created_at");
     allTeams = (teamsRaw ?? []) as any[];
@@ -239,12 +239,12 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
       .from("matches")
       .select(`
         *,
-        team_a:teams!matches_team_a_id_fkey(id, name, team_members(user_id, profile:profiles(*))),
-        team_b:teams!matches_team_b_id_fkey(id, name, team_members(user_id, profile:profiles(*))),
-        player_a1:profiles!matches_player_a1_id_fkey(*),
-        player_a2:profiles!matches_player_a2_id_fkey(*),
-        player_b1:profiles!matches_player_b1_id_fkey(*),
-        player_b2:profiles!matches_player_b2_id_fkey(*)
+        team_a:teams!matches_team_a_id_fkey(id, name, team_members(user_id, profile:player_profiles(*))),
+        team_b:teams!matches_team_b_id_fkey(id, name, team_members(user_id, profile:player_profiles(*))),
+        player_a1:player_profiles!matches_player_a1_id_fkey(*),
+        player_a2:player_profiles!matches_player_a2_id_fkey(*),
+        player_b1:player_profiles!matches_player_b1_id_fkey(*),
+        player_b2:player_profiles!matches_player_b2_id_fkey(*)
       `)
       .eq("tournament_id", id)
       .order("court_number");
