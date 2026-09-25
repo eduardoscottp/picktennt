@@ -2,9 +2,7 @@
 
 **Picktennt**
 
-> REVIEW COPY — Proposed corrections to Claude’s September 23 draft. Not approved or in effect. Confirm the changes in CHANGELOG.md before publication.
-
-**Version:** 2026-09-23.1 · **Effective date:** Pending publication
+**Version:** 2026-09-25.1 · **Effective date:** September 25, 2026
 **Provider:** Idddeas LLC, Miami, Florida, USA · **Contact:** info@picktennt.com
 
 ---
@@ -61,15 +59,19 @@ As between you and us, you retain ownership of the data you enter or generate th
 
 By using the App, you authorize us to use your game and account data—for example, results, match events, player slots, profile information, and usage data—to operate, analyze, and improve the App and our services.
 
-**Advertising and related uses (not active at launch).** In the future, and subject to applicable notices and controls, we may also use game and account data to train statistical and machine-learning models, to build and identify audiences, and for advertising, including sharing game, usage, and audience data with third parties (such as search, video, social, and email advertising partners) for advertising purposes. Any such sharing would be tied to pseudonymous or device identifiers and **would not include your name**. These features are **not active** in the initial release and may be adjusted over time; when activated, we will apply the notices and controls then required by law and described in our Privacy Policy.
+**Advertising and related uses (not active at launch).** In the future, and subject to applicable notices and controls, we may also use non-health game and account data to train statistical and machine-learning models, to build and identify audiences, and for advertising, including sharing game, usage, and audience data with third parties (such as search, video, social, and email advertising partners) for advertising purposes. Any such sharing would be tied to pseudonymous or device identifiers and **would not include your name**. These features are **not active** in the initial release and may be adjusted over time; when activated, we will apply the notices and controls then required by law and described in our Privacy Policy.
 
-**Health data is excluded.** Health and physical-activity data obtained through Apple HealthKit (including heart rate, active energy, steps, and workout data) is processed and stored **only on your device**, is **not** transmitted to our servers, is **not** used for advertising or marketing, is **not** shared with third parties, and is **not** sold. Only game and account data—never health data—is used for the analytics, advertising, audience, or sharing purposes described above. This is consistent with Apple App Review Guideline 5.1.3.
+**Health and fitness data is excluded.** We do not use health or fitness information for marketing or advertising, regardless of its source. Health and physical-activity data obtained through Apple HealthKit (including heart rate, active energy, steps, and workout data) is processed and stored **only on your device**, is **not** transmitted to our servers, is **not** used for advertising or marketing, is **not** shared with third parties, and is **not** sold. Only non-health game and account data—never health or fitness data—may be used for the analytics, advertising, audience, or sharing purposes described above. This is consistent with Apple App Review Guideline 5.1.3.
 
 **Your responsibility for locally stored health data.** Because health data remains on your device and within your control, you are responsible for safeguarding your device and the data on it, including through a passcode, biometrics, device encryption, backups, and control over who has access to your device. We do not receive or store this data and are not responsible for its safekeeping, loss, or unauthorized access on your device. Nothing in this Section limits any mandatory consumer rights you may have.
 
-## 9. Marketing communications
+## 9. Free service, marketing and advertising
 
-Creating an account or accepting these Terms does not subscribe you to marketing. If we offer marketing communications, we will request a separate, optional choice before sending them. You may **unsubscribe** at any time using the link included in each marketing email. Marketing is not required to use the App. Transactional and service messages—such as security alerts, changes to these Terms, and account notices—are not marketing and may continue to be sent.
+Picktennt is provided without a usage fee. **Marketing and advertising are part of the business model that supports the free App.** By accepting these Terms, you agree that the App may display advertisements, sponsored content, and promotions for our products and services and those of third parties as these features become available. The free App does not promise an advertising-free experience.
+
+**Marketing email.** By accepting these Terms, you agree to receive marketing emails from Idddeas about our products and services and, in the future, third-party promotions, where applicable law permits permission to be obtained through these Terms. Where a separate consent is required, we will obtain it before sending marketing; acceptance of these Terms alone does not supply that separate consent. You can unsubscribe at any time through the link in each marketing email or by contacting info@picktennt.com. Unsubscribing does not close your account or prevent you from using the App, and does not remove ordinary in-App advertisements or promotions. Account, security, and service messages may continue.
+
+**Permissions and data.** Accepting these Terms does not grant permission for cross-app tracking or promotional push notifications. We will request any required permissions separately, and declining them does not block access to the App. Health and fitness information is excluded from advertising and marketing. Advertising networks, audience sharing, and personalized advertising are not active in the initial release; their introduction requires updated disclosures and any applicable permissions before activation.
 
 ## 10. Health, safety, and assumption of risk
 
@@ -117,4 +119,4 @@ info@picktennt.com
 
 ---
 
-*Review candidate 2026-09-23.1. Not yet approved or in effect.*
+*Version 2026-09-25.1 — September 25, 2026.*

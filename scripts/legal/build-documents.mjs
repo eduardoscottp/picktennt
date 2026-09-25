@@ -34,4 +34,4 @@ for (const [file, slug] of [["terms-of-use.md", "terms"], ["privacy-policy.md", 
     writeFileSync(destination, output);
   }
 }
-console.log("Legal documents match the Markdown review source.");
+console.log("Legal documents match the Markdown source.");

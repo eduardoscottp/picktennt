@@ -2,9 +2,7 @@
 
 **Picktennt**
 
-> REVIEW COPY — Proposed corrections to Claude’s September 23 draft. Not approved or in effect. Confirm the changes in CHANGELOG.md before publication.
-
-**Version:** 2026-09-23.1 · **Effective date:** Pending publication
+**Version:** 2026-09-25.1 · **Effective date:** September 25, 2026
 **Controller:** Idddeas LLC, Miami, Florida, USA · **Contact:** info@picktennt.com
 
 ---
@@ -39,11 +37,11 @@ We use information to:
 
 - operate, maintain, and secure the App, including recording and syncing matches and history, showing you your metrics, and providing support;
 - analyze and improve the App and our services; and
-- send account and service messages, and provide optional marketing communications only as described in Section 8.
+- send account and service messages, and provide marketing and advertising as described in Section 8 and subject to applicable permissions.
 
-**Future uses (not active at launch).** Subject to applicable notices and controls, we may in the future use game and account information to train statistical and machine-learning models, to build audiences, and for advertising, including sharing information with third parties for advertising without disclosing your name (see Section 7).
+**Future uses (not active at launch).** Subject to applicable notices and controls, we may in the future use non-health game and account information to train statistical and machine-learning models, to build audiences, and for advertising, including sharing information with third parties for advertising without disclosing your name (see Section 7).
 
-**Health information is treated differently.** The analytics, model-training, audience, advertising, and third-party-sharing purposes above apply **only** to game and account information. **Health information is never used for advertising, marketing, or audiences and is never shared with third parties**, consistent with Apple App Review Guideline 5.1.3.
+**Health and fitness information is excluded.** We do not use health or fitness information for marketing or advertising, regardless of its source. The analytics, model-training, audience, advertising, and third-party-sharing purposes above apply **only** to non-health game and account information. **Health information is never used for advertising, marketing, or audiences and is never shared with third parties**, consistent with Apple App Review Guideline 5.1.3.
 
 ## 6. Legal bases for processing
 
@@ -57,9 +55,13 @@ Where required, we rely on the legal bases available under the laws applicable t
 
 **Health information.** We do not transmit health information to our servers, and we do not sell or share it with third parties. This exclusion is unconditional and prevails over any other provision of this Policy. When you use HealthKit and the App Store, Apple processes information under its own policies.
 
-## 8. Marketing communications
+## 8. Marketing and advertising
 
-Creating an account or accepting our Terms of Use does not subscribe you to marketing. If we offer marketing communications, we will request a separate, optional choice before sending them and provide an unsubscribe link in each marketing email. Marketing is not required to use the App. Service messages—such as security alerts, changes to our Terms, and account notices—are not marketing.
+Marketing and advertising are part of Picktennt's free-service business model, as described in Section 9 of our [Terms of Use](/ios/terms). The App may display advertisements, sponsored content, and promotions for our products and services and those of third parties as those features become available.
+
+We may use your account email address to send marketing from Idddeas under the Terms where applicable law permits. Where separate consent is required, we will obtain it before sending marketing; accepting the Terms alone does not provide that separate consent. Every marketing email will include an unsubscribe link. You may also contact info@picktennt.com to stop marketing email. Unsubscribing does not close your account or remove ordinary in-App ads. Account, security, and service messages may continue.
+
+Acceptance of the Terms is not permission for cross-app tracking or promotional push notifications. Any required permissions will be requested separately, and declining them does not prevent use of the App. Health and fitness information is never used for marketing or advertising. Advertising networks, audience sharing, and personalized advertising are not active in the initial release. Before introducing new data uses, we will update this Policy and obtain any required permissions.
 
 ## 9. Retention
 
@@ -72,7 +74,7 @@ Depending on where you live, you may have the right to access, correct, delete, 
 - **Health permissions.** You can grant or revoke the App’s access to HealthKit at any time in your iOS or watchOS settings.
 - **Account deletion.** In the App, open Settings → Delete Account to request deletion of your account and associated information. The retention and device limitations in Section 9 apply. You can also request removal of Picktennt workouts from Apple Health during deletion; if removal cannot be completed, manage those records in the Health app.
 - **Advertising choices (future).** If we activate third-party advertising sharing, we will provide an opt-out (including a “Do Not Sell or Share My Personal Information” choice where applicable).
-- **Marketing choices.** Marketing is optional. Use the unsubscribe link in any marketing email if you have separately subscribed.
+- **Marketing choices.** Stop marketing emails through their unsubscribe link or by contacting info@picktennt.com. Any separately requested permissions can be declined or withdrawn. These choices do not remove ordinary in-App advertisements.
 - To exercise any right, contact us at **info@picktennt.com**.
 
 ## 11. Health information (Apple HealthKit)
@@ -117,4 +119,4 @@ info@picktennt.com
 
 ---
 
-*Review candidate 2026-09-23.1. Not yet approved or in effect.*
+*Version 2026-09-25.1 — September 25, 2026.*
