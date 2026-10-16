@@ -8,6 +8,8 @@ export type RoundType = "round_robin" | "par_match" | "elimination" | "finals_go
 export type RoundStatus = "pending" | "active" | "completed";
 export type PlayerStatus = "pending" | "approved" | "rejected";
 export type JoinVia = "code" | "link" | "invite" | "search";
+export type PlaySessionFormat = "random_player" | "by_partner";
+export type PlaySessionMemberState = "active" | "left" | "removed";
 
 export interface Profile {
   id: string;
@@ -21,6 +23,35 @@ export interface Profile {
   is_system_admin: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface PlaySession {
+  id: string;
+  created_by: string;
+  title: string;
+  starts_at: string;
+  duration_minutes: number;
+  timezone: string;
+  court_count: number;
+  location_name: string;
+  location_address: string;
+  max_players: number;
+  format: PlaySessionFormat;
+  description: string | null;
+  join_code: string;
+  registration_closed: boolean;
+  cancelled_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PublicPlaySessionInvitation extends Pick<PlaySession,
+  "id" | "title" | "starts_at" | "duration_minutes" | "timezone" | "court_count" |
+  "location_name" | "location_address" | "max_players" | "format" | "description" |
+  "join_code" | "registration_closed" | "cancelled_at"
+> {
+  organizer_name: string;
+  active_players: number;
 }
 
 export interface Tournament {
@@ -194,6 +225,9 @@ export type Database = {
       matches:            { Row: any; Insert: any; Update: any };
       standings:          { Row: any; Insert: any; Update: any };
       mixed_pairings:     { Row: any; Insert: any; Update: any };
+      play_sessions:      { Row: any; Insert: any; Update: any };
+      play_session_pairs: { Row: any; Insert: any; Update: any };
+      play_session_members: { Row: any; Insert: any; Update: any };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
