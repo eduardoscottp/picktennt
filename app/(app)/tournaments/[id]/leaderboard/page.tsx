@@ -1,3 +1,4 @@
+import { modularTournamentPage } from "@/lib/tournament-builder/server-page";
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import { MobileHeader } from "@/components/layout/navbar";
@@ -14,6 +15,8 @@ const RANK_ICONS = ["🥇", "🥈", "🥉"];
 
 export default async function LeaderboardPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const modular = await modularTournamentPage(id, 'standings');
+  if (modular) return modular;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -187,3 +190,4 @@ export default async function LeaderboardPage({ params }: { params: Promise<{ id
     </div>
   );
 }
+

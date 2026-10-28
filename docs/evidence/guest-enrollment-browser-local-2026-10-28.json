@@ -1,0 +1,18 @@
+{
+  "evidence": "local Next browser + PGlite SQL; simulated Supabase Auth/REST; no Google or host OAuth verification",
+  "cases": [
+    "Website creates and owner publishes an exact reviewed definition; published builder bookmark converges on Overview without a loop",
+    "Two independent browser accounts consent and enroll separately",
+    "Ordinary participant cannot open the server-gated Admin view",
+    "Admin lifecycle controls and Matches scoring render on their distinct normal routes",
+    "Administrator can save a scheduled game directly without Start, typed reason or competing provisional action",
+    "Administrator validates a saved player score with automatic audit note; interrupted response recovers without duplicate command",
+    "Administrator validation advances the tournament and final first/second placements render",
+    "Browser OAuth consent uses original native account, 303 GET callback, isolated opaque token and native revocation",
+    "Website administrator enrolls two guests without accounts, locks roster, records score directly and obtains final placements",
+    "Separate synthetic final-placement fixture renders shared third place for both entries (render evidence only)"
+  ],
+  "status": "passed",
+  "completed_at": "2026-10-28T19:24:03.238Z",
+  "current_applicability": "Historical evidence of an earlier guest-enrollment implementation, superseded by the real-account/profile/DUPR requirement on 2026-10-28. It does not establish current guest enrollment support."
+}

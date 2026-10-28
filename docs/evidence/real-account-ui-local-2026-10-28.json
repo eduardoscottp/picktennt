@@ -1,0 +1,34 @@
+{
+  "recorded_at": "2026-10-28T19:33:17.992Z",
+  "scope": "Remove account-free guest enrollment UI and its active test/documentation references only. No backend/SQL/commands edits or production deployment.",
+  "policy": "Every new tournament player requires a real Picktennt account, profile and DUPR identity.",
+  "changes": [
+    "GuestEntryForm import/render removed; now-unused guest-entry.tsx deleted.",
+    "All roles, lifecycle states and views tested for guest form absence.",
+    "Historical guest labels/names remain readable without fabricated accounts or personal acceptance.",
+    "Guest-created second tournament removed from browser smoke; normal Admin asserts guest form absence.",
+    "Current roster-review wording retained; historical guest release evidence explicitly marked superseded."
+  ],
+  "verification": {
+    "route_and_ui_tests": "15/15 pass",
+    "scoped_eslint": "pass",
+    "local_browser": {
+      "evidence": "local Next browser + PGlite SQL; simulated Supabase Auth/REST; no Google or host OAuth verification",
+      "cases": [
+        "Website creates and owner publishes an exact reviewed definition; published builder bookmark converges on Overview without a loop",
+        "Two independent browser accounts consent and enroll separately",
+        "Ordinary participant cannot open the server-gated Admin view",
+        "Admin lifecycle controls and Matches scoring render on their distinct normal routes",
+        "Administrator can save a scheduled game directly without Start, typed reason or competing provisional action",
+        "Administrator validates a saved player score with automatic audit note; interrupted response recovers without duplicate command",
+        "Administrator validation advances the tournament and final first/second placements render",
+        "Browser OAuth consent uses original native account, 303 GET callback, isolated opaque token and native revocation",
+        "Separate synthetic final-placement fixture renders shared third place for both entries (render evidence only)"
+      ],
+      "status": "passed",
+      "completed_at": "2026-10-28T19:32:36.975Z"
+    }
+  },
+  "limits": "Local Next/Chrome/PGlite with simulated native identities and local DUPR fixture values. This does not verify real DUPR linkage or release new administrator/assistant registration commands.",
+  "production_mutations": false
+}

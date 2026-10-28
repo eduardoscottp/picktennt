@@ -1,0 +1,48 @@
+import type { ModuleId } from './definition';
+import { definitionJsonSchema } from './definition-schema';
+import { OWNER_ACTIONS } from './owner-actions';
+
+export const SUPPORTED_COMPOSITIONS: readonly (readonly ModuleId[])[] = [
+  ['registration@1', 'entries@1', 'round_robin@1', 'standings@1', 'placements@1'],
+  ['registration@1', 'entries@1', 'elimination@1', 'placements@1'],
+  ['registration@1', 'entries@1', 'round_robin@1', 'standings@1', 'qualify@1', 'elimination@1', 'placements@1'],
+];
+export interface ModuleDescriptor {
+  id: ModuleId; version: 1; description: string; input: string; output: string;
+  config: Record<string, readonly (string | number | boolean)[]>;
+  permitted_predecessors: readonly ModuleId[]; permitted_successors: readonly ModuleId[];
+  upstream_cardinality: 0 | 1; entry_types: readonly ['singles', 'fixed_doubles'];
+  preconditions: string; completion: string; corrections: string; questions: string[]; example: string;
+}
+const specs: { id: ModuleId; description: string; input: string; output: string; config?: ModuleDescriptor['config']; preconditions: string; completion: string; questions: string[]; example: string }[] = [
+  { id: 'registration@1', description: 'Admission of complete entries using existing Picktennt accounts.', input: 'ParticipantApplications', output: 'ApprovedParticipants', preconditions: 'Published rules and either actual participant consent or explicit administrator admission of existing Picktennt profiles.', completion: 'Registration explicitly closed and eligible roster reviewed.', questions: ['Choose singles or fixed doubles, capacity, approval mode, deadline and organizer participation.'], example: '16 people in fixed doubles means 8 entries.' },
+  { id: 'entries@1', description: 'Lock an eligible account roster and its seed order.', input: 'ApprovedParticipants', output: 'EntrySet', preconditions: 'Closed registration and complete approved entries.', completion: 'Roster and stable draw order committed.', questions: ['Confirm eligible roster before locking.'], example: 'Direct bracket needs actual 2, 4, 8 or 16 entries.' },
+  { id: 'round_robin@1', description: 'One full all-play-all group.', input: 'EntrySet', output: 'StageResults', preconditions: '2–16 locked entries.', completion: 'Every required fixture has an accepted terminal outcome.', questions: ['Confirm full round robin and review estimated duration.'], example: '8 entries produce 28 matches.' },
+  { id: 'standings@1', description: 'Rank eligible entries using published metrics.', input: 'StageResults', output: 'RankedEntries', preconditions: 'Accepted current same-stage outcomes.', completion: 'Completed round robin and required exact ties resolved by recorded draw.', questions: ['Choose supported secondary ranking keys after wins.'], example: 'Wins, differential, points for; remaining exact ties require recorded draw.' },
+  { id: 'qualify@1', description: 'Advance top two or four eligible entries.', input: 'RankedEntries', output: 'EntrySet', config: { count: [2, 4] }, preconditions: 'Complete ranking and resolved cutoff/seed ties.', completion: 'Enough eligible entries selected in rank order.', questions: ['Advance top two or top four?'], example: 'Top four seeds feed semifinals 1–4 and 2–3.' },
+  { id: 'elimination@1', description: 'Single elimination with optional bronze.', input: 'EntrySet', output: 'BracketResults', config: { seeding: ['draw', 'ranked'], bronze: [true, false] }, preconditions: 'Direct draw with 2/4/8/16 entries, or ranked qualifiers with 2/4.', completion: 'Final and optional bronze accepted.', questions: ['Play bronze? Direct brackets use draw, qualifiers use ranked seeds.'], example: 'Four entries: three matches, plus one when bronze enabled.' },
+  { id: 'placements@1', description: 'Publish the final versioned result.', input: 'RankedEntries | BracketResults', output: 'FinalPlacements', preconditions: 'Complete results, resolved required ties and eligible champion.', completion: 'Consistent placements and result version committed.', questions: ['Review shared-third and nonqualifier placement rules.'], example: 'Without bronze, semifinal losers share third.' },
+];
+export const MODULE_CATALOG: readonly ModuleDescriptor[] = specs.map(spec => ({
+  ...spec, version: 1, config: spec.config ?? {}, entry_types: ['singles', 'fixed_doubles'],
+  upstream_cardinality: spec.id === 'registration@1' ? 0 : 1,
+  permitted_predecessors: [...new Set(SUPPORTED_COMPOSITIONS.flatMap(path => path.flatMap((id, i) => id === spec.id && i > 0 ? [path[i - 1]] : [])))],
+  permitted_successors: [...new Set(SUPPORTED_COMPOSITIONS.flatMap(path => path.flatMap((id, i) => id === spec.id && i < path.length - 1 ? [path[i + 1]] : [])))],
+  corrections: 'Impact review required; preserve history and block changes to started dependents until explicit void-and-replay. Withdrawal follows stage_sensitive_v1.',
+}));
+export function listModules(): readonly ModuleDescriptor[] { return structuredClone(MODULE_CATALOG); }
+export function getCapabilities(administratorAccess = false, ownerAccess = false) {
+  return { schema_version: '1.0' as const, sport: 'pickleball', entry_types: ['singles', 'fixed_doubles'] as const, entries: { min: 2, max: 16 }, courts: { min: 1, max: 8 }, compositions: structuredClone(SUPPORTED_COMPOSITIONS), modules: listModules(),
+    definition_schema: definitionJsonSchema(), draft_definition_schema: definitionJsonSchema(true),
+    policy_guidance: {
+      'policies.match': 'One game, legal target and win-by from the schema; side_out awards points only to the serving side, rally awards each rally.',
+      'policies.ranking.order': 'Wins first, then organizer-selected unique secondary criteria. Descending keys prefer larger metrics; points_against_asc prefers fewer conceded points; points_for_in_losses_desc counts points only in losses.',
+      'policies.ranking.final_tie': 'An exact unresolved tie requires an owner-recorded draw; never invent or silently choose a winner.',
+      'policies.confirmation': 'A submitted score is provisional until the opponent confirms or an authorized administrator attests it.',
+      'policies.withdrawal': 'Stage-sensitive withdrawal: exclude incomplete round-robin participation, preserve completed-stage history, and never backfill a started playoff.',
+      'policies.correction': 'Owner reviews downstream impact; started dependent games require explicit void and replay with history preserved.',
+    },
+    participant_enrollment: { ai_can_enroll: administratorAccess, requires_picktennt_account: true, administrator_scope: 'tournaments:admin', administrator_instructions: 'With explicit admin access and a current tournament administrator role, look up exact Picktennt usernames and enroll existing profile UUIDs using admin_register_players. Admission is recorded as administrator enrollment, never personal consent. Profile and DUPR links remain on the real account. Account-free guests are forbidden.', instructions: administratorAccess ? 'Every player must have an existing Picktennt profile. Use admin_find_player then admin_register_players only when instructed by the current tournament administrator. This records administrator admission, not personal consent; preserve profile and DUPR identity. Self-registration still uses the participant website consent flow. Draft creation alone never enrolls anyone. Ask the organizer before structural changes.' : 'Actual participants must join on the Picktennt website with their own consent; fixed doubles also require partner consent. organizer_plays records intent only and never enrolls the organizer. A draft definition contains no participant roster. Never pre-enroll anyone, claim existing entries from a draft, or invent player consent. Ask for unknown organizer facts; use get_draft to preserve saved decisions before updating.' },
+    owner_actions: { available: ownerAccess, scope: 'tournaments:owner', actions: ownerAccess ? [...OWNER_ACTIONS] : [], instructions: ownerAccess ? 'Only the current tournament owner may use owner tools. Call owner_preview_action, show its exact proposal, revision and concrete impact, then obtain explicit owner confirmation before owner_commit_action. Publication, cancellation, reopening results and administrator changes require separate confirmation for each current preview. This scope does not grant draft editing, player enrollment or routine administration.' : 'Owner actions require the Picktennt owner website review flow or a fresh explicit tournaments:owner consent. Existing draft or administrator consent does not authorize publication, cancellation, reopening results or administrator changes.' },
+    publication: ownerAccess ? 'owner_preview_and_explicit_confirmation' : 'owner_website_review', runtime_requires_ai: false };
+}

@@ -1,0 +1,21 @@
+{
+  "evidence": "local Next browser + PGlite SQL; simulated Supabase Auth/REST; no Google or host OAuth verification",
+  "cases": [
+    "Website creates and owner publishes an exact reviewed definition; published builder bookmark converges on Overview without a loop",
+    "Two independent browser accounts consent and enroll separately",
+    "Ordinary participant cannot open the server-gated Admin view",
+    "Admin lifecycle controls and Matches scoring render on their distinct normal routes",
+    "Administrator can save a scheduled game directly without Start, typed reason or competing provisional action",
+    "Administrator validates a saved player score with automatic audit note; interrupted response recovers without duplicate command",
+    "Administrator validation advances the tournament and final first/second placements render",
+    "Browser OAuth consent uses original native account, 303 GET callback, isolated opaque token and native revocation",
+    "Same OAuth client explicitly reconnects with native administrator consent; isolated bearer-only HTTP MCP lists admin tools and reads the completed tournament",
+    "Administrator resolves existing usernames and enrolls two real-profile identities without creating accounts or personal consent; duplicates, blank entry names and capacity are disabled",
+    "Native owner previews and explicitly confirms adding/removing an existing administrator; delegates cannot manage roles and removal leaves roster/results unchanged",
+    "Native administrator OAuth grant drives real HTTP MCP result command through SQL and final placements; identical receipt replay does not duplicate the result",
+    "Fresh native all-three-scope consent enables exact owner preview/commit publication, replay, delegation/removal and cancellation over HTTP MCP; old admin grants stay restricted and native revocation immediately denies owner access",
+    "Separate synthetic final-placement fixture renders shared third place for both entries (render evidence only)"
+  ],
+  "status": "passed",
+  "completed_at": "2026-10-28T22:57:48.824Z"
+}

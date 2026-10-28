@@ -1,0 +1,91 @@
+{
+  "schema_version": "1.0",
+  "event": {
+    "name": "Saturday Doubles",
+    "starts_at": "2026-11-07T09:00:00-05:00",
+    "expected_end_at": "2026-11-07T12:30:00-05:00",
+    "timezone": "America/New_York",
+    "venue_name": "Pilot Courts",
+    "visibility": "unlisted",
+    "courts": 4
+  },
+  "registration": {
+    "mode": "approval",
+    "entry_type": "fixed_doubles",
+    "max_entries": 8,
+    "min_entries": 4,
+    "closes_at": "2026-11-06T18:00:00-05:00",
+    "partner_consent": true,
+    "organizer_plays": false
+  },
+  "policies": {
+    "match": {
+      "version": 1,
+      "games": 1,
+      "target": 11,
+      "win_by": 2,
+      "cap": null,
+      "scoring": "side_out"
+    },
+    "ranking": {
+      "version": 1,
+      "order": [
+        "wins_desc",
+        "differential_desc",
+        "points_for_desc"
+      ],
+      "final_tie": "recorded_draw"
+    },
+    "confirmation": "opponent_or_admin_v1",
+    "withdrawal": "stage_sensitive_v1",
+    "correction": "impact_review_void_and_replay_v1"
+  },
+  "scheduling": {
+    "estimated_slot_minutes": 20,
+    "minimum_rest_minutes": 5,
+    "contingency_minutes": 30
+  },
+  "nodes": [
+    {
+      "id": "reg",
+      "module": "registration@1"
+    },
+    {
+      "id": "roster",
+      "module": "entries@1",
+      "from": "reg"
+    },
+    {
+      "id": "rr",
+      "module": "round_robin@1",
+      "from": "roster"
+    },
+    {
+      "id": "rank",
+      "module": "standings@1",
+      "from": "rr"
+    },
+    {
+      "id": "top",
+      "module": "qualify@1",
+      "from": "rank",
+      "config": {
+        "count": 4
+      }
+    },
+    {
+      "id": "playoff",
+      "module": "elimination@1",
+      "from": "top",
+      "config": {
+        "seeding": "ranked",
+        "bronze": false
+      }
+    },
+    {
+      "id": "result",
+      "module": "placements@1",
+      "from": "playoff"
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+import { modularTournamentPage } from "@/lib/tournament-builder/server-page";
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import { MobileHeader } from "@/components/layout/navbar";
@@ -11,6 +12,8 @@ import type { Profile, Round, Match, Tournament } from "@/types/database";
 
 export default async function MatchesPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const modular = await modularTournamentPage(id, 'matches');
+  if (modular) return modular;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) notFound();
@@ -205,3 +208,4 @@ export default async function MatchesPage({ params }: { params: Promise<{ id: st
     </div>
   );
 }
+

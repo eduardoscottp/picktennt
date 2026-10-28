@@ -1,3 +1,4 @@
+import { redirectModularJoin } from "@/lib/tournament-builder/server-page";
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import Link from "next/link";
@@ -24,6 +25,8 @@ export default async function JoinByCodePage({ params }: { params: Promise<{ cod
     .select("id, name, type, status, max_players, court_count")
     .eq("join_code", code.toUpperCase())
     .single();
+
+  if (tournament) await redirectModularJoin(tournament.id);
 
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -116,3 +119,4 @@ export default async function JoinByCodePage({ params }: { params: Promise<{ cod
     </div>
   );
 }
+

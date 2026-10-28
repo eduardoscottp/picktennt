@@ -1,0 +1,60 @@
+{
+  "recorded_at": "2026-10-28T18:23:27.291Z",
+  "scope": "Normal modular tournament routes, existing navigation reuse, legacy preservation, authorized snapshot/admin access, and route-specific local browser regression.",
+  "findings": [],
+  "source_review": {
+    "legacy_overview_matches_leaderboard_admin_render_bodies_unchanged_except_early_modular_dispatch": true,
+    "legacy_join_body_unchanged_and_modular_navigation_precedes_legacy_get_writes": true,
+    "engine_probe_errors_fail_without_legacy_fallthrough": true,
+    "modular_feature_flag_and_uuid_checked": true,
+    "authenticated_authorized_snapshot_required_before_private_data_render": true,
+    "current_owner_or_admin_required_for_admin_server_render": true,
+    "no_legacy_direct_writer_components_reused_by_modular_views": true,
+    "existing_tournament_top_and_bottom_nav_reused": true,
+    "published_builder_redirects_overview_and_overview_renders_without_loop": true,
+    "draft_normal_routes_redirect_builder_and_builder_renders_without_loop": true
+  },
+  "verification": {
+    "navigation_and_ssr_view_tests": "13/13 pass",
+    "adapted_local_browser_smoke": {
+      "evidence": "local Next browser + PGlite SQL; simulated Supabase Auth/REST; no Google or host OAuth verification",
+      "cases": [
+        "Website creates and owner publishes an exact reviewed definition; published builder bookmark converges on Overview without a loop",
+        "Two independent browser accounts consent and enroll separately",
+        "Ordinary participant cannot open the server-gated Admin view",
+        "Admin lifecycle controls and Matches scoring render on their distinct normal routes",
+        "Committed score survives an interrupted response and recovers by receipt without duplicate command",
+        "Opponent confirms the provisional score and final first/second placements render",
+        "Browser OAuth consent uses original native account, 303 GET callback, isolated opaque token and native revocation",
+        "Separate synthetic final-placement fixture renders shared third place for both entries (render evidence only)"
+      ],
+      "status": "passed",
+      "completed_at": "2026-10-28T18:22:12.450Z"
+    },
+    "adapted_harness_eslint": "pass",
+    "local_cleanup": {
+      "finally_closed_browser_and_proxy_backend_and_database": true,
+      "next_worker_pid_53112_absent": true,
+      "next_port_51317_not_listening": true
+    }
+  },
+  "safe_legacy_smoke": {
+    "id": "d776be6e-39f1-4cf7-8edc-87c3140fb41a",
+    "engine": "legacy",
+    "public": true,
+    "state": "active",
+    "type": "doubles",
+    "permitted_read_only_routes": [
+      "/tournaments/:id",
+      "/tournaments/:id/matches",
+      "/tournaments/:id/leaderboard"
+    ],
+    "do_not_open_signed_in_legacy_join_get": "Existing legacy join GET automatically enrolls; legacy join reviewed by source/test only."
+  },
+  "limits": {
+    "hosted_current_tournament_browser_smoke": "Parent owns post-deployment verification; not claimed by this local evidence.",
+    "real_google_login_and_real_connector_callbacks": "Not exercised by local simulated authentication.",
+    "synthetic_shared_third_case": "Presentation-only intercepted read fixture; not an engine-generated result.",
+    "production_actions_this_increment": "One read-only SELECT for a public legacy ID; no schema, deployment, roster, result, fixture, or definition mutations."
+  }
+}

@@ -113,6 +113,12 @@ export default async function DashboardPage() {
         </Link>
       </div>
 
+      {process.env.TOURNAMENT_BUILDER_ENABLED === 'true' && (
+        <Link href="/tournaments/build" className="block rounded-xl border border-brand-200 bg-brand-50 p-4 text-brand-700 font-semibold">
+          Create a tournament with ChatGPT or Claude
+        </Link>
+      )}
+
       {/* My tournaments */}
       <div>
         <h2 className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
