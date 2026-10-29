@@ -1,0 +1,13 @@
+# Proposed draft PR
+
+Title: Add modular tournaments with account-based enrollment and scoped assistant administration
+
+Organizers can create and review supported tournament definitions, publish the exact reviewed rules, enroll real Picktennt profiles, generate fixtures, record and correct results, and finish all placements through the normal Picktennt tournament tabs. ChatGPT/Claude connections use separate opaque OAuth credentials; an explicit administrator grant permits current tournament administration through the same revisioned command boundary as the website.
+
+The change reuses existing identities and tournament tables, preserves legacy/session behavior, and records atomic command receipts and audit history. Later migration source preserves the decision to disable account-free guests and elapsed-rest enforcement. Administrator enrollment remains distinct from personal player consent. Structural assistant changes require current revision/impact review and organizer confirmation. Newly consented owner-scope tools support publication, cancellation, result reopening and administrator changes using an exact current preview and explicit owner confirmation; ordinary administrator scope does not inherit these powers.
+
+Validation: 213 automated tests, TypeScript and scoped lint pass; 14 local browser cases pass. Local native consent → cookie-free HTTP MCP → command/SQL tests cover both administrator results and explicit owner publication, replay, role delegation/removal, cancellation and revocation. Production deployment `dpl_B2XtEZgZcQwqKhsdVP7FxJ5MW4e4` is READY at https://app.picktennt.com; metadata returns 200 for all three scopes and anonymous MCP returns 401. The existing completed user tournament remains at revision 43. Local synthetic identity/DUPR fixtures are not a live remote DUPR or external Claude owner-action claim; the fresh Claude owner connection is a pending user handoff.
+
+Source preservation: the application feature started from the approved session-games lineage. Existing master-owned legal/support files and their publication guard must be preserved through base integration rather than duplicated or omitted. Original dirty backend work, one-off production scripts, credentials and local artifacts are excluded. Review the final integration SHA and migration-history evidence before merging.
+
+Keep the eventual PR **draft** for source integration review; code and the accepted bounded-MVP release checks are complete. Application checkpoint is `51adade` (128 audited feature files); remote PR creation awaits valid GitHub CLI authentication. No new paid staging environment is requested, and merging source must not trigger a blanket database migration push.

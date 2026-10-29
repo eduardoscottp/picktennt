@@ -1,0 +1,198 @@
+{
+  "schema_version": "2.0",
+  "event": {
+    "name": "Four groups of four",
+    "starts_at": "2026-11-07T09:00:00-05:00",
+    "expected_end_at": "2026-11-07T12:30:00-05:00",
+    "timezone": "America/New_York",
+    "venue_name": "Pilot Courts",
+    "visibility": "unlisted",
+    "courts": 4
+  },
+  "registration": {
+    "mode": "approval",
+    "entry_type": "fixed_doubles",
+    "max_entries": 16,
+    "min_entries": 16,
+    "closes_at": "2026-11-06T18:00:00-05:00",
+    "partner_consent": true,
+    "organizer_plays": false
+  },
+  "policies": {
+    "match": {
+      "version": 1,
+      "games": 1,
+      "target": 11,
+      "win_by": 2,
+      "cap": null,
+      "scoring": "side_out"
+    },
+    "ranking": {
+      "version": 1,
+      "order": [
+        "wins_desc",
+        "differential_desc",
+        "points_for_desc"
+      ],
+      "final_tie": "recorded_draw"
+    },
+    "confirmation": "opponent_or_admin_v1",
+    "withdrawal": "stage_sensitive_v1",
+    "correction": "impact_review_void_and_replay_v1"
+  },
+  "scheduling": {
+    "estimated_slot_minutes": 20,
+    "minimum_rest_minutes": 5,
+    "contingency_minutes": 30
+  },
+  "nodes": [
+    {
+      "module": "registration@1",
+      "id": "reg"
+    },
+    {
+      "id": "roster",
+      "from": "reg",
+      "module": "entries@1"
+    },
+    {
+      "id": "A",
+      "inputs": [
+        {
+          "seed": 1,
+          "kind": "seed"
+        },
+        {
+          "seed": 2,
+          "kind": "seed"
+        },
+        {
+          "seed": 3,
+          "kind": "seed"
+        },
+        {
+          "seed": 4,
+          "kind": "seed"
+        }
+      ],
+      "module": "round_robin@2"
+    },
+    {
+      "id": "B",
+      "inputs": [
+        {
+          "seed": 5,
+          "kind": "seed"
+        },
+        {
+          "seed": 6,
+          "kind": "seed"
+        },
+        {
+          "seed": 7,
+          "kind": "seed"
+        },
+        {
+          "seed": 8,
+          "kind": "seed"
+        }
+      ],
+      "module": "round_robin@2"
+    },
+    {
+      "id": "C",
+      "inputs": [
+        {
+          "seed": 9,
+          "kind": "seed"
+        },
+        {
+          "seed": 10,
+          "kind": "seed"
+        },
+        {
+          "seed": 11,
+          "kind": "seed"
+        },
+        {
+          "seed": 12,
+          "kind": "seed"
+        }
+      ],
+      "module": "round_robin@2"
+    },
+    {
+      "id": "D",
+      "inputs": [
+        {
+          "seed": 13,
+          "kind": "seed"
+        },
+        {
+          "seed": 14,
+          "kind": "seed"
+        },
+        {
+          "seed": 15,
+          "kind": "seed"
+        },
+        {
+          "seed": 16,
+          "kind": "seed"
+        }
+      ],
+      "module": "round_robin@2"
+    },
+    {
+      "id": "SF1",
+      "inputs": [
+        {
+          "kind": "rank",
+          "node_id": "A",
+          "rank": 1
+        },
+        {
+          "kind": "rank",
+          "node_id": "B",
+          "rank": 1
+        }
+      ],
+      "module": "match@1"
+    },
+    {
+      "id": "SF2",
+      "inputs": [
+        {
+          "kind": "rank",
+          "node_id": "C",
+          "rank": 1
+        },
+        {
+          "kind": "rank",
+          "node_id": "D",
+          "rank": 1
+        }
+      ],
+      "module": "match@1"
+    },
+    {
+      "id": "F",
+      "inputs": [
+        {
+          "node_id": "SF1",
+          "kind": "winner"
+        },
+        {
+          "node_id": "SF2",
+          "kind": "winner"
+        }
+      ],
+      "module": "match@1"
+    },
+    {
+      "id": "result",
+      "final": "F",
+      "module": "placements@2"
+    }
+  ]
+}

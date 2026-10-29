@@ -1,0 +1,177 @@
+{
+  "recorded_at": "2026-10-28T23:09:20.4047320Z",
+  "mode": "final_document_checkpoint_ready_for_local_commit",
+  "repository": ".",
+  "branch": "codex/tournament-mvp-docs",
+  "head": null,
+  "candidate_paths": [
+    ".gitignore",
+    "ACCEPTANCE-TESTS.md",
+    "ADMIN-ASSISTANT-REQUIREMENTS.md",
+    "ARCHITECTURE.md",
+    "AUTH-INTEGRATION.md",
+    "BUILD-STATUS.md",
+    "DRAFT-PR.md",
+    "GUEST-ENROLLMENT-PLAN.md",
+    "IMPLEMENTATION-PLAN.md",
+    "ISSUE-BOARD.csv",
+    "ISSUE-BOARD.md",
+    "MODULES.md",
+    "MVP-REMAINING-AUDIT.md",
+    "MVP-reuse-plan.md",
+    "PRD.md",
+    "README.md",
+    "REAL-ACCOUNT-ENROLLMENT.md",
+    "RELEASE-ALLOWLIST.json",
+    "RELEASE-PLAN.md",
+    "ROOT-CHECKPOINT-ALLOWLIST.json",
+    "START-HERE.md",
+    "TEST-THE-MVP.md",
+    "TOURNAMENT-VIEW-REUSE.md",
+    "examples/tournament-definition.json"
+  ],
+  "candidate_file_hashes": [
+    {
+      "path": ".gitignore",
+      "sha256": "afb663a409a2b302fd29073d270bfeb45d638868717686ee3fb3d07c1269c5bb",
+      "status": "??"
+    },
+    {
+      "path": "ACCEPTANCE-TESTS.md",
+      "sha256": "625172d6e1e9f1801f5d81e822a999740ab1267cadc6d186caed63237b45ce3f",
+      "status": "??"
+    },
+    {
+      "path": "ADMIN-ASSISTANT-REQUIREMENTS.md",
+      "sha256": "67dd9961f7af7cac07fee87e13381490bece2b4330f1b34e42713f6e24ce2e65",
+      "status": "??"
+    },
+    {
+      "path": "ARCHITECTURE.md",
+      "sha256": "f672335c52a07d70b68db7ac366310fee060413e5641a103fc67f5e9d98b17c0",
+      "status": "??"
+    },
+    {
+      "path": "AUTH-INTEGRATION.md",
+      "sha256": "89fe610446dfad267bf77d95bfd65207c02d3a8126f194be53be5cb9270c0110",
+      "status": "??"
+    },
+    {
+      "path": "BUILD-STATUS.md",
+      "sha256": "ec34f4304d1cbaad421fa45e646fa304ab386b63912eab3ae1a8597cabee2780",
+      "status": "??"
+    },
+    {
+      "path": "DRAFT-PR.md",
+      "sha256": "b5c8cf9693e1fc42a5daab7e69fcf8b2d088e9b7608501a6b61d1e6a562258eb",
+      "status": "??"
+    },
+    {
+      "path": "GUEST-ENROLLMENT-PLAN.md",
+      "sha256": "9d4ab899ce65fa9be52b2954c4c1830a72dd4695563ef74e0e9fa75d85f203e9",
+      "status": "??"
+    },
+    {
+      "path": "IMPLEMENTATION-PLAN.md",
+      "sha256": "26b6c5ded44ec7173f085f924f78c1da71b95be045b86543590d70beb062240e",
+      "status": "??"
+    },
+    {
+      "path": "ISSUE-BOARD.csv",
+      "sha256": "0935eb451bae6e6d4914980a2adbda0e909a223c2289e8d12ca65b0ceceb18b1",
+      "status": "??"
+    },
+    {
+      "path": "ISSUE-BOARD.md",
+      "sha256": "82d72cdb444cd2219caac7c997482294b7b0dcf0d3d1bd2c575fe33192b0e243",
+      "status": "??"
+    },
+    {
+      "path": "MODULES.md",
+      "sha256": "3bb9af55f25bd878d7ae664e8fc5cba7a70bc92cc128b5eff2694ac319b48407",
+      "status": "??"
+    },
+    {
+      "path": "MVP-REMAINING-AUDIT.md",
+      "sha256": "28bea77f380fbcbe1c5f6c56f823ef7204e4518a9d7a109257ab16b36e45bcab",
+      "status": "??"
+    },
+    {
+      "path": "MVP-reuse-plan.md",
+      "sha256": "5f062958f1b12bddcdeb5eebfaa01b9d318ceae0aba8f4df12c2fb1a4491884b",
+      "status": "??"
+    },
+    {
+      "path": "PRD.md",
+      "sha256": "488d22e97efd7753f74db74f3035170f96038b15697b3c72b08f384570748a2b",
+      "status": "??"
+    },
+    {
+      "path": "README.md",
+      "sha256": "495b2e562d788e2b692149f564dd9e8a50e27eee8047fb0f496ef9b0fef8c7d2",
+      "status": "??"
+    },
+    {
+      "path": "REAL-ACCOUNT-ENROLLMENT.md",
+      "sha256": "49efb7709ac6aff8a351cde4ee3a30d170e269a3149f0a70f7f3ebe55ec9b49c",
+      "status": "??"
+    },
+    {
+      "path": "RELEASE-ALLOWLIST.json",
+      "sha256": "1f1533370f83277173c4f297cee9e96255b01e7b2bd0e00f3370fde1862bc486",
+      "status": "??"
+    },
+    {
+      "path": "RELEASE-PLAN.md",
+      "sha256": "8c50bd367081c803358656083ffadbe1563d9b18375fec84ee3de474b82e3d97",
+      "status": "??"
+    },
+    {
+      "path": "START-HERE.md",
+      "sha256": "2ed459f6817d83f867830dc8977e69f2e9eaca0c918084f71115f244b8fabcc5",
+      "status": "??"
+    },
+    {
+      "path": "TEST-THE-MVP.md",
+      "sha256": "708444b415d07db7be53ad195cac4550c8da174c7d564180ffbc614f0d716c98",
+      "status": "??"
+    },
+    {
+      "path": "TOURNAMENT-VIEW-REUSE.md",
+      "sha256": "636e47af7354ce483824eead7fb6b79516514de75d3deea1acfd6bb7d9a29063",
+      "status": "??"
+    },
+    {
+      "path": "examples/tournament-definition.json",
+      "sha256": "2c633d1fbaf7bd82b13632b02f63e74025433349269227716a85ee679a83b53e",
+      "status": "??"
+    }
+  ],
+  "self_hash_excluded": true,
+  "secret_pattern_scan": {
+    "scope": "All root candidate documentation, manifests, ignore file and example JSON; match contents never printed.",
+    "findings": [],
+    "non_fixture_email_findings": []
+  },
+  "ignored_path_checks": [
+    ".gitignore:2:app/\tapp/package.json",
+    ".gitignore:5:/supabase/.temp/\tsupabase/.temp/cli-latest",
+    ".gitignore:5:/supabase/.temp/\tsupabase/.temp/linked-project.json",
+    ".gitignore:4:verification-local/\tverification-local/probe.env",
+    ".gitignore:6:.env*\t.env.local",
+    ".gitignore:7:*.pem\ttest.pem"
+  ],
+  "excluded_directories": [
+    "app/",
+    "verification-local/",
+    "supabase/.temp/"
+  ],
+  "staging_instruction": "From workspace root, load only this candidate_paths array, verify hashes, then use git --literal-pathspecs add -- followed by these exact paths after authorization. Never stage app/ in this repository or use git add -A.",
+  "caveat": "Final documentation freeze confirmed by documentation agent. Recheck hashes after any source SHA or final receipt updates before staging. Self hash excluded to avoid recursive hashing. Audit did not stage, commit, push, or deploy.",
+  "documentation_stable_confirmation": true,
+  "final_evidence_summary": {
+    "automated_tests": 213,
+    "local_browser_cases": 14,
+    "verification_owner": "Root agent supplied final test/deployment evidence; inventory audit only."
+  }
+}
