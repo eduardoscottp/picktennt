@@ -3,7 +3,6 @@ import Link from "next/link";
 import { Search } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { formatDate, statusLabel, tournamentTypeLabel } from "@/lib/utils";
 import type { Tournament } from "@/types/database";
 
@@ -18,15 +17,16 @@ export default async function TournamentsPage({
   let query = supabase
     .from("tournaments")
     .select("*")
-    .eq("is_public", true)
     .order("created_at", { ascending: false })
     .limit(50);
 
   if (q) query = query.ilike("name", `%${q}%`);
 
-  const { data: tournaments } = await query;
+  // RLS includes public events and the current account's owned/admin/player events.
+  const { data: tournaments, error } = await query;
+  if (error) throw new Error("Could not load tournaments. Please try again.");
 
-  const statusVariant = (s: string) => {
+  const statusVariant = (s: string): "success" | "secondary" | "default" => {
     if (s === "active" || s === "finals") return "success";
     if (s === "completed") return "secondary";
     if (s === "registration") return "default";
@@ -66,7 +66,7 @@ export default async function TournamentsPage({
                       {tournamentTypeLabel(t.type)} · {t.max_players} players · {t.court_count} courts · {t.tournament_date ? formatDate(t.tournament_date) : formatDate(t.created_at)}
                     </div>
                   </div>
-                  <Badge variant={statusVariant(t.status) as any}>
+                  <Badge variant={statusVariant(t.status)}>
                     {statusLabel(t.status)}
                   </Badge>
                 </CardContent>
