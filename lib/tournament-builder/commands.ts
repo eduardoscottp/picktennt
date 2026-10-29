@@ -1,5 +1,10 @@
 import { guestPlayers, entryPlayerIds } from './entry-roster';
 import { isOwnerAction, requireReviewedOwnerAction } from './owner-actions';
+import { planGraphRuntime } from './graph-command-runtime';
+import { finalizeGraph, assignGroupSlots } from './group-finalization';
+import { resolvedDefinition } from './resolved-definition';
+import { planRevision, planEventDetails } from './revisions';
+import { previewSchedule, generationOrder } from './schedule-preview';
 export type StorageRow = { id: string } & Record<string, unknown>;
 export interface CommandSnapshot { event: StorageRow | null; definitions: StorageRow[]; teams: StorageRow[]; team_members: StorageRow[]; tournament_players: StorageRow[]; stages: StorageRow[]; rounds: StorageRow[]; matches: StorageRow[]; standings: StorageRow[]; admins?: StorageRow[] }
 export interface CommandActor { id: string; clientId: string; grantId?: string; role?: 'owner' | 'admin' | 'player'; permissions?: readonly string[] }
@@ -8,12 +13,13 @@ export interface CommandEffects { event?: Record<string, unknown>; definition?: 
 export interface CommandPlan { effects: CommandEffects; result: Record<string, unknown> }
 const fields: Record<string, readonly string[]> = {
   createDraft: ['definition'], updateDraft: ['definition'], publishTournament: ['reviewed_definition_hash', 'acknowledged_warning_codes', 'confirmed_owner_action', 'reviewed_action_hash'],
+  reviseTournament: ['definition', 'entries', 'reason', 'preview_hash'], updateEventDetails: ['name', 'venue_name', 'reason'],
   requestEntry: ['definition_id', 'consent', 'partner_id', 'entry_name'], acceptPartner: ['entry_id', 'definition_id', 'consent'],
   addGuestEntry: ['definition_id', 'player_names', 'reason'],
   addRegisteredEntry: ['definition_id', 'player_ids', 'entry_name', 'reason'],
   addAdministrator: ['user_id', 'reason', 'confirmed_owner_action', 'reviewed_action_hash'], removeAdministrator: ['user_id', 'reason', 'confirmed_owner_action', 'reviewed_action_hash'],
   approveEntry: ['entry_id'], rejectEntry: ['entry_id', 'reason'], cancelEntry: ['entry_id'],
-  closeRegistration: [], reopenRegistration: [], lockRoster: ['reviewed_roster_revision'], startTournament: [],
+  closeRegistration: [], reopenRegistration: [], lockRoster: ['reviewed_roster_revision', 'nodes', 'group_assignments', 'preview_hash'], startTournament: [],
   startMatch: ['match_id', 'rest_override_reason'], submitScore: ['match_id', 'score_a', 'score_b'], confirmScore: ['match_id', 'result_revision'],
   disputeScore: ['match_id', 'result_revision', 'reason'], attestScore: ['match_id', 'score_a', 'score_b', 'outcome_kind', 'winner_entry_id', 'reason'],
   adjudicateDispute: ['match_id', 'score_a', 'score_b', 'outcome_kind', 'winner_entry_id', 'reason'],
@@ -51,6 +57,7 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
   if (command === 'addGuestEntry') return fail('ACCOUNT_REQUIRED', 'Every player must have a Picktennt account. Register an existing player profile instead.');
   if (actor.clientId !== 'web' && !['createDraft', 'updateDraft'].includes(command) && !(isOwnerAction(command) ? actor.permissions?.includes('owner:manage') : actor.permissions?.includes('admin:manage'))) return fail('FORBIDDEN', 'Explicit permission is required for this assistant action.');
   const work = structuredClone(snapshot), effects: CommandEffects = {};
+  work.stages = work.stages.filter(stage => !stage.definition_id || stage.definition_id === work.event?.definition_id);
   let result: Record<string, unknown> = {};
   const now = new Date(context.now);
   if (!Number.isFinite(now.getTime())) return fail('INVALID_REQUEST', 'Invalid server clock.');
@@ -71,7 +78,7 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
   }
   const currentDefinition = () => work.definitions.find(row => row.id === work.event?.definition_id) ?? work.definitions.at(-1);
   function definition(): TournamentDefinition {
-    const validation = validateDraft(currentDefinition()?.definition);
+    const validation = validateDraft(resolvedDefinition(work)?.definition, { registration: true });
     if (!validation.definition) return fail(validation.missing_fields.length ? 'MISSING_FIELDS' : 'INVALID_DEFINITION', 'A complete supported definition is required.', validation);
     return validation.definition;
   }
@@ -118,6 +125,13 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
   function syncRuntime(depth = 0) {
     if (depth > 16) fail('INVALID_STATE', 'Bounded bracket propagation exceeded the supported size.');
     const d = definition();
+    if (d.schema_version === '2.0') {
+      const plan = planGraphRuntime(work, d, actor, context, nextRevision);
+      if (plan.effects.event) event(plan.effects.event);
+      for (const table of ['stages', 'rounds', 'matches', 'standings'] as const) for (const patch of plan.effects[table] ?? []) put(table, patch);
+      result = { ...result, ...plan.result };
+      return;
+    }
     const rosterStage = work.stages.find(s => s.node_id === d.nodes.find(n => n.module === 'entries@1')!.id)!;
     const rosterOutput = record(rosterStage.output), rosterIds = strings(rosterOutput.entryIds, 'locked roster');
     const roster: TournamentEntry[] = rosterIds.map(id => ({ id, playerIds: entryPlayerIds(work, id) }));
@@ -164,9 +178,9 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
       const b = historical ? old.team_b_id : resolved ? resolved.entryB ?? null : fixture.b.kind === 'entry' ? fixture.b.entryId : null;
       if (old && (old.team_a_id !== a || old.team_b_id !== b) && old.status !== 'scheduled') fail('DOWNSTREAM_STARTED', 'A changed dependency requires explicit impact review and replay.');
       const roundType = fixture.stageId === rrNode?.id ? 'round_robin' : fixture.bronze ? 'finals_bronze' : fixture.round === Math.max(...analysis.fixtures.filter(f => f.stageId === fixture.stageId).map(f => f.round)) ? 'finals_gold' : 'elimination';
-      let round = work.rounds.find(r => r.stage_id === stage.id && r.logical_wave === fixture.wave && r.round_type === roundType && r.is_current !== false);
+      let round = old ? work.rounds.find(r => r.id === old.round_id) : work.rounds.find(r => r.stage_id === stage.id && r.logical_wave === fixture.wave && r.round_type === roundType && r.is_current !== false);
       if (!round) { round = { id: context.id(), stage_id: stage.id, logical_wave: fixture.wave, round_number: Math.max(0, ...work.rounds.map(r => Number(r.round_number))) + 1, round_type: roundType, status: 'pending', schedule_generation: work.event!.roster_revision, is_current: true }; put('rounds', round); }
-      if (!old || old.team_a_id !== a || old.team_b_id !== b) pending.push({ id: fixtureIds.get(fixture.id)!, round_id: round.id, stage_id: stage.id, logical_key: fixture.id, court_number: fixture.court, team_a_id: a, team_b_id: b, schedule_generation: work.event!.roster_revision, is_current: true, ...(old ? {} : { status: 'scheduled', revision: 0, result_revision: 0, submit_to_dupr: false }) });
+      if (!old || old.team_a_id !== a || old.team_b_id !== b) pending.push({ id: fixtureIds.get(fixture.id)!, round_id: round.id, stage_id: stage.id, logical_key: fixture.id, court_number: old?.court_number ?? fixture.court, team_a_id: a, team_b_id: b, schedule_generation: work.event!.roster_revision, is_current: true, ...(old ? {} : { status: 'scheduled', revision: 0, result_revision: 0, submit_to_dupr: false }) });
     }
     // Insert successors first because legacy bracket-next FKs are immediate, then patch feeder links.
     for (const patch of pending.reverse()) put('matches', patch);
@@ -214,6 +228,8 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
     result = { ...result, runtime_state: analysis.state, ...(analysis.blockedCode ? { blocked_code: analysis.blockedCode } : {}) };
   }
 
+  if (command === 'reviseTournament') return planRevision(snapshot, actor, data, context);
+  if (command === 'updateEventDetails') return planEventDetails(snapshot, actor, data);
   if (command === 'createDraft' || command === 'updateDraft') {
     if (command === 'updateDraft') { needAdmin(); if (work.event?.modular_state !== 'draft') fail('PUBLISHED_DEFINITION', 'Published rules are immutable.'); }
     else if (work.event) fail('INVALID_STATE', 'Event already exists.');
@@ -221,7 +237,7 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
     const validation = validateDraft(data.definition);
     if (validation.errors.length) fail('INVALID_DEFINITION', 'Draft contains unsupported fields or rules.', validation);
     const definitionId = currentDefinition()?.id ?? context.id();
-    effects.definition = { id: definitionId, schema_version: 1, definition: structuredClone(data.definition), status: 'draft', canonical_hash: null };
+    effects.definition = { id: definitionId, schema_version: record(data.definition).schema_version === '2.0' ? 2 : 1, definition: structuredClone(data.definition), status: 'draft', canonical_hash: null };
     const partialEvent = record(record(data.definition).event);
     event({ definition_id: definitionId, modular_state: 'draft', ...(typeof partialEvent.name === 'string' ? { name: partialEvent.name } : {}) });
     result = { definition_id: definitionId, validation };
@@ -248,18 +264,18 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
   } else {
     if (!work.event) fail('NOT_FOUND', 'Event not found.');
     if (work.event!.modular_state === 'cancelled') fail('INVALID_STATE', 'Cancelled events cannot be changed.');
-    const d = definition();
+    let d = definition();
     if (command === 'publishTournament') {
       needOwner(); state('draft');
-      const validation = validateDraft(currentDefinition()!.definition, { publication: true, now });
+      const validation = validateDraft(currentDefinition()!.definition, { publication: true, registration: true, now });
       if (!validation.valid) fail(validation.missing_fields.length ? 'MISSING_FIELDS' : 'INVALID_DEFINITION', 'Resolve definition issues before publishing.', validation);
       if (data.reviewed_definition_hash !== definitionHash(d)) fail('STALE_PREVIEW', 'Review the exact current definition.');
       const acknowledged = strings(data.acknowledged_warning_codes, 'acknowledged_warning_codes').sort();
       const warnings = [...new Set(validation.warnings.map(w => w.code))].sort();
       if (JSON.stringify(acknowledged) !== JSON.stringify(warnings)) fail('STALE_PREVIEW', 'Acknowledge the current warnings exactly.');
-      effects.definition = { id: currentDefinition()!.id, schema_version: 1, definition: d, status: 'published', canonical_hash: definitionHash(d), approved_at: iso };
+      effects.definition = { id: currentDefinition()!.id, schema_version: d.schema_version === '2.0' ? 2 : 1, definition: d, status: 'published', canonical_hash: definitionHash(d), approved_at: iso };
       event({ definition_id: currentDefinition()!.id, name: d.event.name, modular_state: 'registration_open', court_count: d.event.courts, max_players: d.registration.max_entries * (d.registration.entry_type === 'singles' ? 1 : 2), type: d.registration.entry_type === 'singles' ? 'singles' : 'doubles', is_public: d.event.visibility === 'public', is_open: d.registration.mode === 'open', timezone: d.event.timezone, court_name: d.event.venue_name, tournament_date: d.event.starts_at.slice(0, 10), rules_text: JSON.stringify(d.policies) });
-      for (const node of d.nodes) put('stages', { id: context.id(), definition_id: currentDefinition()!.id, node_id: node.id, module_id: node.module.split('@')[0], module_version: 1, state: 'waiting', input_revision: 0, output_revision: 0, output: {}, blocked_code: null });
+      for (const node of d.nodes) put('stages', { id: context.id(), definition_id: currentDefinition()!.id, node_id: node.id, module_id: node.module.split('@')[0], module_version: Number(node.module.split('@')[1]), state: 'waiting', input_revision: 0, output_revision: 0, output: {}, blocked_code: null });
     } else if (command === 'addRegisteredEntry') {
       needAdmin(); admissionWindow(d);
       if (data.definition_id !== currentDefinition()?.id) fail('STALE_PREVIEW', 'Review the current published definition before registering accounts.');
@@ -302,10 +318,10 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
         const team = entry();
         if (command === 'acceptPartner') {
           admissionWindow(d); consent(d);
-          const member = members(team.id).find(m => m.user_id === actor.id && !m.consented_at);
+          const member = members(team.id).find(m => m.user_id === actor.id && (!m.consented_at || m.consented_definition_id !== currentDefinition()!.id));
           if (!member || team.entry_state !== 'pending') fail('FORBIDDEN', 'Only the actual invited partner may accept.');
           put('team_members', { id: member!.id, consented_definition_id: currentDefinition()!.id, consented_at: iso }); projectMember(member!, 'pending');
-          const admitted = d.registration.mode === 'open' ? admit(team, d) : false;
+          const admitted = d.registration.mode === 'open' && complete(team, d) ? admit(team, d) : false;
           result = { entry_id: team.id, entry_state: admitted ? 'approved' : 'pending_approval', ...(d.registration.mode === 'open' && !admitted ? { admission_error: 'CAPACITY_FULL' } : {}) };
         } else if (command === 'approveEntry') {
           needAdmin(); admissionWindow(d); if (team.entry_state !== 'pending') fail('INVALID_STATE', 'Only pending entries can be approved.');
@@ -324,16 +340,26 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
     } else if (command === 'reopenRegistration') { needAdmin(); state('registration_closed'); if (Date.parse(d.registration.closes_at) <= now.getTime()) fail('REGISTRATION_CLOSED', 'Published registration deadline has passed.'); event({ modular_state: 'registration_open', registration_closed_at: null });
     } else if (command === 'lockRoster') {
       needAdmin(); state('registration_closed');
+      if (data.preview_hash !== undefined && data.preview_hash !== previewSchedule(snapshot, actor, data, context.now).preview_hash) fail('STALE_PREVIEW', 'The roster or schedule changed. Review the schedule again.');
       if (integer(data.reviewed_roster_revision, 'reviewed_roster_revision') !== Number(work.event!.roster_revision)) fail('STALE_REVISION', 'Review the current roster.');
       const approved = work.teams.filter(t => t.entry_state === 'approved');
       if (approved.length < d.registration.min_entries || approved.length > d.registration.max_entries || approved.some(t => !complete(t, d))) fail('INCOMPLETE_ROSTER', 'The actual approved roster does not satisfy the published rules.');
+      let seedAssignments: Record<string, string> | undefined;
+      if (d.schema_version === '2.0') {
+        d = finalizeGraph(d, data.nodes);
+        seedAssignments = assignGroupSlots(d, approved.map(t => t.id), data.group_assignments);
+        if (data.nodes !== undefined) {
+          const prior = currentDefinition()!;
+          for (const node of d.nodes) if (!work.stages.some(stage => stage.node_id === node.id)) put('stages', { id: context.id(), definition_id: prior.id, node_id: node.id, module_id: node.module.split('@')[0], module_version: Number(node.module.split('@')[1]), state: 'waiting', input_revision: 0, output_revision: 0, output: {}, blocked_code: null });
+        }
+      } else if (data.nodes !== undefined || data.group_assignments !== undefined) fail('INVALID_REQUEST', 'Group finalization requires a version 2 graph.');
       const direct = d.nodes.some(n => n.module === 'elimination@1') && !d.nodes.some(n => n.module === 'round_robin@1');
       if (direct && ![2, 4, 8, 16].includes(approved.length)) fail('INVALID_CAPACITY', 'Direct elimination needs 2, 4, 8 or 16 actual entries.');
       bumpRoster();
-      const entryIds = approved.map(t => t.id), seedOrder = direct ? draw(entryIds) : entryIds;
+      const entryIds = approved.map(t => t.id), seedOrder = direct || d.schema_version === '2.0' ? (data.preview_hash !== undefined ? generationOrder(snapshot, entryIds) : draw(entryIds)) : entryIds;
       const stage = work.stages.find(s => s.node_id === d.nodes.find(n => n.module === 'entries@1')!.id)!;
-      put('stages', { id: stage.id, state: 'completed', output: { entryIds: seedOrder, ...(direct ? { directDraw: { rosterRevision: work.event!.roster_revision, entryIds: seedOrder } } : {}) } });
-      seedOrder.forEach((teamId, i) => put('teams', { id: teamId, seed: i + 1 }));
+      put('stages', { id: stage.id, state: 'completed', output: { entryIds: seedOrder, ...(data.nodes !== undefined ? { finalizedNodes: d.nodes } : {}), ...(seedAssignments ? { seedAssignments } : {}), ...(direct ? { directDraw: { rosterRevision: work.event!.roster_revision, entryIds: seedOrder } } : {}) } });
+      seedOrder.forEach((teamId, i) => put('teams', { id: teamId, seed: seedAssignments ? Number(Object.keys(seedAssignments).find(key => seedAssignments![key] === teamId)) : i + 1 }));
       event({ modular_state: 'ready' }); syncRuntime();
       result.roster_hash = definitionHash(seedOrder.map(teamId => ({ id: teamId, players: entryPlayerIds(work, teamId) })));
     } else if (command === 'startTournament') { needAdmin(); state('ready'); event({ modular_state: 'active' });
@@ -393,7 +419,7 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
       result.match_id = row.id;
     } else if (command === 'resolveTie') {
       needAdmin(); state('active');
-      const stageId = reference(data.stage_id, 'stage_id'), stage = work.stages.find(s => s.id === stageId && s.module_id === 'standings');
+        const stageId = reference(data.stage_id, 'stage_id'), stage = work.stages.find(s => s.id === stageId && (s.module_id === 'standings' || (d.schema_version === '2.0' && ((s.module_id === 'round_robin' && s.module_version === 2) || (s.module_id === 'cross_play' && s.module_version === 1)))));
       if (!stage) fail('NOT_FOUND', 'Standings stage not found.');
       const output = record(stage!.output), inputRevision = integer(data.input_revision, 'input_revision');
       if (inputRevision !== Number(output.inputRevision)) fail('STALE_REVISION', 'Ranking inputs changed.');

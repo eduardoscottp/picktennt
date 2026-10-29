@@ -3,6 +3,8 @@ import { getSnapshot } from '@/lib/tournament-builder/repository';
 import { previewCorrection, previewWithdrawal } from '@/lib/tournament-builder/corrections';
 import { DomainError, UUID } from '@/lib/tournament-builder/requests';
 import type { CommandActor } from '@/lib/tournament-builder/commands';
+import { previewRevision } from '@/lib/tournament-builder/revisions';
+import { previewSchedule } from '@/lib/tournament-builder/schedule-preview';
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -15,8 +17,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const verifiedActor: CommandActor = { ...actor, role: snapshot.caller_role === 'owner' || snapshot.caller_role === 'admin' ? snapshot.caller_role : 'player' };
     const kind = new URL(request.url).searchParams.get('kind');
     const preview = kind === 'correction' ? previewCorrection(snapshot, verifiedActor, body as Record<string, unknown>) :
-      kind === 'withdrawal' ? previewWithdrawal(snapshot, verifiedActor, body as Record<string, unknown>) : null;
-    if (!preview) throw new DomainError('INVALID_REQUEST', 'Choose a correction or withdrawal preview.');
+      kind === 'withdrawal' ? previewWithdrawal(snapshot, verifiedActor, body as Record<string, unknown>) :
+      kind === 'revision' ? previewRevision(snapshot, verifiedActor, body as Record<string, unknown>) :
+      kind === 'schedule' ? previewSchedule(snapshot, verifiedActor, body as Record<string, unknown>) : null;
+    if (!preview) throw new DomainError('INVALID_REQUEST', 'Choose a correction, withdrawal, revision or schedule preview.');
     return Response.json(preview, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) { return errorResponse(error); }
 }

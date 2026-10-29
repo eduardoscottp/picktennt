@@ -5,5 +5,7 @@ export function guestPlayers(team: StorageRow | undefined): GuestPlayer[] {
 }
 /** Tournament-only guest IDs never represent authentication accounts or signed consent. */
 export function entryPlayerIds(snapshot: Pick<CommandSnapshot, 'teams' | 'team_members'>, teamId: string): string[] {
- return [...snapshot.team_members.filter(m=>m.team_id===teamId).map(m=>String(m.user_id)), ...guestPlayers(snapshot.teams.find(t=>t.id===teamId)).map(g=>g.id)];
+ // Withdrawn entrants remain part of the locked competition history; cancelled
+ // pre-play memberships were replaced or removed and must not enter a new draw.
+ return [...snapshot.team_members.filter(m=>m.team_id===teamId && m.membership_status!=='cancelled').map(m=>String(m.user_id)), ...guestPlayers(snapshot.teams.find(t=>t.id===teamId)).map(g=>g.id)];
 }

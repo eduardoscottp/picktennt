@@ -1,0 +1,60 @@
+{
+  "scope": "Local hydrated browser fixture using synthetic accounts and HTTP adapter, real revision/schedule previews and command planner. No production auth, database, account lookup, deployment, or MCP tested.",
+  "checks": [
+    "Edited setup and swapped two registered players",
+    "Reason edit invalidated preview",
+    "Explicit revision confirmation closed registration and preserved inactive old fixtures",
+    "1440px and 390px revision layout without overflow",
+    "Assigned all actual teams to groups and explicitly reviewed roster",
+    "Preview showed eight team fairness rows and concrete fixtures",
+    "Mobile schedule without horizontal overflow",
+    "Explicit schedule confirmation generated seven current matches",
+    "No browser page errors"
+  ],
+  "commands": [
+    "reviseTournament",
+    "lockRoster"
+  ],
+  "previews": [
+    "revision",
+    "revision",
+    "schedule"
+  ],
+  "schedule": [
+    {
+      "id": "A:r1:m1",
+      "wave": 1,
+      "court": 1
+    },
+    {
+      "id": "B:r1:m1",
+      "wave": 1,
+      "court": 2
+    },
+    {
+      "id": "C:r1:m1",
+      "wave": 1,
+      "court": 3
+    },
+    {
+      "id": "D:r1:m1",
+      "wave": 1,
+      "court": 4
+    },
+    {
+      "id": "SF1:match",
+      "wave": 2,
+      "court": 1
+    },
+    {
+      "id": "SF2:match",
+      "wave": 2,
+      "court": 2
+    },
+    {
+      "id": "F:match",
+      "wave": 3,
+      "court": 1
+    }
+  ]
+}

@@ -7,6 +7,7 @@ import { previewDefinition } from './preview';
 import { canonicalTournamentPath, type TournamentView } from './navigation';
 import { loadTournamentPage } from './page-loader';
 import { UUID } from './requests';
+import { resolvedDefinition } from './resolved-definition';
 
 async function lookupTournament(id: string) {
   const db = await createAdminClient();
@@ -33,7 +34,7 @@ export async function modularTournamentPage(id: string, view: TournamentView) {
   if (result.kind === 'redirect') redirect(result.location);
   if (result.kind !== 'render') return null;
   const { snapshot } = result;
-  const definition = snapshot.definitions.find(row => row.id === snapshot.event?.definition_id) ?? snapshot.definitions.at(-1);
+  const definition = resolvedDefinition(snapshot);
   const preview = previewDefinition(definition?.definition ?? {}, Number(snapshot.event!.revision));
   return <TournamentBuilder actorId={result.actorId} initialSnapshot={snapshot} initialPreview={preview} view={result.view} />;
 }

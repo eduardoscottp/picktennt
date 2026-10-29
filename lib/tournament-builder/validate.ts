@@ -2,9 +2,42 @@ import { MODULE_IDS, type TournamentDefinition, type ValidationIssue, type Valid
 import { SUPPORTED_COMPOSITIONS } from './catalog';
 
 import { DEFINITION_RULE, datePattern, nodeRule, ruleJsonSchema, type Rule } from './definition-schema';
+import { validateGraph } from './graph-validate';
+import { graphPreview } from './graph-preview';
+import type { GraphDefinition } from './graph-types';
+import { checkGraphDraft } from './graph-draft';
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export function validateDraft(input: unknown, options: ValidationOptions = {}): ValidationResult {
+  if (isObject(input) && input.schema_version === '2.0') {
+    // Reuse every shared rule without subjecting the graph to v1's linear-chain contract.
+    const { nodes, ...shared } = input;
+    const base = validateDraft({ ...shared, schema_version: '1.0', nodes: [
+      { id: 'reg', module: 'registration@1' }, { id: 'roster', module: 'entries@1', from: 'reg' },
+      { id: 'rr', module: 'round_robin@1', from: 'roster' }, { id: 'rank', module: 'standings@1', from: 'rr' },
+      { id: 'result', module: 'placements@1', from: 'rank' },
+    ] }, options);
+    base.warnings = [];
+    delete base.definition;
+    checkGraphDraft(nodes, base);
+    if (!base.errors.length && !base.missing_fields.length) {
+      for (const issue of validateGraph(input as unknown as GraphDefinition)) {
+        if (issue.code !== 'MISSING_FIELD') base.errors.push(issue);
+        else if (options.registration && issue.field_path !== 'registration' && !issue.message.includes('registration@1') && !issue.message.includes('entries@1') && !issue.message.includes('Entries must')) base.warnings.push(issue);
+        else base.missing_fields.push(issue);
+      }
+    }
+    base.valid = !base.errors.length && !base.missing_fields.length;
+    if (base.valid) {
+      const d = structuredClone(input) as unknown as GraphDefinition;
+      base.definition = d;
+      if (!validateGraph(d).length) {
+        const estimate = graphPreview(d).estimatedMinutes;
+        if (estimate > (Date.parse(d.event.expected_end_at) - Date.parse(d.event.starts_at)) / 60_000) base.warnings.push({ code: 'INSUFFICIENT_TIME', field_path: 'event.expected_end_at', message: `Estimated schedule including dependencies and contingency is ${estimate} minutes, exceeding the venue window. Match overruns may add time.` });
+      }
+    }
+    return base;
+  }
   const result: ValidationResult = { valid: false, errors: [], warnings: [], missing_fields: [] };
   const issue = (code: ValidationIssue['code'], field_path: string, message: string, node_id?: string) => result.errors.push({ code, field_path, message, ...(node_id ? { node_id } : {}) });
   function parse(value: unknown, rule: Rule, path: string) {

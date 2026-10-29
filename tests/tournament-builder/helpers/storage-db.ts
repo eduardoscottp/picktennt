@@ -55,9 +55,10 @@ export async function storageDatabase() {
   if (existsSync(ownerActions)) await db.exec(readFileSync(ownerActions, 'utf8'));
   const administrators = resolve('supabase/migrations/202610280010_tournament_administrator_management.sql');
   if (existsSync(administrators)) await db.exec(readFileSync(administrators, 'utf8'));
+  const revisions = resolve('supabase/migrations/202610290001_tournament_revisions.sql');
+  if (existsSync(revisions)) await db.exec(readFileSync(revisions, 'utf8'));
   return db;
 }
-
 export async function role<T>(db: PGlite, name: 'anon'|'authenticated'|'service_role', actor: string, fn: () => Promise<T>) {
   await db.exec(`SET ROLE ${name}; SET request.jwt.claim.sub='${actor}';`);
   try { return await fn(); } finally { await db.exec('RESET ROLE; RESET request.jwt.claim.sub;'); }
@@ -74,4 +75,3 @@ export async function command(db: PGlite, input: Command) {
     return result.rows[0].receipt;
   });
 }
-

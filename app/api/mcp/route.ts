@@ -1,9 +1,11 @@
 import { previewCorrection, previewWithdrawal } from '@/lib/tournament-builder/corrections';
+import { previewRevision } from '@/lib/tournament-builder/revisions';
+import { previewSchedule } from '@/lib/tournament-builder/schedule-preview';
 import { createAdminClient } from '@/lib/supabase/server';
-import { createOAuthConfig } from '@/lib/tournament-builder/oauth';
+import { createOAuthConfig, hashOAuthSecret } from '@/lib/tournament-builder/oauth';
 import { handleMcpRequest } from '@/lib/tournament-builder/mcp-http';
 import { callRpc, executeCommand, getOperation, getSnapshot, previewTournament } from '@/lib/tournament-builder/repository';
-import { errorResponse } from '@/lib/tournament-builder/http';
+import { mcpError } from '@/lib/tournament-builder/mcp-security';
 import { DomainError } from '@/lib/tournament-builder/requests';
 import { previewOwnerAction } from '@/lib/tournament-builder/owner-actions';
 import type { CommandActor } from '@/lib/tournament-builder/commands';
@@ -29,12 +31,17 @@ async function handle(request: Request) {
     return await handleMcpRequest(request, {
       config,
       verifyToken: (hash, resource) => callRpc(db, 'tb_oauth_store', { p_action: 'verify_token', p_payload: { token_hash: hash, resource } }),
+      // The existing persistent limiter gives each account its own MCP bucket,
+      // independent of source IP and the OAuth token endpoint's keys.
+      rateLimit: actorId => callRpc(db, 'tb_oauth_store', { p_action: 'rate_limit', p_payload: { bucket: 'token', key_hash: hashOAuthSecret(`mcp:user:${actorId}`) } }),
       forActor: actor => ({
         ...(actor.permissions?.includes('admin:manage') ? { admin: {
           snapshot: (id:string) => authorizedSnapshot(actor,id),
           findPlayer: (id:string,username:string) => findPlayer(actor,id,username),
           previewCorrection: async (id:string,data:Record<string,unknown>) => { const snapshot=await getSnapshot(db,actor,id); return previewCorrection(snapshot,{...actor,role:snapshot.caller_role==='admin'?'admin':'player'},data); },
           previewWithdrawal: async (id:string,data:Record<string,unknown>) => { const snapshot=await getSnapshot(db,actor,id); return previewWithdrawal(snapshot,{...actor,role:snapshot.caller_role==='admin'?'admin':'player'},data); },
+          previewRevision: async (id:string,data:Record<string,unknown>) => { const snapshot=await getSnapshot(db,actor,id); return previewRevision(snapshot,{...actor,role:snapshot.caller_role==='admin'?'admin':'player'},data); },
+          previewSchedule: async (id:string,data:Record<string,unknown>) => { const snapshot=await getSnapshot(db,actor,id); return previewSchedule(snapshot,{...actor,role:snapshot.caller_role==='admin'?'admin':'player'},data); },
         }} : {}),
         ...(actor.permissions?.includes('owner:manage') ? { owner: {
           snapshot: (id:string) => authorizedSnapshot(actor,id,true),
@@ -60,7 +67,7 @@ async function handle(request: Request) {
         },
       }),
     });
-  } catch (error) { return errorResponse(error); }
+  } catch (error) { return Response.json(mcpError(error), { status: 503, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } }); }
 }
 export const POST = handle;
 export const GET = handle;

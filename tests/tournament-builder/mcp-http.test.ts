@@ -18,7 +18,9 @@ test('streamable MCP advertises auth, executes discovery and rejects a revoked t
   assert.equal(verified, 0);
   const response = await handleMcpRequest(request(true), dependencies);
   assert.equal(response.status, 200);
-  assert.equal((await response.json()).result.tools.length, 9);
+  const tools = (await response.json()).result.tools;
+  assert.equal(tools.length, 6);
+  assert.equal(tools.some((tool: { name: string }) => ['create_draft', 'update_draft', 'get_operation'].includes(tool.name)), false);
   revoked = true;
   assert.equal((await handleMcpRequest(request(true), dependencies)).status, 401);
   assert.equal(verified, 2);

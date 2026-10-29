@@ -5,8 +5,12 @@ import { CallToolRequestSchema, ListToolsRequestSchema, type Tool } from '@model
 import { getCapabilities, listModules } from './catalog';
 import { definitionJsonSchema } from './definition-schema';
 import { DomainError, parseEnvelope, UUID } from './requests';
+import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv';
+import { assertMcpJson, assertPublicMcpOutput, mcpError, MCP_INSTRUCTIONS } from './mcp-security';
+import { publicMcpResult } from './mcp-output';
 
 export interface McpDependencies {
+  permissions?: readonly string[];
   /** Already authenticated connection. Each operation rechecks its current grant in the repository. */
   execute(command: string, tournamentId: string | null, input: unknown): Promise<unknown>;
   admin?: AdminMcpDependencies;
@@ -29,10 +33,25 @@ export const TOURNAMENT_TOOLS: Tool[] = [
   { name: 'get_operation', description: 'Resolve an uncertain mutation using its original operation UUID. Do not create a new operation to retry an unknown outcome.', inputSchema: object({ tournament_id: uuid, operation_id: uuid }, ['tournament_id', 'operation_id']), annotations: readAnnotations },
 ];
 
+function availableTools(dependencies: McpDependencies): Tool[] {
+  return [...TOURNAMENT_TOOLS.filter(tool => {
+    if (!dependencies.permissions || ['list_modules', 'get_capabilities'].includes(tool.name)) return true;
+    const permission = tool.name === 'create_draft' ? 'draft:create' : tool.name === 'update_draft' ? 'draft:update' : tool.name === 'get_operation' ? 'operation:read' : 'draft:read';
+    return dependencies.permissions.includes(permission) || (permission === 'operation:read' && Boolean(dependencies.admin || dependencies.owner));
+  }), ...(dependencies.admin ? ADMIN_TOOLS : []), ...(dependencies.owner ? OWNER_TOOLS : [])];
+}
+const validator = new AjvJsonSchemaValidator();
+const validators = new Map([...TOURNAMENT_TOOLS, ...ADMIN_TOOLS, ...OWNER_TOOLS].map(tool => [tool.name, validator.getValidator(tool.inputSchema)]));
+
 export async function callTournamentTool(name: string, args: Record<string, unknown>, dependencies: McpDependencies): Promise<unknown> {
-  const tool = [...TOURNAMENT_TOOLS, ...(dependencies.admin ? ADMIN_TOOLS : []), ...(dependencies.owner ? OWNER_TOOLS : [])].find(tool => tool.name === name);
+  const tool = availableTools(dependencies).find(tool => tool.name === name);
   if (!tool) throw new DomainError('INVALID_REQUEST', 'Unknown tournament tool.');
+  assertMcpJson(args);
   if (Object.keys(args).some(key => !Object.hasOwn(tool.inputSchema.properties ?? {}, key))) throw new DomainError('INVALID_REQUEST', 'Unknown tool argument.');
+  // Confirmation handlers retain their specific, safe confirmation failure.
+  const confirmation = Object.keys(tool.inputSchema.properties ?? {}).find(key => key.startsWith('confirmed_'));
+  if (confirmation && args[confirmation] !== true) throw new DomainError('CONFIRMATION_REQUIRED', 'Explain the concrete structural impact and obtain organizer confirmation.');
+  if (!validators.get(name)?.(args).valid) throw new DomainError('INVALID_REQUEST', 'Arguments do not match the tool schema.');
   if (name.startsWith('admin_') && dependencies.admin) return callAdminTool(name,args,dependencies.admin,(command,id,input)=>dependencies.execute(command,id,input));
   if (name.startsWith('owner_') && dependencies.owner) return callOwnerTool(name,args,dependencies.owner,(command,id,input)=>dependencies.execute(command,id,input));
   if (name === 'list_modules') return listModules();
@@ -54,14 +73,15 @@ export async function callTournamentTool(name: string, args: Record<string, unkn
 }
 
 export function createTournamentMcpServer(dependencies: McpDependencies): Server {
-  const server = new Server({ name: 'picktennt-tournament-builder', version: '1.0.0' }, { capabilities: { tools: {} } });
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [...TOURNAMENT_TOOLS, ...(dependencies.admin ? ADMIN_TOOLS : []), ...(dependencies.owner ? OWNER_TOOLS : [])] }));
+  const server = new Server({ name: 'picktennt-tournament-builder', version: '1.0.0' }, { capabilities: { tools: {} }, instructions: MCP_INSTRUCTIONS });
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: availableTools(dependencies) }));
   server.setRequestHandler(CallToolRequestSchema, async request => {
     try {
-      const data = await callTournamentTool(request.params.name, request.params.arguments ?? {}, dependencies);
+      const data = publicMcpResult(request.params.name, await callTournamentTool(request.params.name, request.params.arguments ?? {}, dependencies), request.params.arguments ?? {});
+      assertPublicMcpOutput(data);
       return { content: [{ type: 'text', text: JSON.stringify(data) }] };
     } catch (error) {
-      const data = error instanceof DomainError ? { code: error.code, message: error.message, details: error.details } : { code: 'INTERNAL_ERROR', message: 'The operation could not be completed. Check its receipt before retrying.' };
+      const data = mcpError(error);
       return { isError: true, content: [{ type: 'text', text: JSON.stringify(data) }] };
     }
   });

@@ -5,9 +5,9 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { callTournamentTool, createTournamentMcpServer, type McpDependencies } from '../../lib/tournament-builder/mcp';
 const id = 'b27c31ec-0c66-4bf6-94c4-708432cd11a0';
 const deps: McpDependencies = {
-  execute: async (command, tournamentId, input) => ({ command, tournamentId, input }),
+  execute: async () => ({ operation_id: id, tournament_id: id, revision: 1, status: 'draft', data: { definition_id: id } }),
   getDraft: async tournamentId => ({ tournament_id: tournamentId, revision: 3, status: 'draft', definition: { event: { name: 'Previously saved name' } } }),
-  preview: async () => ({ valid: false, missing_fields: ['event.starts_at'] }),
+  preview: async () => ({ valid: false, missing_fields: [{ code: 'MISSING_FIELD', field_path: 'event.starts_at', message: 'Specify the start time.' }] }),
   operation: async () => ({ revision: 1 }),
   reviewLink: async () => ({ url: 'https://picktennt.example/review' }),
 };
@@ -24,7 +24,8 @@ test('real MCP client initializes, discovers bounded tools and receives missing 
     const preview = await client.callTool({ name: 'validate_draft', arguments: { tournament_id: id } });
     assert.ok(JSON.stringify(preview).includes('event.starts_at'));
     const mutation = await client.callTool({ name: 'create_draft', arguments: { operation_id: id, data: { definition: { event: { name: 'Saturday' } } } } });
-    assert.ok(JSON.stringify(mutation).includes('createDraft'));
+    assert.equal(mutation.isError, undefined);
+    assert.ok(JSON.stringify(mutation).includes('definition_id'));
   } finally { await client.close(); await server.close(); }
 });
 

@@ -33,6 +33,25 @@ export interface DefinitionJsonSchema {
   additionalProperties?: false; enum?: readonly unknown[]; minimum?: number; maximum?: number;
   minLength?: number; maxLength?: number; pattern?: string; items?: DefinitionJsonSchema;
   minItems?: number; maxItems?: number; oneOf?: DefinitionJsonSchema[]; anyOf?: DefinitionJsonSchema[]; uniqueItems?: boolean;
+  allOf?: DefinitionJsonSchema[]; if?: DefinitionJsonSchema; then?: DefinitionJsonSchema;
+}
+export function graphNodeSchemas(partial = false): DefinitionJsonSchema[] {
+  const id: DefinitionJsonSchema = { type: 'string', minLength: 1, maxLength: 40, pattern: '^[a-zA-Z0-9_-]+$' };
+  const position: DefinitionJsonSchema = { type: 'integer', minimum: 1, maximum: 16 };
+  const shape = (properties: Record<string, DefinitionJsonSchema>, required = Object.keys(properties)): DefinitionJsonSchema => ({ type: 'object', properties, required: partial ? [] : required, additionalProperties: false });
+  const source: DefinitionJsonSchema = { [partial ? 'anyOf' : 'oneOf']: [
+    shape({ kind: { enum: ['seed'] }, seed: position }),
+    shape({ kind: { enum: ['rank'] }, node_id: id, rank: position }),
+    shape({ kind: { enum: ['winner', 'loser'] }, node_id: id }),
+  ] };
+  return [
+    shape({ id, module: { enum: ['registration@1'] } }),
+    shape({ id, module: { enum: ['entries@1'] }, from: id }),
+    shape({ id, module: { enum: ['round_robin@2'] }, inputs: { type: 'array', minItems: 2, maxItems: 16, items: source } }),
+    shape({ id, module: { enum: ['cross_play@1'] }, side_a: { type: 'array', minItems: 1, maxItems: 15, items: source }, side_b: { type: 'array', minItems: 1, maxItems: 15, items: source } }),
+    shape({ id, module: { enum: ['match@1'] }, inputs: { type: 'array', minItems: 2, maxItems: 2, items: source } }),
+    shape({ id, module: { enum: ['placements@2'] }, final: id, bronze: id }, ['id', 'module', 'final']),
+  ];
 }
 export function ruleJsonSchema(rule: Rule, partial = false, path = ''): DefinitionJsonSchema {
   if (rule.kind === 'object') return { type: 'object', properties: Object.fromEntries(Object.entries(rule.fields).map(([key, value]) => [key, ruleJsonSchema(value, partial, path ? `${path}.${key}` : key)])), required: partial ? [] : Object.keys(rule.fields), additionalProperties: false };
@@ -52,5 +71,13 @@ export function ruleJsonSchema(rule: Rule, partial = false, path = ''): Definiti
   return { type: 'array', items: ruleJsonSchema(rule.item, partial), minItems: rule.min, maxItems: rule.max, ...(path === 'policies.ranking.order' ? { uniqueItems: true, description: 'First key must be wins_desc. Remaining keys are optional unique secondary ranking criteria, in priority order.' } : {}) };
 }
 export function definitionJsonSchema(partial = false): DefinitionJsonSchema {
-  return { ...ruleJsonSchema(DEFINITION_RULE, partial), description: partial ? 'Partial unpublished definition. Omit unknown organizer facts; supplied values must match this contract. Missing decisions prevent publication. Updates replace the definition, so preserve saved facts.' : 'Complete publication definition. scheduling.minimum_rest_minutes is retained for compatibility and never blocks starting or scoring games. Cross-field constraints: min_entries <= max_entries; singles partner_consent false, fixed_doubles true; timestamps must be real dates matching the IANA timezone; closes_at <= starts_at < expected_end_at, with a future close at publication. Supported graph compositions and roster-size constraints are advertised separately; validate_draft is authoritative.' };
+  const schema = ruleJsonSchema(DEFINITION_RULE, partial);
+  const legacyNodes = schema.properties!.nodes;
+  schema.properties!.schema_version = { enum: ['1.0', '2.0'] };
+  schema.properties!.nodes = { ...legacyNodes, minItems: partial ? 0 : 3, maxItems: 64, items: { [partial ? 'anyOf' : 'oneOf']: [...(legacyNodes.items?.oneOf ?? legacyNodes.items?.anyOf ?? []), ...graphNodeSchemas(partial).slice(2)] }, description: 'Version 1 uses the advertised linear compositions. Version 2 connects blocks using roster seeds, group ranks or match winners/losers. Input array order defines destination slots. validate_draft checks the graph and is authoritative.' };
+  schema.allOf = [
+    { if: { properties: { schema_version: { enum: ['1.0'] } }, required: ['schema_version'] }, then: { properties: { nodes: legacyNodes } } },
+    { if: { properties: { schema_version: { enum: ['2.0'] } }, required: ['schema_version'] }, then: { properties: { nodes: { type: 'array', minItems: partial ? 0 : 3, maxItems: 64, items: { [partial ? 'anyOf' : 'oneOf']: graphNodeSchemas(partial) } } } } },
+  ];
+  return { ...schema, description: partial ? 'Partial unpublished definition. Omit unknown organizer facts; supplied values must match this contract. Missing graph decisions can be saved alongside scheduling. Updates replace the definition, so preserve saved facts.' : 'Registration publication definition. Version 2 permits min_entries below max_entries; seeds partition planned capacity slots, not actual players. Include registration, entries and the group plan; unfinished knockout connections are disclosed as pending and must be completed before generation. Shared date, identity, consent and scoring rules apply. validate_draft is authoritative.' };
 }

@@ -2,13 +2,14 @@ import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { DomainError, parseEnvelope, requestHash } from './requests';
 import { planCommand, type CommandActor, type CommandSnapshot } from './commands';
 import { previewDefinition } from './preview';
+import { resolvedDefinition } from './resolved-definition';
 
 export interface RpcClient {
   rpc(name: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: { message: string } | null }>;
 }
 export interface CommandReceipt { operation_id: string; tournament_id: string; revision: number; status: string; data: Record<string, unknown> }
 
-const safeCodes = /\b(ACCOUNT_REQUIRED|UNAUTHENTICATED|FORBIDDEN|NOT_FOUND|GRANT_REVOKED|INVALID_STATE|STALE_REVISION|IDEMPOTENCY_CONFLICT|CAPACITY_FULL|REGISTRATION_CLOSED|DUPLICATE_ENTRY|INCOMPLETE_ROSTER|COURT_BUSY|PLAYER_BUSY|REST_REQUIRED|PUBLISHED_DEFINITION|INVALID_SCORE|INVALID_EFFECTS)\b/;
+const safeCodes = /\b(ACCOUNT_REQUIRED|UNAUTHENTICATED|FORBIDDEN|NOT_FOUND|GRANT_REVOKED|INVALID_STATE|STRUCTURE_LOCKED|STALE_PREVIEW|STALE_REVISION|IDEMPOTENCY_CONFLICT|CAPACITY_FULL|REGISTRATION_CLOSED|DUPLICATE_ENTRY|INCOMPLETE_ROSTER|COURT_BUSY|PLAYER_BUSY|REST_REQUIRED|PUBLISHED_DEFINITION|INVALID_SCORE|INVALID_EFFECTS)\b/;
 export async function callRpc<T>(db: RpcClient, name: string, args: Record<string, unknown>): Promise<T> {
   const { data, error } = await db.rpc(name, args);
   if (error) {
@@ -63,6 +64,6 @@ export async function executeCommand(db: RpcClient, actor: CommandActor, command
 
 export async function previewTournament(db: RpcClient, actor: CommandActor, tournamentId: string) {
   const snapshot = await getSnapshot(db, actor, tournamentId);
-  const definition = snapshot.definitions.find(d => d.id === snapshot.event?.definition_id);
+  const definition = resolvedDefinition(snapshot);
   return previewDefinition(definition?.definition ?? {}, Number(snapshot.event?.revision ?? 0));
 }

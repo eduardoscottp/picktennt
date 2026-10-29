@@ -1,5 +1,5 @@
 import type { ModuleId } from './definition';
-import { definitionJsonSchema } from './definition-schema';
+import { definitionJsonSchema, graphNodeSchemas } from './definition-schema';
 import { OWNER_ACTIONS } from './owner-actions';
 
 export const SUPPORTED_COMPOSITIONS: readonly (readonly ModuleId[])[] = [
@@ -30,10 +30,26 @@ export const MODULE_CATALOG: readonly ModuleDescriptor[] = specs.map(spec => ({
   permitted_successors: [...new Set(SUPPORTED_COMPOSITIONS.flatMap(path => path.flatMap((id, i) => id === spec.id && i < path.length - 1 ? [path[i + 1]] : [])))],
   corrections: 'Impact review required; preserve history and block changes to started dependents until explicit void-and-replay. Withdrawal follows stage_sensitive_v1.',
 }));
-export function listModules(): readonly ModuleDescriptor[] { return structuredClone(MODULE_CATALOG); }
+export function listModules() {
+  const descriptions: Record<string, { description: string; input: string; output: string; questions: string[] }> = {
+    'round_robin@2': { description: 'One independent group, assembled from explicit entry sources.', input: '2–16 seeds or completed block outputs', output: 'Ranked positions after accepted group results and required tie draws', questions: ['Which entries enter this group?', 'Which ranks advance, and to which block slots?'] },
+    'cross_play@1': { description: 'Every entry on side A plays every entry on side B, without same-side games.', input: 'Two nonempty sides with at most 16 total seeds or completed block outputs', output: 'Combined ranked positions after all cross-side results and required tie draws', questions: ['Which entries belong on each side?', 'How many ranked positions advance?'] },
+    'match@1': { description: 'One match with two explicit incoming slots.', input: 'Two seeds, group ranks, match winners or match losers', output: 'Winner and loser after an accepted outcome', questions: ['Which source fills each side?', 'Where do the winner and loser play next?'] },
+    'placements@2': { description: 'Final results for the completed composition.', input: 'Championship final and optional bronze match', output: 'Placements with shared ranks where the structure does not distinguish entries', questions: ['Which match decides the champion?', 'Is there a bronze match?'] },
+  };
+  const graphModules = graphNodeSchemas().slice(2).map(schema => {
+    const id = String(schema.properties!.module.enum![0]);
+    return { id, version: Number(id.split('@')[1]), schema_version: '2.0', ...descriptions[id], definition_schema: schema };
+  });
+  return [...structuredClone(MODULE_CATALOG), ...graphModules];
+}
 export function getCapabilities(administratorAccess = false, ownerAccess = false) {
   return { schema_version: '1.0' as const, sport: 'pickleball', entry_types: ['singles', 'fixed_doubles'] as const, entries: { min: 2, max: 16 }, courts: { min: 1, max: 8 }, compositions: structuredClone(SUPPORTED_COMPOSITIONS), modules: listModules(),
     definition_schema: definitionJsonSchema(), draft_definition_schema: definitionJsonSchema(true),
+    graph: { schema_version: '2.0', nodes: graphNodeSchemas(), max_nodes: 64, fixed_capacity: true,
+      modules: ['registration@1', 'entries@1', 'round_robin@2', 'cross_play@1', 'match@1', 'placements@2'],
+      sources: ['seed: locked roster position', 'rank: completed round-robin position', 'winner: accepted match winner', 'loser: accepted match loser'],
+      instructions: 'Use schema_version 2.0 for groups and branches. round_robin@2 uses inputs. cross_play@1 uses side_a and side_b and creates only side-A-versus-side-B games. match@1 uses exactly two inputs and can express seeded internal pairings such as rank 9 versus rank 1; connect each chosen match winner to the next round. Sources use kind seed with seed, rank with node_id and rank, or winner/loser with node_id. Include registration@1, entries@1 from registration, and placements@2 with final match node id and optional bronze. Seeds partition max_entries planned slots; min_entries may be lower. No players or games are required to create or publish registration. Missing graph nodes/connections are pending decisions, so supported scheduling can still be saved. Include registration and entries before publication; knockout connections may remain pending until admin_lock_roster. At lock, review actual groups and provide group_assignments by initial group node ID; each approved entry appears exactly once, groups have 2 to capacity entries. Optional nodes completes missing connections while preserving existing facts. Never generate fixtures while registration is open. Automatic best-runners-up comparison across groups is unsupported; disclose it rather than silently switching formats. No expressions or invented results. Ties affecting a selected rank must be resolved. Preview before publishing.' },
     policy_guidance: {
       'policies.match': 'One game, legal target and win-by from the schema; side_out awards points only to the serving side, rally awards each rally.',
       'policies.ranking.order': 'Wins first, then organizer-selected unique secondary criteria. Descending keys prefer larger metrics; points_against_asc prefers fewer conceded points; points_for_in_losses_desc counts points only in losses.',

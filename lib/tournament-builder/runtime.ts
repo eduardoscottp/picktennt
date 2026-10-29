@@ -4,12 +4,14 @@ import { assertValidRoster, type FixtureResult, type RuntimeOptions, type Tourna
 import { generateRoundRobin } from './modules/round-robin';
 import { generateElimination, resolveBracket } from './modules/elimination';
 import { computePlacements } from './modules/placements';
+import { analyzeGraph } from './graph-runtime';
 
 /** Analyze a locked roster under a validated immutable definition. No DB writes, timers or randomness.
  * Inputs contain current non-void results only. Callers bind draw revisions and fixture IDs to this event.
  * Court waves are a plan; transactional start commands must enforce real occupancy.
  */
 export function analyzeTournament(definition: TournamentDefinition, entries: readonly TournamentEntry[], results: readonly FixtureResult[], options: RuntimeOptions = {}): TournamentAnalysis {
+  if (definition.schema_version === '2.0') return analyzeGraph(definition, entries, results, options);
   const analysis: TournamentAnalysis = { state: 'waiting', fixtures: [], standings: [], ties: [], qualifiers: [] };
   function checked(output = analysis): TournamentAnalysis {
     const ids = new Set(analysis.fixtures.map(f => f.id));

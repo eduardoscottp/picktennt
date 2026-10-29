@@ -285,7 +285,8 @@ try {
   assert.ok(tools.tools.some((tool: { name: string }) => tool.name === "admin_save_result"));
   assert.ok(tools.tools.every((tool: { name: string }) => !tool.name.startsWith("owner_")));
   const completedViaMcp = await adminTool("admin_get_tournament", { tournament_id: tournamentId });
-  assert.equal(completedViaMcp.event.id, tournamentId); assert.equal(completedViaMcp.event.modular_state, "completed");
+  assert.equal(completedViaMcp.tournament_id, tournamentId); assert.equal(completedViaMcp.status, "completed");
+  assert.equal("event" in completedViaMcp, false); assert.equal("team_members" in completedViaMcp, false);
   assert.equal(completedViaMcp.caller_role, "owner");
   cases.push("Same OAuth client explicitly reconnects with native administrator consent; isolated bearer-only HTTP MCP lists admin tools and reads the completed tournament");
   const accountsBefore = Number((await db.query<{ n: number }>("select count(*) n from auth.users")).rows[0].n);
@@ -368,14 +369,14 @@ try {
   const registeredMatch = activeViaMcp.matches.find((match: { is_current: boolean; status: string }) => match.is_current && match.status === "scheduled");
   assert.ok(registeredMatch);
   const resultOperation = randomUUID();
-  const resultRequest = { tournament_id: registeredEvent, operation_id: resultOperation, expected_revision: activeViaMcp.event.revision, data: { match_id: registeredMatch.id, score_a: 11, score_b: 5, outcome_kind: "played", reason: "Organizer requested this local synthetic result." } };
+  const resultRequest = { tournament_id: registeredEvent, operation_id: resultOperation, expected_revision: activeViaMcp.revision, data: { match_id: registeredMatch.id, score_a: 11, score_b: 5, outcome_kind: "played", reason: "Organizer requested this local synthetic result." } };
   const savedViaMcp = await adminTool("admin_save_result", resultRequest);
   assert.equal(savedViaMcp.status, "completed");
   assert.deepEqual(await adminTool("admin_save_result", resultRequest), savedViaMcp);
   assert.equal(Number((await db.query<{ n: number }>("select count(*) n from tournament_operations where operation_id=$1", [resultOperation])).rows[0].n), 1);
   const finalViaMcp = await adminTool("admin_get_tournament", { tournament_id: registeredEvent });
-  assert.equal(finalViaMcp.event.modular_state, "completed");
-  assert.equal(finalViaMcp.stages.find((stage: { module_id: string }) => stage.module_id === "placements").output.groups.length, 2);
+  assert.equal(finalViaMcp.status, "completed");
+  assert.equal(finalViaMcp.stages.find((stage: { module_id: string }) => stage.module_id === "placements").placements.length, 2);
   await page.goto(`${origin}/tournaments/${registeredEvent}/leaderboard`);
   await page.locator("#placements ol li").first().waitFor(); assert.equal(await page.locator("#placements ol li").count(), 2);
   cases.push("Native administrator OAuth grant drives real HTTP MCP result command through SQL and final placements; identical receipt replay does not duplicate the result");
@@ -421,13 +422,13 @@ try {
   }
   await ownerChange("addAdministrator", { user_id: player, reason: "Owner confirmed the temporary local helper." });
   let ownerState = await ownerTool("owner_get_tournament", { tournament_id: ownerEvent });
-  assert.deepEqual(new Set(ownerState.admins.map((row: { user_id: string }) => row.user_id)), new Set([owner, player]));
+  assert.deepEqual(new Set(ownerState.administrators.map((row: { profile_id: string }) => row.profile_id)), new Set([owner, player]));
   await ownerChange("removeAdministrator", { user_id: player, reason: "Owner confirmed removing temporary helper access." });
   const cancellation = await ownerChange("cancelTournament", { reason: "Finish the isolated local owner-actions test." });
   assert.equal(cancellation.status, "cancelled");
   ownerState = await ownerTool("owner_get_tournament", { tournament_id: ownerEvent });
-  assert.deepEqual(ownerState.admins.map((row: { user_id: string }) => row.user_id), [owner]);
-  assert.equal(ownerState.teams.length, 0); assert.equal(ownerState.matches.length, 0);
+  assert.deepEqual(ownerState.administrators.map((row: { profile_id: string }) => row.profile_id), [owner]);
+  assert.equal(ownerState.entries.length, 0); assert.equal(ownerState.matches.length, 0);
   await page.goto(`${origin}/oauth/connections`);
   const ownerConnection = page.locator("form").filter({ hasText: "Owner actions and administrator management" });
   assert.equal(await ownerConnection.count(), 1);

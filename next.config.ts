@@ -1,4 +1,9 @@
 import type { NextConfig } from "next";
+import legalPublication from "./content/legal/ios/publication.json";
+
+if (process.env.VERCEL_ENV === "production" && !legalPublication.effectiveDate) {
+  throw new Error("Legal documents are still a review copy. Approve the text and set its effective date before production deployment.");
+}
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,

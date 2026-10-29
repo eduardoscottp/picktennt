@@ -2,18 +2,32 @@ import { validateDraft } from './validate';
 import { definitionHash } from './requests';
 import { MODULE_CATALOG } from './catalog';
 import type { ValidationResult } from './definition';
+import { graphPreview } from './graph-preview';
+import { validateGraph } from './graph-validate';
 
 export interface DefinitionPreview extends ValidationResult {
   revision: number; definitionHash?: string; maximumMatches?: number;
   entryType?: string; thirdPlace?: string; moduleNames?: string[];
   scoring?: string; warningCodes?: string[];
+  estimatedMinutes?: number;
+  generationReady?: boolean; generationIssues?: ValidationResult['errors'];
 }
 
 /** Shared web/MCP review. Counts describe capacity; actual roster is checked again at lock. */
 export function previewDefinition(input: unknown, revision: number): DefinitionPreview {
-  const validation = validateDraft(input);
+  const validation = validateDraft(input, { registration: true });
   const d = validation.definition;
   if (!d) return { ...validation, revision };
+  if (d.schema_version === '2.0') {
+    const generationIssues = validateGraph(d);
+    if (generationIssues.length) return { ...validation, revision, definitionHash: definitionHash(d), generationReady: false, generationIssues, entryType: d.registration.entry_type, moduleNames: d.nodes.map(n => n.module), warningCodes: [...new Set(validation.warnings.map(w => w.code))] };
+    const graph = graphPreview(d);
+    const placements = d.nodes.find(n => n.module === 'placements@2');
+    return { ...validation, revision, definitionHash: definitionHash(d), generationReady: true, generationIssues: [], maximumMatches: graph.maximumMatches, estimatedMinutes: graph.estimatedMinutes,
+      entryType: d.registration.entry_type, thirdPlace: placements?.module === 'placements@2' && placements.bronze ? 'bronze_match' : 'shared',
+      moduleNames: d.nodes.map(n => n.module), scoring: `${d.policies.match.target} points, win by ${d.policies.match.win_by}`,
+      warningCodes: [...new Set(validation.warnings.map(w => w.code))] };
+  }
   const capacity = d.registration.max_entries;
   const rr = d.nodes.some(n => n.module === 'round_robin@1');
   const qualification = d.nodes.find(n => n.module === 'qualify@1');

@@ -1,4 +1,5 @@
 import type { DefinitionJsonSchema } from './definition-schema';
+import type { GraphDefinition } from './graph-types';
 
 export const MODULE_IDS = ['registration@1', 'entries@1', 'round_robin@1', 'standings@1', 'qualify@1', 'elimination@1', 'placements@1'] as const;
 export type ModuleId = typeof MODULE_IDS[number];
@@ -9,7 +10,7 @@ export type DefinitionNode =
   | { id: string; module: 'entries@1' | 'round_robin@1' | 'standings@1' | 'placements@1'; from: string; config?: Record<string, never> }
   | { id: string; module: 'qualify@1'; from: string; config: { count: 2 | 4 } }
   | { id: string; module: 'elimination@1'; from: string; config: { seeding: 'draw' | 'ranked'; bronze: boolean } };
-export interface TournamentDefinition {
+export interface LegacyTournamentDefinition {
   schema_version: '1.0';
   event: { name: string; starts_at: string; expected_end_at: string; timezone: string; venue_name: string; visibility: 'public' | 'unlisted'; courts: number };
   registration: { mode: 'open' | 'approval'; entry_type: 'singles' | 'fixed_doubles'; max_entries: number; min_entries: number; closes_at: string; partner_consent: boolean; organizer_plays: boolean };
@@ -17,8 +18,9 @@ export interface TournamentDefinition {
   scheduling: { estimated_slot_minutes: number; minimum_rest_minutes: number; contingency_minutes: number };
   nodes: DefinitionNode[];
 }
+export type TournamentDefinition = LegacyTournamentDefinition | GraphDefinition;
 export type DeepPartial<T> = T extends (infer U)[] ? DeepPartial<U>[] : T extends object ? { [K in keyof T]?: DeepPartial<T[K]> } : T;
 export type TournamentDraft = DeepPartial<TournamentDefinition>;
 export interface ValidationIssue { code: 'MISSING_FIELD' | 'UNSUPPORTED_MODULE' | 'UNSUPPORTED_RULE' | 'INCOMPATIBLE_CONNECTION' | 'INVALID_CAPACITY' | 'INVALID_ADVANCEMENT' | 'RESOURCE_CONFLICT' | 'INSUFFICIENT_TIME'; message: string; field_path: string; node_id?: string; allowed_values?: unknown[]; constraints?: DefinitionJsonSchema }
 export interface ValidationResult { valid: boolean; errors: ValidationIssue[]; warnings: ValidationIssue[]; missing_fields: ValidationIssue[]; definition?: TournamentDefinition }
-export interface ValidationOptions { now?: Date; publication?: boolean }
+export interface ValidationOptions { now?: Date; publication?: boolean; registration?: boolean }
