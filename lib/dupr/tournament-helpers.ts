@@ -18,7 +18,8 @@ export interface MatchPlayerResolution {
 /** Collect distinct user IDs from a list of matches, resolving teams via team_members. */
 export async function collectMatchUserIds(
   admin: SupabaseClient,
-  matches: Match[]
+  matches: Match[],
+  currentRosterOnly = false
 ): Promise<Set<string>> {
   const directIds = new Set<string>();
   const teamIds = new Set<string>();
@@ -32,10 +33,13 @@ export async function collectMatchUserIds(
   }
 
   if (teamIds.size > 0) {
-    const { data: members } = await admin
+    let query = admin
       .from("team_members")
       .select("user_id, team_id")
       .in("team_id", Array.from(teamIds));
+    if (currentRosterOnly) query = query.in("membership_status", ["active", "withdrawn"]);
+    const { data: members, error } = await query;
+    if (error) throw new Error("Could not load match players.");
     for (const row of members ?? []) {
       if (row.user_id) directIds.add(row.user_id);
     }
@@ -63,7 +67,8 @@ export async function fetchProfiles(
 export async function resolveMatchPlayers(
   admin: SupabaseClient,
   matches: Match[],
-  profiles: Map<string, Profile>
+  profiles: Map<string, Profile>,
+  currentRosterOnly = false
 ): Promise<MatchPlayerResolution[]> {
   const teamIds = new Set<string>();
   for (const m of matches) {
@@ -73,10 +78,13 @@ export async function resolveMatchPlayers(
 
   const teamMembers = new Map<string, string[]>();
   if (teamIds.size > 0) {
-    const { data: rows } = await admin
+    let query = admin
       .from("team_members")
       .select("team_id, user_id")
       .in("team_id", Array.from(teamIds));
+    if (currentRosterOnly) query = query.in("membership_status", ["active", "withdrawn"]);
+    const { data: rows, error } = await query;
+    if (error) throw new Error("Could not load match players.");
     for (const r of rows ?? []) {
       const arr = teamMembers.get(r.team_id) ?? [];
       arr.push(r.user_id);

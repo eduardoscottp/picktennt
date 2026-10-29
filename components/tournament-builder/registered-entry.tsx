@@ -43,11 +43,11 @@ export function RegisteredEntryForm({ definitionId, doubles, capacityFull, disab
     } catch (error) { setMessage(error instanceof Error ? error.message : "Player lookup is unavailable."); }
     finally { setBusy(false); }
   }
-  return <fieldset disabled={disabled || capacityFull || busy} className="space-y-3 rounded-xl border bg-gray-50 p-4 disabled:opacity-60"><legend className="px-1 text-sm font-semibold">Register existing Picktennt players</legend>
+  return <fieldset disabled={disabled || capacityFull || busy} className="space-y-3 rounded-xl border border-gray-200 bg-gray-50 p-4 disabled:opacity-60"><legend className="px-1 text-sm font-semibold">Register existing Picktennt players</legend>
     <p className="text-sm text-gray-600">Each player must already have a Picktennt account and profile. Existing DUPR links are preserved; DUPR verification and submission have separate checks. This records administrator enrollment, not personal acceptance of the rules.</p>
     <Input id={`${id}-player`} label="Player’s Picktennt username" value={playerUsername} maxLength={33} onChange={event => { setPlayerUsername(event.target.value); changed(); }} />
     {doubles && <Input id={`${id}-partner`} label="Partner’s Picktennt username" value={partnerUsername} maxLength={33} onChange={event => { setPartnerUsername(event.target.value); changed(); }} />}
-    {!unique && <p className="text-sm text-red-600">Choose a different registered account for each player.</p>}
+    {!unique && usernames.every(Boolean) && <p className="text-sm text-red-600">Choose a different registered account for each player.</p>}
     <Button variant="outline" disabled={!canLookup || disabled || capacityFull || busy} loading={busy} onClick={() => void lookup()}>Find registered players</Button>
     {players.length > 0 && <p className="text-sm text-brand-700">Accounts found: {players.map(player => player.display_name).join(" & ")}</p>}
     {alreadyEnrolled && <p className="text-sm text-amber-800">One of these accounts already has an entry in this tournament.</p>}

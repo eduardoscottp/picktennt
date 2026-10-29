@@ -7,6 +7,7 @@ import { TournamentBuilder, type TournamentBuilderView } from "../../components/
 import { RegisteredEntryForm, registeredEntryData } from "../../components/tournament-builder/registered-entry";
 import type { CommandSnapshot } from "../../lib/tournament-builder/commands";
 import { previewDefinition } from "../../lib/tournament-builder/preview";
+import { ToastProvider } from "../../components/ui/toast";
 
 const definition = JSON.parse(readFileSync("tests/tournament-builder/fixtures/tournament-definition.json", "utf8"));
 function snapshot(state = "active", caller_role = "owner"): CommandSnapshot & { caller_role: string } {
@@ -18,7 +19,7 @@ function snapshot(state = "active", caller_role = "owner"): CommandSnapshot & { 
     stages: [{ id: "rr", module_id: "round_robin", state: "ready" }, { id: "standings", module_id: "standings", state: "blocked", output: { ties: [["a", "b"]], inputRevision: 4 } }, { id: "places", module_id: "placements", state: "completed", output: { groups: [{ rank: 1, entryIds: ["a"] }, { rank: 2, entryIds: ["b", "c"] }] } }] };
 }
 function render(view: TournamentBuilderView, data = snapshot(), actorId = "owner") {
-  return renderToStaticMarkup(createElement(TournamentBuilder, { actorId, initialSnapshot: data, initialPreview: previewDefinition(definition, 4), view }));
+  return renderToStaticMarkup(createElement(ToastProvider, null, createElement(TournamentBuilder, { actorId, initialSnapshot: data, initialPreview: previewDefinition(definition, 4), view })));
 }
 test("published overview reuses normal navigation and shows rules, progress and roster without match or results walls", () => {
   const html = render("overview");
@@ -31,7 +32,8 @@ test("published overview reuses normal navigation and shows rules, progress and 
 test("matches view retains scoring and ties while standings view contains rankings and shared placements", () => {
   const matches = render("matches");
   assert.match(matches, /id="matches"/); assert.match(matches, /Validate saved score/); assert.match(matches, /Resolve remaining ties/);
-  assert.doesNotMatch(matches, /id="rules"|id="entries"|id="placements"/);
+  assert.match(matches, /id="entries"/);
+  assert.doesNotMatch(matches, /id="rules"|id="placements"/);
   const standings = render("standings");
   assert.match(standings, /<table/); assert.match(standings, /id="placements"/); assert.match(standings, /Shared placement/); assert.match(standings, /Resolve remaining ties/);
   assert.doesNotMatch(standings, /id="rules"|id="entries"|id="matches"/);
@@ -121,6 +123,7 @@ test("registered-account form starts disabled and binds only distinct resolved p
   assert.match(single, /<button[^>]*disabled=""[^>]*>Enroll registered entry/);
   const full = renderToStaticMarkup(createElement(RegisteredEntryForm, { ...props, doubles: true, capacityFull: true }));
   assert.match(full, /All available entries are filled/); assert.match(full, /fieldset disabled=""/);
+  assert.doesNotMatch(full, /Choose a different registered account for each player/);
   assert.deepEqual(registeredEntryData(definitionId, [first, second], "  Verified pair  "), { definition_id: definitionId, player_ids: [first, second], entry_name: "Verified pair", reason: "Administrator enrolled existing Picktennt accounts." });
   assert.equal(registeredEntryData(definitionId, [first, first], "Duplicate"), null);
   assert.equal(registeredEntryData(definitionId, [first], " "), null);
@@ -147,4 +150,40 @@ test("missing administrator snapshot does not fabricate administrators or enable
   const html = render("admin", snapshot("active"));
   assert.match(html, /Refresh the tournament to load its current administrators/);
   assert.doesNotMatch(html, /Choose removal|Find administrator account/);
+});
+
+test("registration Matches shows the plan, real players and team management without scoring or generated fixtures", () => {
+  const data = snapshot("registration_open");
+  data.team_members[0].display_name = "Alicia Player";
+  const html = render("matches", data);
+  assert.match(html, /Planned tournament · registration draft|TBD/);
+  assert.match(html, /Alicia Player|Alpha|Pending entry/);
+  assert.match(html, /Register existing Picktennt players|Approve entry|Edit tournament/);
+  assert.doesNotMatch(html, /Validate saved score|Save &amp; Validate|Confirm opponent/);
+  const player = render("matches", { ...data, caller_role: "player" }, "player");
+  assert.match(player, /Your entry|Alicia Player/);
+  assert.doesNotMatch(player, /Register existing Picktennt players|Approve entry|Edit tournament/);
+});
+
+test("published Overview and Admin reuse the existing join-code sharing component", () => {
+  const data = snapshot("registration_open");
+  data.event!.join_code = "PICK1234";
+  for (const view of ["overview", "admin"] as const) {
+    const html = render(view, data);
+    assert.match(html, /PICK1234/);
+    assert.match(html, /Share Tournament · Code/);
+    assert.match(html, /max-w-2xl|text-brand-600/);
+  }
+  data.event!.modular_state = "draft";
+  assert.doesNotMatch(render("builder", data), /Share Tournament · Code/);
+});
+
+test("completed Admin provides explicit DUPR selection and blocks results under review", () => {
+  const data = snapshot("completed");
+  data.matches[0] = { ...data.matches[0], is_current: true, status: "validated", outcome_kind: "played", submit_to_dupr: false };
+  const html = render("admin", data);
+  assert.match(html, /DUPR submission|Alpha vs Beta/);
+  assert.doesNotMatch(render("overview", data), /DUPR submission/);
+  data.event!.results_under_review = true;
+  assert.match(render("admin", data), /Resolve results under review before selecting or submitting/);
 });

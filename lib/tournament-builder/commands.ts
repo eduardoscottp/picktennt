@@ -14,6 +14,7 @@ export interface CommandPlan { effects: CommandEffects; result: Record<string, u
 const fields: Record<string, readonly string[]> = {
   createDraft: ['definition'], updateDraft: ['definition'], publishTournament: ['reviewed_definition_hash', 'acknowledged_warning_codes', 'confirmed_owner_action', 'reviewed_action_hash'],
   reviseTournament: ['definition', 'entries', 'reason', 'preview_hash'], updateEventDetails: ['name', 'venue_name', 'reason'],
+  setDuprSubmission: ['match_id', 'enabled'],
   requestEntry: ['definition_id', 'consent', 'partner_id', 'entry_name'], acceptPartner: ['entry_id', 'definition_id', 'consent'],
   addGuestEntry: ['definition_id', 'player_names', 'reason'],
   addRegisteredEntry: ['definition_id', 'player_ids', 'entry_name', 'reason'],
@@ -230,6 +231,15 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
 
   if (command === 'reviseTournament') return planRevision(snapshot, actor, data, context);
   if (command === 'updateEventDetails') return planEventDetails(snapshot, actor, data);
+  if (command === 'setDuprSubmission') {
+    needAdmin(); state('completed');
+    if (actor.clientId !== 'web') fail('FORBIDDEN', 'Review DUPR submission on the tournament website.');
+    if (work.event!.results_under_review === true) fail('INVALID_STATE', 'Resolve results under review before DUPR submission.');
+    const match = work.matches.find(row => row.id === reference(data.match_id, 'match_id'));
+    if (!match || match.is_current !== true || match.voided_at || match.excluded_at || match.status !== 'validated' || match.outcome_kind !== 'played') fail('INVALID_STATE', 'Only current validated played matches can be selected.');
+    if (typeof data.enabled !== 'boolean') fail('INVALID_REQUEST', 'Choose whether to include this match.');
+    return { effects: { matches: [{ id: match!.id, submit_to_dupr: data.enabled }] }, result: { match_id: match!.id, enabled: data.enabled } };
+  }
   if (command === 'createDraft' || command === 'updateDraft') {
     if (command === 'updateDraft') { needAdmin(); if (work.event?.modular_state !== 'draft') fail('PUBLISHED_DEFINITION', 'Published rules are immutable.'); }
     else if (work.event) fail('INVALID_STATE', 'Event already exists.');
