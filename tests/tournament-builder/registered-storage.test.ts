@@ -11,10 +11,10 @@ before(async()=>{db=await storageDatabase();await db.query('INSERT INTO auth.use
 after(async()=>{await db?.close();});
 const rpc: RpcClient = { async rpc(name,args) { try { const keys=Object.keys(args);const result=await role(db,'service_role',owner,()=>db.query<{value:unknown}>(`SELECT public.${name}(${keys.map((key,i)=>`${key} => $${i+1}`).join(',')}) value`,Object.values(args).map(v=>v&&typeof v==='object'?JSON.stringify(v):v)));return {data:result.rows[0].value,error:null}; } catch(error) {return {data:null,error:{message:String(error)}};} } };
 const host={id:owner,clientId:'web'};
-async function fixture(doubles=false, capacity=2) {
+async function fixture(doubles=false, capacity=2, individualSlots=false) {
  const definition=JSON.parse(readFileSync('tests/tournament-builder/fixtures/tournament-definition.json','utf8'));
  definition.event.starts_at='2030-11-07T09:00:00-05:00';definition.event.expected_end_at='2030-11-07T12:30:00-05:00';
- definition.registration={...definition.registration,entry_type:doubles?'fixed_doubles':'singles',partner_consent:doubles,mode:'approval',min_entries:2,max_entries:capacity,closes_at:'2030-11-06T18:00:00-05:00'};
+ definition.registration={...definition.registration,entry_type:doubles?'fixed_doubles':'singles',partner_consent:doubles&&!individualSlots,mode:'approval',min_entries:2,max_entries:capacity,closes_at:'2030-11-06T18:00:00-05:00'};
  definition.nodes=definition.nodes.slice(0,4).concat({id:'result',module:'placements@1',from:'rank'});
  const created=await executeCommand(rpc,host,'createDraft',null,{operation_id:randomUUID(),data:{definition}});
  const event=created.tournament_id;let revision=created.revision;
@@ -94,4 +94,23 @@ test('actual SQL cancellation rejects administrator-enrolled player projections 
   snapshot=await getSnapshot(rpc,host,f.event);assert.equal(snapshot.teams[0].entry_state,'cancelled');assert.ok(snapshot.team_members.every(member=>member.membership_status==='cancelled'&&member.consented_at===null));
   assert.equal(snapshot.tournament_players.length,doubles?2:1);assert.ok(snapshot.tournament_players.every(profile=>profile.status==='rejected'));
  }
+});
+test('SQL requires individual join before a slot, moves atomically, and removes a withdrawn player',async()=>{
+ const f=await fixture(true,2,true);let revision=f.revision();
+ const playerHost={id:player,clientId:'web'};
+ const runPlayer=async(command:string,data:Record<string,unknown>)=>{const result=await executeCommand(rpc,playerHost,command,f.event,{operation_id:randomUUID(),expected_revision:revision,data});revision=result.revision;return result;};
+ await assert.rejects(()=>runPlayer('selectEntrySlot',{slot_index:1}),{code:'NOT_REGISTERED'});
+ await runPlayer('joinTournament',{definition_id:f.definitionId,consent:true});
+ await runPlayer('selectEntrySlot',{slot_index:1});
+ await runPlayer('selectEntrySlot',{slot_index:2});
+ let snapshot=await getSnapshot(rpc,host,f.event);
+ assert.equal(snapshot.team_members.filter(member=>member.user_id===player&&member.membership_status==='active').length,1);
+ assert.equal(snapshot.teams.find(team=>team.id===snapshot.team_members.find(member=>member.user_id===player&&member.membership_status==='active')?.team_id)?.registration_slot,2);
+ const strangerHost={id:stranger,clientId:'web'};
+ const joined=await executeCommand(rpc,strangerHost,'joinTournament',f.event,{operation_id:randomUUID(),expected_revision:revision,data:{definition_id:f.definitionId,consent:true}});revision=joined.revision;
+ const placed=await executeCommand(rpc,host,'placeRegisteredPlayer',f.event,{operation_id:randomUUID(),expected_revision:revision,data:{user_id:stranger,slot_index:2}});revision=placed.revision;
+ await runPlayer('cancelRegistration',{});
+ snapshot=await getSnapshot(rpc,host,f.event);
+ assert.equal(snapshot.tournament_players.find(profile=>profile.user_id===player)?.status,'rejected');
+ assert.equal(snapshot.team_members.filter(member=>member.user_id===player&&member.membership_status==='active').length,0);
 });

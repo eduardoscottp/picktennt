@@ -89,6 +89,34 @@ test('fixed doubles requires both actual consents before approval and consumes o
   assert.equal(s.teams[0].entry_state, 'approved');
   assert.equal(s.team_members.filter(row => row.membership_status === 'active').length, 2);
 });
+test('individual slots require join first, move one player atomically, and allow withdrawal', () => {
+  const d = definition(); d.registration.entry_type = 'fixed_doubles'; d.registration.partner_consent = false; d.registration.max_entries = 2;
+  let s = published(d);
+  assert.throws(() => planCommand(s, a, 'selectEntrySlot', { slot_index: 1 }, context), { code: 'NOT_REGISTERED' });
+  s = apply(s, planCommand(s, a, 'joinTournament', { definition_id: s.event!.definition_id, consent: true }, context));
+  s = apply(s, planCommand(s, a, 'selectEntrySlot', { slot_index: 1 }, context));
+  const firstMembership = s.team_members.find(row => row.user_id === a.id && row.membership_status === 'active')!;
+  assert.equal(s.teams.find(row => row.id === firstMembership.team_id)?.registration_slot, 1);
+  s = apply(s, planCommand(s, a, 'selectEntrySlot', { slot_index: 2 }, context));
+  assert.equal(s.team_members.filter(row => row.user_id === a.id && row.membership_status === 'active').length, 1);
+  assert.equal(s.team_members.find(row => row.user_id === a.id && row.membership_status === 'active')?.team_id, s.teams.find(row => row.registration_slot === 2)?.id);
+  assert.equal(s.team_members.find(row => row.id === firstMembership.id)?.membership_status, 'cancelled');
+  s = apply(s, planCommand(s, b, 'joinTournament', { definition_id: s.event!.definition_id, consent: true }, context));
+  s = apply(s, planCommand(s, b, 'selectEntrySlot', { slot_index: 2 }, context));
+  assert.equal(s.team_members.filter(row => row.team_id === s.teams.find(team => team.registration_slot === 2)?.id && row.membership_status === 'active').length, 2);
+  s = apply(s, planCommand(s, b, 'cancelRegistration', {}, context));
+  assert.equal(s.tournament_players.find(row => row.user_id === b.id)?.status, 'rejected');
+  assert.equal(s.team_members.find(row => row.user_id === b.id && row.membership_status === 'active'), undefined);
+  assert.throws(() => planCommand(s, b, 'selectEntrySlot', { slot_index: 1 }, context), { code: 'NOT_REGISTERED' });
+});
+test('administrators can place only players who already joined an individual-slot tournament', () => {
+  const d = definition(); d.registration.entry_type = 'fixed_doubles'; d.registration.partner_consent = false;
+  let s = published(d);
+  assert.throws(() => planCommand(s, admin, 'placeRegisteredPlayer', { user_id: a.id, slot_index: 1 }, context), { code: 'NOT_REGISTERED' });
+  s = apply(s, planCommand(s, a, 'joinTournament', { definition_id: s.event!.definition_id, consent: true }, context));
+  s = apply(s, planCommand(s, admin, 'placeRegisteredPlayer', { user_id: a.id, slot_index: 1 }, context));
+  assert.equal(s.team_members.filter(row => row.user_id === a.id && row.membership_status === 'active').length, 1);
+});
 test('roster locks create deterministic local fixtures once and event starts explicitly', () => {
   const s = ready();
   assert.equal(s.event!.modular_state, 'ready');

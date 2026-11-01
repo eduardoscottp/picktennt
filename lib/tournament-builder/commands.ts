@@ -16,6 +16,7 @@ const fields: Record<string, readonly string[]> = {
   reviseTournament: ['definition', 'entries', 'reason', 'preview_hash'], updateEventDetails: ['name', 'venue_name', 'reason'],
   setDuprSubmission: ['match_id', 'enabled'],
   requestEntry: ['definition_id', 'consent', 'partner_id', 'entry_name'], acceptPartner: ['entry_id', 'definition_id', 'consent'],
+  joinTournament: ['definition_id', 'consent'], selectEntrySlot: ['slot_index'], cancelRegistration: [], placeRegisteredPlayer: ['user_id', 'slot_index'],
   addGuestEntry: ['definition_id', 'player_names', 'reason'],
   addRegisteredEntry: ['definition_id', 'player_ids', 'entry_name', 'reason'],
   addAdministrator: ['user_id', 'reason', 'confirmed_owner_action', 'reviewed_action_hash'], removeAdministrator: ['user_id', 'reason', 'confirmed_owner_action', 'reviewed_action_hash'],
@@ -103,19 +104,47 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
     if (guests.length || team.guest_definition_id) return false;
     return roster.length === (d.registration.entry_type === 'singles' ? 1 : 2) && roster.every(m => (m.consented_definition_id === currentDefinition()?.id && m.consented_at) || (m.admission_source === 'administrator' && team.admin_definition_id === currentDefinition()?.id && team.registered_by));
   }
-  function projectMember(member: StorageRow, status: 'pending' | 'approved' | 'rejected') {
-    const row = work.tournament_players.find(p => p.user_id === member.user_id);
-    put('tournament_players', { id: row?.id ?? context.id(), user_id: member.user_id, status, joined_via: 'link' });
+  function projectMember(userId: unknown, status: 'pending' | 'approved' | 'rejected') {
+    const row = work.tournament_players.find(p => p.user_id === userId);
+    put('tournament_players', { id: row?.id ?? context.id(), user_id: userId, status, joined_via: 'link' });
   }
   function admit(team: StorageRow, d: TournamentDefinition): boolean {
     if (!complete(team, d)) return fail('INCOMPLETE_ROSTER', 'All actual partners must consent before admission.');
     for (const member of members(team.id)) if (work.team_members.some(m => m.user_id === member.user_id && m.team_id !== team.id && m.membership_status === 'active')) fail('DUPLICATE_ENTRY', 'A player is already in another active entry.');
     if (work.teams.filter(t => t.entry_state === 'approved' && t.id !== team.id).length >= d.registration.max_entries) return false;
     put('teams', { id: team.id, entry_state: 'approved' });
-    for (const member of members(team.id)) { put('team_members', { id: member.id, membership_status: 'active' }); projectMember(member, 'approved'); }
+    for (const member of members(team.id)) { put('team_members', { id: member.id, membership_status: 'active' }); projectMember(member.user_id, 'approved'); }
     return true;
   }
   function bumpRoster() { event({ roster_revision: Number(work.event?.roster_revision ?? 0) + 1 }); }
+  function slotIndex(): number {
+    const value = integer(data.slot_index, 'slot_index');
+    if (value < 1) fail('INVALID_REQUEST', 'Choose a valid entry slot.');
+    return value;
+  }
+  function placeRegisteredPlayer(userId: string, slot: number) {
+    const d = definition();
+    if (slot > d.registration.max_entries) fail('INVALID_REQUEST', 'Choose a valid entry slot.');
+    const player = work.tournament_players.find(row => row.user_id === userId && row.status === 'approved');
+    if (!player) fail('NOT_REGISTERED', 'Join the tournament before choosing a team position.');
+    const active = work.team_members.filter(row => row.user_id === userId && row.membership_status === 'active');
+    let target: StorageRow | undefined = work.teams.find(row => Number(row.registration_slot) === slot);
+    if (target && active.some(member => member.team_id === target!.id)) fail('INVALID_STATE', 'This is already your current position.');
+    if (target && members(target.id).length >= (d.registration.entry_type === 'singles' ? 1 : 2)) fail('SLOT_FULL', 'That team position is no longer available.');
+    for (const member of active) {
+      put('team_members', { id: member.id, membership_status: 'cancelled' });
+      const former = work.teams.find(team => team.id === member.team_id);
+      if (former && members(former.id).length === 0) put('teams', { id: former.id, entry_state: 'cancelled' });
+    }
+    if (!target) {
+      target = { id: context.id(), name: `Team ${slot}`, entry_state: 'approved', registration_slot: slot };
+      put('teams', target);
+    } else {
+      put('teams', { id: target.id, entry_state: 'approved', registration_slot: slot });
+    }
+    put('team_members', { id: context.id(), team_id: target.id, user_id: userId, membership_status: 'active', consented_definition_id: currentDefinition()!.id, consented_at: iso });
+    result = { entry_id: target.id, slot_index: slot, entry_state: 'approved' };
+  }
   function draw(ids: readonly string[]): string[] {
     if (!context.draw) return fail('DRAW_REQUIRED', 'A server-generated draw is required.');
     const permutation = context.draw(ids);
@@ -286,6 +315,30 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
       effects.definition = { id: currentDefinition()!.id, schema_version: d.schema_version === '2.0' ? 2 : 1, definition: d, status: 'published', canonical_hash: definitionHash(d), approved_at: iso };
       event({ definition_id: currentDefinition()!.id, name: d.event.name, modular_state: 'registration_open', court_count: d.event.courts, max_players: d.registration.max_entries * (d.registration.entry_type === 'singles' ? 1 : 2), type: d.registration.entry_type === 'singles' ? 'singles' : 'doubles', is_public: d.event.visibility === 'public', is_open: d.registration.mode === 'open', timezone: d.event.timezone, court_name: d.event.venue_name, tournament_date: d.event.starts_at.slice(0, 10), rules_text: JSON.stringify(d.policies) });
       for (const node of d.nodes) put('stages', { id: context.id(), definition_id: currentDefinition()!.id, node_id: node.id, module_id: node.module.split('@')[0], module_version: Number(node.module.split('@')[1]), state: 'waiting', input_revision: 0, output_revision: 0, output: {}, blocked_code: null });
+    } else if (command === 'joinTournament') {
+      admissionWindow(d); consent(d);
+      const existing = work.tournament_players.find(player => player.user_id === actor.id);
+      if (existing?.status === 'approved') fail('DUPLICATE_ENTRY', 'You already joined this tournament.');
+      if (work.tournament_players.filter(player => player.status === 'approved').length >= d.registration.max_entries * (d.registration.entry_type === 'singles' ? 1 : 2)) fail('CAPACITY_FULL', 'The tournament has no available player positions.');
+      put('tournament_players', { id: existing?.id ?? context.id(), user_id: actor.id, status: 'approved', joined_via: 'link' });
+      result = { player_status: 'approved' };
+    } else if (command === 'selectEntrySlot' || command === 'placeRegisteredPlayer') {
+      admissionWindow(d);
+      if (d.registration.partner_consent) fail('INVALID_STATE', 'This published tournament uses partner-confirmed entries.');
+      const slot = slotIndex();
+      if (command === 'placeRegisteredPlayer') { needAdmin(); placeRegisteredPlayer(reference(data.user_id, 'user_id'), slot); }
+      else placeRegisteredPlayer(actor.id, slot);
+      bumpRoster();
+    } else if (command === 'cancelRegistration') {
+      admissionWindow(d);
+      if (!work.tournament_players.some(player => player.user_id === actor.id && player.status === 'approved')) fail('NOT_REGISTERED', 'You have not joined this tournament.');
+      for (const member of work.team_members.filter(row => row.user_id === actor.id && ['active', 'pending'].includes(String(row.membership_status)))) {
+        put('team_members', { id: member.id, membership_status: 'cancelled' });
+        const former = work.teams.find(team => team.id === member.team_id);
+        if (former && members(former.id).length === 0) put('teams', { id: former.id, entry_state: 'cancelled' });
+      }
+      projectMember(actor.id, 'rejected');
+      bumpRoster(); result = { player_status: 'rejected' };
     } else if (command === 'addRegisteredEntry') {
       needAdmin(); admissionWindow(d);
       if (data.definition_id !== currentDefinition()?.id) fail('STALE_PREVIEW', 'Review the current published definition before registering accounts.');
@@ -299,7 +352,7 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
       put('teams', team);
       for (const userId of playerIds) {
         const member = { id: context.id(), team_id: team.id, user_id: userId, membership_status: 'active', admission_source: 'administrator', consented_at: null, consented_definition_id: null };
-        put('team_members', member); projectMember(member, 'approved');
+        put('team_members', member); projectMember(member.user_id, 'approved');
       }
       bumpRoster(); result = { entry_id: team.id, entry_state: 'approved' };
     } else if (command === 'addGuestEntry') {
@@ -320,7 +373,7 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
         const team = { id: context.id(), name: data.entry_name === undefined ? 'Entry' : text(data.entry_name, 'entry_name'), entry_state: 'pending' };
         put('teams', team);
         const member = { id: context.id(), team_id: team.id, user_id: actor.id, consented_definition_id: currentDefinition()!.id, consented_at: iso, membership_status: 'pending' };
-        put('team_members', member); projectMember(member, 'pending');
+        put('team_members', member); projectMember(member.user_id, 'pending');
         if (partner) put('team_members', { id: context.id(), team_id: team.id, user_id: partner, consented_definition_id: null, consented_at: null, membership_status: 'pending' });
         const admitted = !partner && d.registration.mode === 'open' ? admit(team, d) : false;
         result = { entry_id: team.id, entry_state: partner ? 'awaiting_partner' : admitted ? 'approved' : 'pending_approval', ...(!partner && d.registration.mode === 'open' && !admitted ? { admission_error: 'CAPACITY_FULL' } : {}) };
@@ -330,7 +383,7 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
           admissionWindow(d); consent(d);
           const member = members(team.id).find(m => m.user_id === actor.id && (!m.consented_at || m.consented_definition_id !== currentDefinition()!.id));
           if (!member || team.entry_state !== 'pending') fail('FORBIDDEN', 'Only the actual invited partner may accept.');
-          put('team_members', { id: member!.id, consented_definition_id: currentDefinition()!.id, consented_at: iso }); projectMember(member!, 'pending');
+          put('team_members', { id: member!.id, consented_definition_id: currentDefinition()!.id, consented_at: iso }); projectMember(member!.user_id, 'pending');
           const admitted = d.registration.mode === 'open' && complete(team, d) ? admit(team, d) : false;
           result = { entry_id: team.id, entry_state: admitted ? 'approved' : 'pending_approval', ...(d.registration.mode === 'open' && !admitted ? { admission_error: 'CAPACITY_FULL' } : {}) };
         } else if (command === 'approveEntry') {
@@ -341,7 +394,7 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
           if (command === 'rejectEntry') { needAdmin(); text(data.reason, 'reason', 1000); if (team.entry_state !== 'pending') fail('INVALID_STATE', 'Only pending entries can be rejected.'); }
           else if (!members(team.id).some(m => m.user_id === actor.id)) fail('FORBIDDEN', 'Only an entry participant can cancel it.');
           put('teams', { id: team.id, entry_state: command === 'cancelEntry' ? 'cancelled' : 'rejected' });
-          for (const member of members(team.id)) { put('team_members', { id: member.id, membership_status: 'cancelled' }); if (member.consented_at || member.admission_source === 'administrator') projectMember(member, 'rejected'); }
+          for (const member of members(team.id)) { put('team_members', { id: member.id, membership_status: 'cancelled' }); if (member.consented_at || member.admission_source === 'administrator') projectMember(member.user_id, 'rejected'); }
           result = { entry_id: team.id, entry_state: command === 'cancelEntry' ? 'cancelled' : 'rejected' };
         }
       }

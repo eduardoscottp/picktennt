@@ -18,7 +18,7 @@ const fields: Field[] = [
   { path: "registration.min_entries", label: "Minimum entries to proceed", type: "number", min: 2, max: 16 },
   { path: "registration.max_entries", label: "Maximum entries", type: "number", min: 2, max: 16 },
   { path: "registration.closes_at", label: "Registration closes", type: "date" },
-  { path: "registration.partner_consent", label: "Partner consent", type: "choice", choices: [[true, "Both partners must accept (doubles)"], [false, "No partner required (singles)"]] },
+  { path: "registration.partner_consent", label: "Partner consent", type: "choice", choices: [[false, "Individual slots (default)"], [true, "Both partners must accept (legacy doubles)"]] },
   { path: "registration.organizer_plays", label: "Will the organizer play?", type: "choice", choices: [[true, "Yes — joins separately as a player"], [false, "No"]] },
   { path: "scheduling.estimated_slot_minutes", label: "Match slot (minutes)", type: "number", min: 5, max: 120 },
   { path: "scheduling.minimum_rest_minutes", label: "Planned rest (minutes)", type: "number", min: 0, max: 30 },
@@ -87,7 +87,7 @@ export function draftSetupError(definition: Record<string, unknown>, path: strin
   if (path === "event.expected_end_at" && Date.parse(String(value)) <= Date.parse(String(draftSetupValue(definition, "event.starts_at")))) return "Expected finish must follow the tournament start.";
   if (path === "registration.closes_at" && Date.parse(String(value)) > Date.parse(String(draftSetupValue(definition, "event.starts_at")))) return "Registration must close before or at the tournament start.";
   if (path === "registration.min_entries" && Number(value) > Number(draftSetupValue(definition, "registration.max_entries"))) return "Minimum entries cannot exceed the maximum.";
-  if (path === "registration.partner_consent" && value !== (draftSetupValue(definition, "registration.entry_type") === "fixed_doubles")) return "Choose both partners accepting for doubles, or no partner for singles.";
+  if (path === "registration.partner_consent" && draftSetupValue(definition, "registration.entry_type") === "singles" && value) return "Singles cannot require partner consent.";
 }
 
 export function DraftSetupEditor({ definition, savedDefinition, issues, disabled, onChange }: { definition: Record<string, unknown>; savedDefinition: Record<string, unknown>; issues: ValidationIssue[]; disabled: boolean; onChange: (definition: Record<string, unknown>) => void }) {

@@ -57,6 +57,8 @@ export async function storageDatabase() {
   if (existsSync(administrators)) await db.exec(readFileSync(administrators, 'utf8'));
   const revisions = resolve('supabase/migrations/202610290001_tournament_revisions.sql');
   if (existsSync(revisions)) await db.exec(readFileSync(revisions, 'utf8'));
+  const individualSlots = resolve('supabase/migrations/202611010001_individual_registration_slots.sql');
+  if (existsSync(individualSlots)) await db.exec(readFileSync(individualSlots, 'utf8'));
   return db;
 }
 export async function role<T>(db: PGlite, name: 'anon'|'authenticated'|'service_role', actor: string, fn: () => Promise<T>) {
