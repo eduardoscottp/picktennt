@@ -142,7 +142,11 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
     } else {
       put('teams', { id: target.id, entry_state: 'approved', registration_slot: slot });
     }
-    put('team_members', { id: context.id(), team_id: target.id, user_id: userId, membership_status: 'active', consented_definition_id: currentDefinition()!.id, consented_at: iso });
+    const previous = work.team_members.find(row => row.user_id === userId && row.consented_at);
+    const administratorPlacement = command === 'placeRegisteredPlayer';
+    if (administratorPlacement) put('teams', { id: target.id, admin_definition_id: currentDefinition()!.id, registered_by: actor.id });
+    put('team_members', { id: context.id(), team_id: target.id, user_id: userId, membership_status: 'active',
+      ...(administratorPlacement ? { admission_source: 'administrator', consented_definition_id: previous?.consented_definition_id ?? null, consented_at: previous?.consented_at ?? null } : { consented_definition_id: currentDefinition()!.id, consented_at: iso }) });
     result = { entry_id: target.id, slot_index: slot, entry_state: 'approved' };
   }
   function draw(ids: readonly string[]): string[] {
@@ -324,7 +328,6 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
       result = { player_status: 'approved' };
     } else if (command === 'selectEntrySlot' || command === 'placeRegisteredPlayer') {
       admissionWindow(d);
-      if (d.registration.partner_consent) fail('INVALID_STATE', 'This published tournament uses partner-confirmed entries.');
       const slot = slotIndex();
       if (command === 'placeRegisteredPlayer') { needAdmin(); placeRegisteredPlayer(reference(data.user_id, 'user_id'), slot); }
       else placeRegisteredPlayer(actor.id, slot);
@@ -346,9 +349,12 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
       const name = text(data.entry_name, 'entry_name', 120);
       const playerIds = strings(data.player_ids, 'player_ids').map(value => reference(value, 'player_ids').toLowerCase());
       if (playerIds.length !== (d.registration.entry_type === 'singles' ? 1 : 2) || new Set(playerIds).size !== playerIds.length) fail('INVALID_REQUEST', 'Choose the required number of distinct Picktennt profile IDs.');
+      if (d.registration.entry_type === 'fixed_doubles' && playerIds.some(userId => !work.tournament_players.some(player => player.user_id === userId && player.status === 'approved'))) fail('NOT_REGISTERED', 'Each player must join the tournament before an administrator places them.');
       if (work.team_members.some(member => playerIds.includes(String(member.user_id).toLowerCase()) && ['active', 'pending'].includes(String(member.membership_status)) && work.teams.some(team => team.id === member.team_id && !['cancelled', 'withdrawn', 'rejected'].includes(String(team.entry_state))))) fail('DUPLICATE_ENTRY', 'A selected player already has a current entry or invitation.');
       if (work.teams.filter(team => team.entry_state === 'approved').length >= d.registration.max_entries) fail('CAPACITY_FULL', 'The tournament has no available entry slots.');
-      const team = { id: context.id(), name, entry_state: 'approved', admin_definition_id: currentDefinition()!.id, registered_by: actor.id };
+      const registrationSlot = d.registration.entry_type === 'fixed_doubles' ? Array.from({ length: d.registration.max_entries }, (_, index) => index + 1).find(slot => !work.teams.some(team => Number(team.registration_slot) === slot)) : undefined;
+      if (d.registration.entry_type === 'fixed_doubles' && registrationSlot === undefined) fail('CAPACITY_FULL', 'Place joined players in existing open positions instead.');
+      const team = { id: context.id(), name, entry_state: 'approved', admin_definition_id: currentDefinition()!.id, registered_by: actor.id, ...(registrationSlot === undefined ? {} : { registration_slot: registrationSlot }) };
       put('teams', team);
       for (const userId of playerIds) {
         const member = { id: context.id(), team_id: team.id, user_id: userId, membership_status: 'active', admission_source: 'administrator', consented_at: null, consented_definition_id: null };

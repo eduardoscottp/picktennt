@@ -52,11 +52,21 @@ test('recorded score or outcome locks structural editing even if a legacy match 
 });
 
 
-test('a retained pending invitation with old consent can accept revised rules', async () => {
+test('Doubles registration always renders individual slots regardless of historical partner consent', async () => {
   const { TournamentBuilder } = await import('../../components/tournament-builder/builder');
   const { previewDefinition } = await import('../../lib/tournament-builder/preview');
-  const snapshot: CommandSnapshot = { ...base, event: { ...base.event!, modular_state: 'registration_open', definition_id: 'new-definition', created_by: 'owner' }, definitions: [{ id: 'new-definition', definition }], teams: [{ id: 'team', name: 'Pending Pair', entry_state: 'pending' }], team_members: [{ id: 'member', team_id: 'team', user_id: 'player', membership_status: 'pending', consented_at: '2026-01-01', consented_definition_id: 'old-definition' }] };
-  const html = renderToStaticMarkup(createElement(TournamentBuilder, { actorId: 'player', initialSnapshot: snapshot, initialPreview: previewDefinition(definition, 3), view: 'overview' }));
-  assert.match(html, /Accept invitation for/);
-  assert.match(html, /I accept the published rules/);
+  const render = (partnerConsent: boolean, joined: boolean) => {
+    const doubles = structuredClone(definition);
+    doubles.registration.entry_type = 'fixed_doubles'; doubles.registration.partner_consent = partnerConsent;
+    const snapshot: CommandSnapshot = { ...base, event: { ...base.event!, modular_state: 'registration_open', definition_id: 'new-definition', created_by: 'owner' }, definitions: [{ id: 'new-definition', definition: doubles }], teams: [], team_members: [], tournament_players: joined ? [{ id: 'registration', user_id: 'player', display_name: 'Registered player', status: 'approved' }] : [] };
+    return renderToStaticMarkup(createElement(TournamentBuilder, { actorId: 'player', initialSnapshot: snapshot, initialPreview: previewDefinition(doubles, 3), view: 'overview' }));
+  };
+  for (const joined of [false, true]) {
+    assert.equal(render(true, joined), render(false, joined));
+    const html = render(true, joined);
+    assert.match(html, /Open position/);
+    assert.match(html, joined ? /Choose this position/ : /Join tournament/);
+    assert.doesNotMatch(html, /Team name|Your entry name|Partner’s Picktennt username|Request entry and invite partner|Accept invitation for/);
+    assert.doesNotMatch(html, /<input[^>]*type="text"/);
+  }
 });

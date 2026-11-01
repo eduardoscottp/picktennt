@@ -32,7 +32,11 @@ function setup(count = 8) {
   s = apply(s, 'createDraft', { definition: d });
   const p = previewDefinition(d, 1);
   s = apply(s, 'publishTournament', { reviewed_definition_hash: p.definitionHash, acknowledged_warning_codes: p.warningCodes });
-  for (let i = 0; i < count; i++) s = apply(s, 'addRegisteredEntry', { definition_id: s.event!.definition_id, player_ids: [randomUUID(), randomUUID()], entry_name: `Team ${i}`, reason: 'Registration' });
+  for (let i = 0; i < count; i++) {
+    const player_ids=[randomUUID(),randomUUID()];
+    for(const id of player_ids) s=apply(s,'joinTournament',{definition_id:s.event!.definition_id,consent:true},{id,clientId:'web'});
+    s = apply(s, 'addRegisteredEntry', { definition_id: s.event!.definition_id, player_ids, entry_name: `Team ${i}`, reason: 'Registration' });
+  }
   return { s, d };
 }
 function groupData(s: CommandSnapshot) {
@@ -121,4 +125,55 @@ test('schedule reviews are stable and reject stale group choices; MCP retains re
   assert.equal(dto.preview_hash,review.preview_hash); assert.ok(Array.isArray(dto.fairness)); assert.equal(dto.secret,undefined);
   const tool=ADMIN_TOOLS.find(t=>t.name==='admin_lock_roster')!;
   assert.equal(new AjvJsonSchemaValidator().getValidator(tool.inputSchema)({tournament_id:s.event!.id,operation_id:randomUUID(),expected_revision:s.event!.revision,confirmed_structure_change:true,data:{...data,preview_hash:review.preview_hash}}).valid,true);
+});
+
+test('pre-fixture Singles to Doubles retains joined players and partial visual teams with impact review',()=>{
+  const initial=setup(0), d=initial.d; let s=initial.s;
+  const singles=structuredClone(d); singles.registration.entry_type='singles'; singles.registration.partner_consent=false;
+  s=revise(s,singles); s=apply(s,'reopenRegistration');
+  const user={id:randomUUID(),clientId:'web'}, unplaced={id:randomUUID(),clientId:'web'};
+  for(const actor of [user,unplaced]) s=apply(s,'joinTournament',{definition_id:s.event!.definition_id,consent:true},actor);
+  s=apply(s,'selectEntrySlot',{slot_index:2},user);
+  const before=structuredClone(s), data={definition:d,reason:'Switch to Doubles before fixtures'};
+  const review=previewRevision(s,owner,data);
+  assert.ok(review.warnings.some(w=>w.includes('individual positions')));
+  assert.throws(()=>apply(s,'reviseTournament',{...data,preview_hash:'stale'}),/Review the current/);
+  s=apply(s,'reviseTournament',{...data,preview_hash:review.preview_hash});
+  assert.deepEqual(s.tournament_players,before.tournament_players);
+  assert.equal(s.teams[0].registration_slot,2);
+  assert.equal(s.team_members.filter(m=>m.membership_status==='active').length,1);
+  assert.equal(s.team_members[0].consented_definition_id,before.team_members[0].consented_definition_id);
+  assert.equal(s.matches.length,0);
+  s=apply(s,'reopenRegistration');
+  s=apply(s,'selectEntrySlot',{slot_index:2},unplaced);
+  assert.equal(s.team_members.filter(m=>m.membership_status==='active').length,2);
+  const dto=publicMcpResult('admin_get_tournament',s) as {entries:{registration_slot:number}[];registered_players:{profile_id:string}[]};
+  assert.equal(dto.entries[0].registration_slot,2);
+  assert.deepEqual(dto.registered_players.map(p=>p.profile_id).sort(),[user.id,unplaced.id].sort());
+});
+
+test('partial Doubles revisions are allowed before fixtures while fixture revision rules stay strict',()=>{
+  const initial=setup(0), d=initial.d; let s=initial.s;
+  const user={id:randomUUID(),clientId:'web'};
+  s=apply(s,'joinTournament',{definition_id:s.event!.definition_id,consent:true},user);
+  // A historical unslotted Singles entry must become visible after conversion.
+  s.teams.push({id:randomUUID(),name:'Retained player',entry_state:'approved'});
+  s.team_members.push({id:randomUUID(),team_id:s.teams[0].id,user_id:user.id,membership_status:'active'});
+  s=revise(s,d);
+  assert.equal(s.teams[0].registration_slot,1);
+  const fixtureState=structuredClone(s); fixtureState.matches.push({id:randomUUID(),status:'scheduled',is_current:true});
+  assert.throws(()=>previewRevision(fixtureState,owner,{definition:d,reason:'With fixture'}),/2 registered player/);
+});
+
+test('a joined unassigned player filling a revised Doubles team counts toward capacity once',()=>{
+  let {s,d}=setup(0); d=structuredClone(d);d.registration.max_entries=8;
+  let seed=1;for(const node of d.nodes) if(node.module==='round_robin@2') node.inputs=[{kind:'seed',seed:seed++},{kind:'seed',seed:seed++}];
+  // Fill the player capacity while leaving the final joined player unassigned.
+  const users=Array.from({length:16},()=>({id:randomUUID(),clientId:'web'}));
+  for(const user of users) s=apply(s,'joinTournament',{definition_id:s.event!.definition_id,consent:true},user);
+  for(const [i,user] of users.slice(0,15).entries()) s=apply(s,'selectEntrySlot',{slot_index:Math.floor(i/2)+1},user);
+  const team=s.teams.find(t=>t.registration_slot===8)!;
+  const entries=[{entry_id:team.id,entry_name:String(team.name),player_ids:[users[14].id,users[15].id]}];
+  const next=revise(s,d,entries);
+  assert.equal(next.team_members.filter(m=>m.membership_status==='active').length,16);
 });

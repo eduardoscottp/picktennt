@@ -19,8 +19,8 @@ const definition = (): GraphDefinition => {
   d.registration.min_entries = 8;
   return d;
 };
-function execute(s: CommandSnapshot, command: string, data: Record<string, unknown> = {}) {
-  const { effects } = planCommand(s, owner, command, data, context);
+function execute(s: CommandSnapshot, command: string, data: Record<string, unknown> = {}, actor = owner) {
+  const { effects } = planCommand(s, actor, command, data, context);
   const next = structuredClone(s);
   next.event = { id: next.event?.id ?? randomUUID(), created_by: owner.id, revision: 0, roster_revision: 0, ...next.event, ...effects.event };
   next.event.revision = Number(next.event.revision) + 1;
@@ -42,7 +42,11 @@ function published(d: GraphDefinition) {
 }
 function registered(d: GraphDefinition, count = 10) {
   let s = published(d);
-  for (let i = 0; i < count; i++) s = execute(s, 'addRegisteredEntry', { definition_id: s.event!.definition_id, player_ids: [randomUUID(), randomUUID()], entry_name: `Pair ${i}`, reason: 'Admin enrolled existing profiles' });
+  for (let i = 0; i < count; i++) {
+    const players = [randomUUID(), randomUUID()];
+    for (const userId of players) s = execute(s, 'joinTournament', { definition_id: s.event!.definition_id, consent: true }, { id: userId, clientId: 'web' });
+    s = execute(s, 'addRegisteredEntry', { definition_id: s.event!.definition_id, player_ids: players, entry_name: `Pair ${i}`, reason: 'Admin placed joined players' });
+  }
   return execute(s, 'closeRegistration');
 }
 function assignments(s: CommandSnapshot) {

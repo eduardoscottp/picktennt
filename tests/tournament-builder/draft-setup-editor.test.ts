@@ -49,7 +49,7 @@ test('filling the reported controls repairs the draft without inventing enrollme
   const finish = JSON.parse(readFileSync('tests/tournament-builder/fixtures/tournament-definition.json', 'utf8'));
   let edited = applyDraftSetupEdit(original, 'event.expected_end_at', finish.event.expected_end_at.slice(0, 16));
   edited = applyDraftSetupEdit(edited, 'registration.closes_at', finish.registration.closes_at.slice(0, 16));
-  edited = applyDraftSetupEdit(edited, 'registration.partner_consent', 'true');
+  edited = applyDraftSetupEdit(edited, 'registration.partner_consent', 'false');
   edited = applyDraftSetupEdit(edited, 'registration.organizer_plays', 'false');
   edited = applyDraftSetupEdit(edited, 'scheduling.estimated_slot_minutes', '30');
   edited = applyDraftSetupEdit(edited, 'scheduling.minimum_rest_minutes', '0');
@@ -75,6 +75,14 @@ test('clearing numeric and boolean fields restores missing decisions instead of 
   d = applyDraftSetupEdit(d, 'registration.organizer_plays', '');
   assert.match(draftSetupError(d, 'scheduling.minimum_rest_minutes')!, /required/);
   assert.match(draftSetupError(d, 'registration.organizer_plays')!, /required/);
+});
+
+test('historical Doubles consent metadata does not expose a second registration choice or editor error',()=>{
+  const definition=JSON.parse(readFileSync('tests/tournament-builder/fixtures/tournament-definition.json','utf8'));
+  definition.registration.entry_type='fixed_doubles';definition.registration.partner_consent=true;
+  assert.equal(draftSetupError(definition,'registration.partner_consent'),undefined);
+  const html=renderToStaticMarkup(createElement(DraftSetupEditor,{definition,savedDefinition:definition,issues:[],disabled:false,onChange:()=>{}}));
+  assert.doesNotMatch(html,/draft-registration-partner_consent|legacy doubles|aria-invalid="true"/);
 });
 
 test('date pickers use the event timezone across daylight saving, reject skipped times and preserve repeated-hour offsets', () => {

@@ -117,6 +117,22 @@ test('administrators can place only players who already joined an individual-slo
   s = apply(s, planCommand(s, admin, 'placeRegisteredPlayer', { user_id: a.id, slot_index: 1 }, context));
   assert.equal(s.team_members.filter(row => row.user_id === a.id && row.membership_status === 'active').length, 1);
 });
+
+test('Doubles historical partner consent cannot change individual slot permissions', () => {
+  for (const partnerConsent of [false, true]) {
+    const d = definition(); d.registration.entry_type = 'fixed_doubles'; d.registration.partner_consent = partnerConsent;
+    let s = published(d);
+    assert.throws(() => planCommand(s, admin, 'placeRegisteredPlayer', { user_id: a.id, slot_index: 1 }, context), { code: 'NOT_REGISTERED' });
+    s = apply(s, planCommand(s, a, 'joinTournament', { definition_id: s.event!.definition_id, consent: true }, context));
+    s = apply(s, planCommand(s, a, 'selectEntrySlot', { slot_index: 1 }, context));
+    s = apply(s, planCommand(s, b, 'joinTournament', { definition_id: s.event!.definition_id, consent: true }, context));
+    s = apply(s, planCommand(s, admin, 'placeRegisteredPlayer', { user_id: b.id, slot_index: 1 }, context));
+    assert.equal(s.teams.length, 1);
+    assert.equal(s.teams[0].registration_slot, 1);
+    assert.deepEqual(s.team_members.filter(member => member.membership_status === 'active').map(member => member.user_id).sort(), [a.id, b.id].sort());
+    assert.throws(() => planCommand(s, a, 'selectEntrySlot', { slot_index: 1 }, context), { code: 'INVALID_STATE' });
+  }
+});
 test('roster locks create deterministic local fixtures once and event starts explicitly', () => {
   const s = ready();
   assert.equal(s.event!.modular_state, 'ready');
@@ -322,10 +338,31 @@ test('administrator registered entries preserve profile identity without fabrica
 });
 test('registered doubles enforce distinct UUID cardinality, reason, name and strict fields', () => {
  const d=definition();d.registration.entry_type='fixed_doubles';d.registration.partner_consent=true;
- const s=published(d),data={definition_id:s.event!.definition_id,player_ids:[a.id,b.id],entry_name:'Two profiles',reason:'Enrolled by administrator'};
+ let s=published(d);const data={definition_id:s.event!.definition_id,player_ids:[a.id,b.id],entry_name:'Two profiles',reason:'Enrolled by administrator'};
  for(const player_ids of [[],[a.id],[a.id,b.id,id()],[a.id,a.id],['not-a-uuid',b.id],[a.id.toUpperCase(),a.id]])assert.throws(()=>planCommand(s,admin,'addRegisteredEntry',{...data,player_ids},context),{code:'INVALID_REQUEST'});
  for(const patch of [{reason:''},{entry_name:' '},{entry_name:'x'.repeat(121)},{reason:'x'.repeat(1001)},{consent:true},{admission_source:'self'}])assert.throws(()=>planCommand(s,admin,'addRegisteredEntry',{...data,...patch},context),{code:'INVALID_REQUEST'});
+ for(const actor of [a,b]) s=apply(s,planCommand(s,actor,'joinTournament',{definition_id:s.event!.definition_id,consent:true},context));
  assert.equal(planCommand(s,admin,'addRegisteredEntry',data,context).effects.team_members!.length,2);
+});
+
+test('backend and MCP Doubles registration require Join and allocate a visible roster slot', async () => {
+ const { callAdminTool } = await import('../../lib/tournament-builder/mcp-admin');
+ const d=definition();d.registration.entry_type='fixed_doubles';d.registration.partner_consent=true;
+ let s=published(d);const data={definition_id:s.event!.definition_id,player_ids:[a.id,b.id],entry_name:'Joined players',reason:'Place existing participants'};
+ const mcp={snapshot:async()=>s,findPlayer:async()=>({}),previewCorrection:async()=>({}),previewWithdrawal:async()=>({})};
+ const execute=async(command:string,_event:string,envelope:unknown)=>planCommand(s,{...admin,clientId:'claude',permissions:['admin:manage']},command,(envelope as {data:Record<string,unknown>}).data,context);
+ const invoke=()=>callAdminTool('admin_register_players',{tournament_id:s.event!.id,operation_id:id(),expected_revision:s.event!.revision,data},mcp,execute);
+ assert.throws(()=>planCommand(s,admin,'addRegisteredEntry',data,context),{code:'NOT_REGISTERED'});
+ await assert.rejects(invoke,{code:'NOT_REGISTERED'});
+ s=apply(s,planCommand(s,a,'joinTournament',{definition_id:s.event!.definition_id,consent:true},context));
+ assert.throws(()=>planCommand(s,admin,'addRegisteredEntry',data,context),{code:'NOT_REGISTERED'});
+ s=apply(s,planCommand(s,b,'joinTournament',{definition_id:s.event!.definition_id,consent:true},context));
+ const direct=planCommand(s,admin,'addRegisteredEntry',data,context), viaMcp=await invoke() as CommandPlan;
+ assert.equal(direct.effects.teams![0].registration_slot,1);
+ assert.equal(viaMcp.effects.teams![0].registration_slot,1);
+ assert.deepEqual(direct.effects.team_members!.map(m=>m.user_id),viaMcp.effects.team_members!.map(m=>m.user_id));
+ assert.equal(direct.effects.tournament_players!.length,2);
+ assert.ok(direct.effects.tournament_players!.every(p=>s.tournament_players.some(existing=>existing.id===p.id)));
 });
 test('registered enrollment requires administrator permission, current definition, open deadline and unique current memberships', () => {
  let s=published();const data={definition_id:s.event!.definition_id,player_ids:[a.id],entry_name:'Registered A',reason:'Administrator registration'};
@@ -352,11 +389,16 @@ test('canceling an administrator-enrolled entry rejects every player projection 
  for(const doubles of [false,true]){
   const d=definition();if(doubles){d.registration.entry_type='fixed_doubles';d.registration.partner_consent=true;}
   let s=published(d);const data={definition_id:s.event!.definition_id,player_ids:doubles?[a.id,b.id]:[a.id],entry_name:'Registered account entry',reason:'Administrator enrollment'};
+  if(doubles) for(const actor of [a,b]) s=apply(s,planCommand(s,actor,'joinTournament',{definition_id:s.event!.definition_id,consent:true},context));
   s=apply(s,planCommand(s,owner,'addRegisteredEntry',data,context));const oldTeam=s.teams[0];
   const plan=planCommand(s,a,'cancelEntry',{entry_id:oldTeam.id},context);
   assert.equal(plan.effects.teams![0].entry_state,'cancelled');assert.ok(plan.effects.team_members!.every(member=>member.membership_status==='cancelled'));
   assert.equal(plan.effects.tournament_players!.length,data.player_ids.length);assert.ok(plan.effects.tournament_players!.every(player=>player.status==='rejected'));
   s=apply(s,plan);assert.ok(s.team_members.every(member=>member.consented_at===null&&member.consented_definition_id===null));
+  if(doubles) {
+   assert.throws(()=>planCommand(s,owner,'addRegisteredEntry',data,context),{code:'NOT_REGISTERED'});
+   for(const actor of [a,b]) s=apply(s,planCommand(s,actor,'joinTournament',{definition_id:s.event!.definition_id,consent:true},context));
+  }
   assert.doesNotThrow(()=>planCommand(s,owner,'addRegisteredEntry',data,context));
  }
 });

@@ -18,9 +18,9 @@ test('SQL preserves the published registration plan and persists underfilled ass
     const d = { ...full, nodes: full.nodes.filter(n => ['registration@1', 'entries@1', 'round_robin@2'].includes(n.module)) };
     let current: CommandSnapshot = { event: null, definitions: [], teams: [], team_members: [], tournament_players: [], stages: [], rounds: [], matches: [], standings: [] };
     const snapshot = async () => role(db, 'service_role', owner, async () => (await db.query<{ value: CommandSnapshot }>('SELECT public.tb_get_snapshot($1,$2,$3,$4) value', [owner, 'web', event, null])).rows[0].value);
-    const apply = async (name: string, data: Record<string, unknown>) => {
-      const plan = planCommand(current, actor, name, data, context);
-      await command(db, { event, command: name, revision: current.event ? Number(current.event.revision) : null, request: data, effects: plan.effects, result: plan.result });
+    const apply = async (name: string, data: Record<string, unknown>, commandActor = actor) => {
+      const plan = planCommand(current, commandActor, name, data, context);
+      await command(db, { actor: commandActor.id, event, command: name, revision: current.event ? Number(current.event.revision) : null, request: data, effects: plan.effects, result: plan.result });
       current = await snapshot();
     };
     await apply('createDraft', { definition: d });
@@ -31,6 +31,7 @@ test('SQL preserves the published registration plan and persists underfilled ass
     for (let i = 0; i < 10; i++) {
       const players = [randomUUID(), randomUUID()];
       for (const player of players) await db.query('INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES($1,$2,$3)', [player, `${player}@example.invalid`, JSON.stringify({ given_name: 'Registered player' })]);
+      for (const userId of players) await apply('joinTournament', { definition_id: current.event!.definition_id, consent: true }, { id: userId, clientId: 'web' });
       await apply('addRegisteredEntry', { definition_id: current.event!.definition_id, player_ids: players, entry_name: `Pair ${i}`, reason: 'Admin enrollment of existing profiles' });
     }
     await apply('closeRegistration', {});

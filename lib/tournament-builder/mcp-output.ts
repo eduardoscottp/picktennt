@@ -42,7 +42,8 @@ function tournament(value: unknown, args: Record<string, unknown>) {
     tournament_id: project(event.id, scalar), ...row(project(event, fields('name revision roster_revision results_under_review'))),
     status: project(event.modular_state, scalar), caller_role: project(source.caller_role, scalar),
     definition_id: project(saved?.id, scalar), definition: project(saved?.definition, definition),
-    entries: rows('teams').map(entry => ({ ...row(project(entry, fields('id name seed entry_state'))), players: rows('team_members').filter(member => member.team_id === entry.id).map(member => ({ profile_id: project(member.user_id, scalar), ...row(project(member, fields('display_name membership_status admission_source'))) })) })),
+    entries: rows('teams').map(entry => ({ ...row(project(entry, fields('id name seed entry_state registration_slot'))), players: rows('team_members').filter(member => member.team_id === entry.id).map(member => ({ profile_id: project(member.user_id, scalar), ...row(project(member, fields('display_name membership_status admission_source'))) })) })),
+    registered_players: rows('tournament_players').filter(player => player.status === 'approved').map(player => ({ profile_id: project(player.user_id, scalar), display_name: project(player.display_name, scalar), status: 'approved' })),
     administrators: rows('admins').map(admin => ({ profile_id: project(admin.user_id, scalar), display_name: project(admin.display_name, scalar) })),
     stages: rows('stages').map(stage => {
       const output = row(stage.output);
