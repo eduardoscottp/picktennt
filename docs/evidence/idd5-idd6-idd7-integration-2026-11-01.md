@@ -10,4 +10,6 @@ The previous individual-slots deployment used commit `977a9fe` without the uncom
 - Previous public deployment: `dpl_3hyrZNdmoLXKtL2j6owq1xoQsaxb`.
 - Integrated candidate: `dpl_FxaiSryXbT3rxZCf2RBoUP4Mtiyn`.
 
+The integrated candidate reached READY and was promoted to `https://app.picktennt.com`. Twelve screen checks passed both before and after promotion (exact `#2BAFC7`, provider icons, keyboard order and mobile overflow). The isolated expired-session Google regression passed on both URLs: refresh completed before authorization and the PKCE verifier survived with the matching challenge. These fixture checks do not authenticate a real account. The branch is published as `codex/integrate-idd5-idd6-idd7` in the existing GitHub repository.
+
 No database migration or provider credential change is part of this recovery. Apple client credential rejection remains a separate unresolved incident; restoring the UI does not establish a successful Apple token exchange or native account continuity.
