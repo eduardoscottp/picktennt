@@ -17,14 +17,12 @@ const NAV_ITEMS = [
 ];
 
 export function Navbar({ profile }: { profile: Profile | null }) {
-  const router = useRouter();
   const pathname = usePathname();
 
   async function signOut() {
     const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push("/");
-    router.refresh();
+    const { error } = await supabase.auth.signOut();
+    if (!error) window.location.replace(new URL('/', window.location.origin).toString());
   }
 
   return (

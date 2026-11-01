@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { statusLabel, tournamentTypeLabel } from "@/lib/utils";
 import { redirect } from "next/navigation";
+import { JoinButton } from '@/components/tournament/join-button';
 
 export default async function JoinByCodePage({ params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
@@ -30,7 +31,7 @@ export default async function JoinByCodePage({ params }: { params: Promise<{ cod
 
   const { data: { user } } = await supabase.auth.getUser();
 
-  // Logged-in user with valid tournament: auto-approve and redirect
+  // Returning from authentication never enrolls a player during a page read.
   if (user && tournament) {
     // Check if already a player
     const { data: existing } = await admin
@@ -40,36 +41,7 @@ export default async function JoinByCodePage({ params }: { params: Promise<{ cod
       .eq("user_id", user.id)
       .single();
 
-    if (!existing) {
-      await admin.from("tournament_players").insert({
-        tournament_id: tournament.id,
-        user_id: user.id,
-        status: "approved",
-        joined_via: "link",
-      });
-
-      // Singles: auto-create a team for the player
-      if (tournament.type === "singles") {
-        const { data: profile } = await admin
-          .from("profiles")
-          .select("first_name, last_name, email")
-          .eq("id", user.id)
-          .single();
-        const teamName = profile
-          ? [profile.first_name, profile.last_name].filter(Boolean).join(" ") || profile.email
-          : user.email ?? "Player";
-        const { data: team } = await admin
-          .from("teams")
-          .insert({ tournament_id: tournament.id, name: teamName })
-          .select()
-          .single();
-        if (team) {
-          await admin.from("team_members").insert({ team_id: team.id, user_id: user.id });
-        }
-      }
-    }
-
-    redirect(`/tournaments/${tournament.id}`);
+    if (existing) redirect(`/tournaments/${tournament.id}`);
   }
 
   return (
@@ -79,7 +51,7 @@ export default async function JoinByCodePage({ params }: { params: Promise<{ cod
           <h1 className="text-3xl font-black text-white">
             PICK<span className="text-brand-200">TENNT</span>
           </h1>
-          <p className="text-brand-100 text-sm mt-1">You've been invited to a tournament</p>
+          <p className="text-brand-100 text-sm mt-1">You&apos;ve been invited to a tournament</p>
         </div>
 
         <Card className="overflow-hidden">
@@ -99,21 +71,19 @@ export default async function JoinByCodePage({ params }: { params: Promise<{ cod
                   <Badge variant="default">{statusLabel(tournament.status)}</Badge>
                   <Badge variant="secondary">{tournamentTypeLabel(tournament.type)}</Badge>
                 </div>
-                <p className="text-sm text-gray-500 mb-6">
-                  Sign in to join this tournament and track your matches.
-                </p>
-                <Link href={`/login?redirect=/join/${code}`}>
+                <p className="text-sm text-gray-500 mb-6">Review this invitation before joining.</p>
+                {user ? tournament.status === 'registration' ? <JoinButton tournamentId={tournament.id} userId={user.id} autoApprove tournamentType={tournament.type} /> : <p role="status" className="text-sm text-gray-600">Registration is not open. Contact the organizer.</p> : <Link href={`/login?redirect=${encodeURIComponent(`/join/${code}`)}`}>
                   <Button className="w-full" size="lg">
                     Sign in to Join
                   </Button>
-                </Link>
+                </Link>}
               </>
             )}
           </CardContent>
         </Card>
 
         <p className="text-center text-brand-100 text-xs mt-4">
-          Don't have an account? You'll create one when you sign in with Google.
+          Sign in or create an account with Apple, Google, or email.
         </p>
       </div>
     </div>

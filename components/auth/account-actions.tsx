@@ -17,9 +17,9 @@ export function AccountActions() {
   async function signOut() {
     setLoadingLogout(true);
     const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push("/");
-    router.refresh();
+    const { error } = await supabase.auth.signOut();
+    if (error) { toast('Could not sign out. Please try again.', 'error'); setLoadingLogout(false); return; }
+    window.location.replace(new URL('/', window.location.origin).toString());
   }
 
   async function deleteAccount() {

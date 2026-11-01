@@ -1,15 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { authPath, safeReturnPath } from '@/lib/auth/return-path';
 
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 400; // 400 days
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const rawNext = searchParams.get("next") ?? "/dashboard";
-  const next = rawNext.startsWith("/") && !rawNext.startsWith("//")
-    ? rawNext
-    : "/dashboard";
+  const next = safeReturnPath(searchParams.get('next'));
 
   if (code) {
     const supabaseResponse = NextResponse.redirect(`${origin}${next}`);
@@ -37,14 +35,14 @@ export async function GET(request: NextRequest) {
       const user = data.user;
       const meta = user.user_metadata ?? {};
 
-      // Upsert profile — guarantees it exists regardless of trigger
+      // Create a missing profile without replacing a returning player's edited data.
       await supabase.from("profiles").upsert({
         id: user.id,
         email: user.email ?? "",
         first_name: meta.given_name ?? meta.name?.split(" ")[0] ?? "",
         last_name: meta.family_name ?? meta.name?.split(" ").slice(1).join(" ") ?? "",
         avatar_url: meta.avatar_url ?? meta.picture ?? null,
-      }, { onConflict: "id" });
+      }, { onConflict: "id", ignoreDuplicates: true });
 
       // Redirect new users (no DUPR ID) to setup. Reuse the same response so the
       // session cookies (set by setAll) travel with the redirect intact.
@@ -61,5 +59,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.redirect(`${origin}/login?error=auth_callback_failed`);
+  const failure = new URL(authPath('/login', next), origin);
+  failure.searchParams.set('error', 'auth_callback_failed');
+  return NextResponse.redirect(failure);
 }
