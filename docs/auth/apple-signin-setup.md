@@ -1,15 +1,27 @@
 # Sign in with Apple — Web setup handoff (IDD-5)
 
-**Status:** Apple web provider is NOT yet configured. The web login currently shows Apple as
-"visibly unavailable". This document contains every value and step needed to finish it.
+**Status (updated):** The **Apple Developer portal is fully configured** — App ID verified,
+web Services ID created + configured, and a dedicated Sign in with Apple key created. What
+remains is (1) pasting the Apple secret into the **Supabase** Apple provider and (2) the
+**app code**. Parts A and B below are DONE; Parts C and D are the remaining work.
 
-**Owner action required:** The Apple Developer portal steps (Part B) require signing in to
-developer.apple.com as `es@idddeas.com` with password + 2FA. An assistant cannot enter an
-account password or complete 2FA. Once you are signed in, the rest can be clicked through.
+**Done in the Apple Developer account (`es@idddeas.com`, team Idddeas LLC):**
+
+| Value | Result |
+| --- | --- |
+| **Team ID** | `ZX88S3Q93L` |
+| Primary App ID | `Idddeas.Picktennt` — Sign In with Apple already enabled |
+| **Web Services ID (client_id)** | `com.picktennt.web` — **created & configured** |
+| → Primary App ID grouped | `Idddeas.Picktennt` |
+| → Domains and Subdomains | `qmiljmxnnryhuaudpuff.supabase.co` |
+| → Return URL | `https://qmiljmxnnryhuaudpuff.supabase.co/auth/v1/callback` |
+| **Sign in with Apple key** | "Picktennt Web Sign In Key", **Key ID `8MM4XQSN7L`** — created, `.p8` downloaded |
 
 **Secrets rule:** The `.p8` private key and the generated client-secret JWT are secrets.
-They must NOT be committed to the repo or pasted into the Linear ticket. They go only into
-Supabase provider config (Part C) or a secret store.
+They are NOT in this repo or the Linear ticket. They are staged on Eduardo's machine at
+`~/Downloads/` (`AuthKey_8MM4XQSN7L.p8`, `picktennt-apple-supabase-SECRET.txt`) for pasting
+into Supabase (Part C). A pre-existing key `QQG55D78AJ` also exists (used by iOS) — the web
+flow uses the new `8MM4XQSN7L`.
 
 ---
 
@@ -33,43 +45,34 @@ Supabase provider config (Part C) or a secret store.
 
 ---
 
-## 2. Part A — Confirm the Primary App ID
+## 2. Part A — Primary App ID ✅ DONE
 
-The iOS app `Idddeas.Picktennt` already uses Sign in with Apple natively, so the capability
-should already be on. Verify once signed in:
-
-1. developer.apple.com → Certificates, Identifiers & Profiles → **Identifiers**.
-2. Open `Idddeas.Picktennt`. Confirm **Sign In with Apple** capability is checked.
+`Idddeas.Picktennt` ("Picktennt iPhone App") has Sign In with Apple enabled; Apple showed it
+as the groupable primary App ID `ZX88S3Q93L.Idddeas.Picktennt` during configuration.
 
 ---
 
-## 3. Part B — Apple Developer portal (requires login)
+## 3. Part B — Apple Developer portal ✅ DONE
 
-### B.1 Record the Team ID
-Membership / top-right of the portal. 10-character string. NOT a secret — put it in the ticket.
+- **B.1 Team ID:** `ZX88S3Q93L`.
+- **B.2 Services ID:** `com.picktennt.web` ("Picktennt Web") created, Sign In with Apple
+  enabled and configured — primary App ID `Idddeas.Picktennt`, domain
+  `qmiljmxnnryhuaudpuff.supabase.co`, return URL
+  `https://qmiljmxnnryhuaudpuff.supabase.co/auth/v1/callback`.
+- **B.3 Key:** "Picktennt Web Sign In Key", **Key ID `8MM4XQSN7L`**, Sign in with Apple
+  (grouped under `Idddeas.Picktennt`). `.p8` downloaded to `~/Downloads/AuthKey_8MM4XQSN7L.p8`.
 
-### B.2 Create the Services ID (this is the web `client_id`)
-1. Identifiers → **+** → **Services IDs** → Continue.
-2. Description: `Picktennt Web`. Identifier: **`com.picktennt.web`**. Register.
-3. Open it, tick **Sign In with Apple**, click **Configure**:
-   - **Primary App ID:** `Idddeas.Picktennt`
-   - **Domains and Subdomains:** `qmiljmxnnryhuaudpuff.supabase.co`
-     (optionally also `app.picktennt.com`)
-   - **Return URLs:** `https://qmiljmxnnryhuaudpuff.supabase.co/auth/v1/callback`
-4. Save / Continue / Save.
-
-### B.3 Create the Sign in with Apple Key (.p8)
-1. **Keys** → **+**.
-2. Name: `Picktennt Sign in with Apple`. Tick **Sign In with Apple** → **Configure** →
-   Primary App ID `Idddeas.Picktennt` → Save.
-3. Register → **Download** the `.p8`. **You can only download it once.** Store it securely.
-4. Record the **Key ID** (10 chars).
-
-After B you will have: Team ID, Services ID (`com.picktennt.web`), Key ID, and the `.p8` file.
+> Note: two empty leftover Services IDs (`Idddeas.Picktennt.web`, `Idddeas.Picktennt.service`)
+> exist with Sign In with Apple **disabled** — unused; left untouched. The live web one is
+> `com.picktennt.web`.
 
 ---
 
-## 4. Part C — Supabase provider config (secrets live here)
+## 4. Part C — Supabase provider config ⏳ REMAINING (secret already generated)
+
+The client-secret JWT is already generated from `8MM4XQSN7L` and **staged on Eduardo's
+machine** at `~/Downloads/picktennt-apple-supabase-SECRET.txt` (expires ~2027-04-30). It just
+needs to be pasted into Supabase. The values below are exactly what's in that file.
 
 Dashboard → project `qmiljmxnnryhuaudpuff` → Authentication → Providers → **Apple** → Enable.
 
