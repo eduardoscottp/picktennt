@@ -1,4 +1,5 @@
 /** Local-only browser evidence: actual Next UI + SQL, simulated Supabase Auth/REST. No external accounts. */
+import { executeCommand, getSnapshot, previewTournament, type RpcClient } from "../../lib/tournament-builder/repository";
 import assert from "node:assert/strict";
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { createServer as httpServer, request as httpRequest, type Server } from "node:http";
@@ -46,7 +47,7 @@ function stop(child: ChildProcess | undefined) {
 }
 const delay = (ms: number) => new Promise((done) => setTimeout(done, ms));
 async function main() {
-const db = await storageDatabase();
+const db = await storageDatabase(process.env.IDD7_ONLY === "true");
 let backend: Server | undefined, proxy: Server | undefined, next: ChildProcess | undefined;
 let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
 const receiver: { url?: string; method?: string; consentOriginMatches?: boolean } = {};
@@ -54,8 +55,13 @@ let queued: Promise<unknown> = Promise.resolve();
 function serialized<T>(fn: () => Promise<T>) { const task = queued.then(fn); queued = task.catch(() => undefined); return task; }
 try {
   await db.exec(readFileSync("supabase/migrations/202610280002_tournament_connector_oauth.sql", "utf8"));
-  await db.exec(readFileSync("supabase/migrations/202610280008_tournament_connector_administration.sql", "utf8"));
-  await db.exec(readFileSync("supabase/migrations/202610280009_tournament_connector_owner_actions.sql", "utf8"));
+  if (process.env.IDD7_ONLY !== "true") await db.exec(readFileSync("supabase/migrations/202610280008_tournament_connector_administration.sql", "utf8"));
+  if (process.env.IDD7_ONLY !== "true") await db.exec(readFileSync("supabase/migrations/202610280009_tournament_connector_owner_actions.sql", "utf8"));
+  if (process.env.IDD7_ONLY === "true") {
+    const stored = (await db.query<{ source: string }>("select pg_get_functiondef('public.tb_oauth_store(text,jsonb)'::regprocedure) source")).rows[0].source;
+    await db.exec(stored.replace("ARRAY['draft:create','draft:read','draft:update','operation:read']::text[]", "ARRAY['draft:create','draft:read','draft:update','operation:read','admin:manage','owner:manage']::text[]"));
+    await db.exec(readFileSync("supabase/migrations/202611020001_individual_roster_management.sql", "utf8"));
+  }
   await db.query("update profiles set username=case when id=$1 then 'organizer' else 'player' end, first_name=case when id=$1 then 'Organizer' else 'Player' end,dupr_id='TEST' where id in ($1,$2)", [owner,player]);
   const profiles = (await db.query<Record<string, unknown>>("select * from profiles")).rows;
   backend = httpServer(async (request, response) => {
@@ -134,7 +140,7 @@ try {
   const guardPath = resolve(output, "localhost-fetch-guard.cjs");
   const guardOptionPath = guardPath.replaceAll("\\", "/");
   writeFileSync(guardPath, `const original=globalThis.fetch;globalThis.fetch=function(input,options){const u=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url);if(!['127.0.0.1','localhost','[::1]'].includes(u.hostname))throw new Error('Smoke test blocked a non-local fetch');return original(input,options)};`);
-  next = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", String(nextPort)], { windowsHide: true, env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1", NEXT_PUBLIC_SUPABASE_URL: `http://127.0.0.1:${backendPort}`, NEXT_PUBLIC_SUPABASE_ANON_KEY: "test-anon", SUPABASE_SERVICE_ROLE_KEY: serviceKey, APP_ORIGIN: origin, TOURNAMENT_BUILDER_ENABLED: "true", MCP_ENABLED: "true", NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --require "${guardOptionPath}"`.trim() }, stdio: ["ignore", "pipe", "pipe"] });
+  next = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "--webpack", "--hostname", "127.0.0.1", "--port", String(nextPort)], { windowsHide: true, env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1", NEXT_PUBLIC_SUPABASE_URL: `http://127.0.0.1:${backendPort}`, NEXT_PUBLIC_SUPABASE_ANON_KEY: "test-anon", SUPABASE_SERVICE_ROLE_KEY: serviceKey, APP_ORIGIN: origin, TOURNAMENT_BUILDER_ENABLED: "true", MCP_ENABLED: "true", NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --require "${guardOptionPath}"`.trim() }, stdio: ["ignore", "pipe", "pipe"] });
   next.stdout?.on("data", (chunk) => appendFileSync(resolve(output, "next.log"), chunk)); next.stderr?.on("data", (chunk) => appendFileSync(resolve(output, "next.log"), chunk));
   browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe", headless: true, args: ["--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"] });
   const probe = await browser.newContext({ ignoreHTTPSErrors: true });
@@ -161,6 +167,97 @@ try {
     current.on("requestfailed", (request) => appendFileSync(resolve(output, "browser.log"), `FAILED ${new URL(request.url()).pathname}: ${request.failure()?.errorText}\n`));
   }
   page.setDefaultTimeout(30000); other.setDefaultTimeout(30000);
+  if (process.env.IDD7_ONLY === "true") {
+    const rpc: RpcClient = { async rpc(name, args) {
+      try { const keys = Object.keys(args); const result = await serialized(() => role(db, "service_role", owner, () => db.query<{ value: unknown }>(`SELECT public.${name}(${keys.map((key, i) => `${key} => $${i + 1}`).join(",")}) value`, Object.values(args).map(value => value && typeof value === "object" ? JSON.stringify(value) : value)))); return { data: result.rows[0].value, error: null }; }
+      catch (error) { console.error(String(error)); return { data: null, error: { message: String(error) } }; }
+    } };
+    let rejectNextDialog = false;
+    page.on("dialog", dialog => { if (rejectNextDialog) { rejectNextDialog = false; return dialog.dismiss(); } return dialog.accept(); }); other.on("dialog", dialog => dialog.accept());
+    for (const doubles of [false, true]) {
+      const definition = JSON.parse(readFileSync("tests/tournament-builder/fixtures/tournament-definition.json", "utf8"));
+      definition.event.starts_at = "2030-11-07T09:00:00-05:00"; definition.event.expected_end_at = "2030-11-07T12:30:00-05:00";
+      definition.registration = { ...definition.registration, entry_type: doubles ? "fixed_doubles" : "singles", partner_consent: false, mode: "open", min_entries: 2, max_entries: 2, closes_at: "2030-11-06T18:00:00-05:00" };
+      definition.nodes = definition.nodes.slice(0, 4).concat({ id: "result", module: "placements@1", from: "rank" });
+      const host = { id: owner, clientId: "web" };
+      const created = await executeCommand(rpc, host, "createDraft", null, { operation_id: randomUUID(), data: { definition } });
+      const id = created.tournament_id, preview = await previewTournament(rpc, host, id);
+      await executeCommand(rpc, host, "publishTournament", id, { operation_id: randomUUID(), expected_revision: created.revision, data: { reviewed_definition_hash: preview.definitionHash, acknowledged_warning_codes: preview.warningCodes ?? [] } });
+      await page.setViewportSize({ width: 375, height: 900 });
+      await page.goto(`${origin}/tournaments/${id}`, { timeout: 90000 });
+      await page.getByLabel("I accept the published rules.", { exact: true }).check();
+      await page.getByRole("button", { name: `Join team 1 position ${doubles ? 2 : 1}`, exact: true }).click();
+      await page.getByRole("button", { name: "Leave tournament", exact: true }).waitFor();
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+      await other.goto(`${origin}/tournaments/${id}`);
+      await other.getByLabel("I accept the published rules.", { exact: true }).check();
+      await other.getByRole("button", { name: `Join team ${doubles ? 1 : 2} position 1`, exact: true }).click();
+      await other.getByRole("button", { name: "Leave tournament", exact: true }).waitFor();
+      let snapshot = await getSnapshot(rpc, host, id);
+      assert.equal(snapshot.team_members.filter(row => row.membership_status === "active").length, 2);
+      await page.goto(`${origin}/tournaments/${id}/admin`);
+      const beforeCancel = await getSnapshot(rpc, host, id);
+      rejectNextDialog = true;
+      await page.getByRole("button", { name: "Free position", exact: true }).last().click();
+      assert.deepEqual(await getSnapshot(rpc, host, id), beforeCancel);
+      const releasedResponse = page.waitForResponse(response => response.url().includes("commands?command=removeRegisteredPlayer") && response.status() === 200);
+      await page.getByRole("button", { name: "Free position", exact: true }).last().click();
+      await releasedResponse;
+      await page.getByRole("button", { name: "Place registered player", exact: true }).first().waitFor();
+      const afterRelease = await getSnapshot(rpc, host, id);
+      assert.equal(afterRelease.tournament_players.filter(row => row.status === "approved").length, 2);
+      assert.equal(afterRelease.team_members.filter(row => row.membership_status === "active").length, 1);
+      const freed = afterRelease.tournament_players.find(row => !afterRelease.team_members.some(member => member.user_id === row.user_id && member.membership_status === "active"))!;
+      await page.getByRole("button", { name: "Place registered player", exact: true }).last().click();
+      await page.getByLabel("Search registered players", { exact: true }).fill(String(freed.user_id === owner ? "Organizer" : "Player"));
+      const listed = await page.getByLabel("Registered player", { exact: true }).locator("option").evaluateAll(options => options.map(option => (option as HTMLOptionElement).value).filter(Boolean));
+      assert.ok(listed.every(value => afterRelease.tournament_players.some(row => row.status === "approved" && row.user_id === value)));
+      await page.getByLabel("Registered player", { exact: true }).selectOption(String(freed.user_id));
+      await page.getByRole("button", { name: "Place selected player", exact: true }).focus();
+      await page.keyboard.press("Enter");
+      await page.getByLabel("Search registered players", { exact: true }).waitFor({ state: "detached" });
+      snapshot = await getSnapshot(rpc, host, id);
+      assert.equal(snapshot.team_members.filter(row => row.membership_status === "active").length, 2);
+      await page.setViewportSize({ width: 430, height: 900 });
+      await page.screenshot({ path: resolve(output, `idd7-${doubles ? "doubles" : "singles"}-mobile.png`), fullPage: true });
+      const removedResponse = page.waitForResponse(response => response.url().includes("commands?command=removeRegisteredPlayer") && response.status() === 200);
+      await page.getByRole("button", { name: "Remove player", exact: true }).last().click();
+      await removedResponse;
+      await page.waitForFunction(() => document.querySelectorAll('button').length > 0);
+      await page.getByRole("button", { name: "Refresh", exact: true }).click();
+      snapshot = await getSnapshot(rpc, host, id);
+      assert.equal(snapshot.tournament_players.filter(row => row.status === "approved").length, 1);
+      await executeCommand(rpc, host, "closeRegistration", id, { operation_id: randomUUID(), expected_revision: Number(snapshot.event!.revision), data: {} });
+      await page.reload(); await page.getByText("Positions are locked.", { exact: false }).waitFor();
+      assert.equal(await page.getByRole("button", { name: "Remove player", exact: true }).count(), 0);
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.screenshot({ path: resolve(output, `idd7-${doubles ? "doubles" : "singles"}-locked.png`), fullPage: true });
+      cases.push(`${doubles ? "Doubles" : "Singles"}: independent explicit-position joins, registered-only search, keyboard placement, release, individual removal, locked roster and mobile overflow`);
+    }
+    const clientResponse = await organizer.request.post(`${origin}/oauth/register`, { data: { client_name: "IDD-7 participant test", redirect_uris: ["https://claude.ai/api/mcp/auth_callback"], grant_types: ["authorization_code", "refresh_token"] } });
+    assert.equal(clientResponse.status(), 201);
+    const client = await clientResponse.json(), verifier = randomBytes(32).toString("base64url");
+    const authorization = new URL(`${origin}/oauth/authorize`);
+    authorization.search = new URLSearchParams({ response_type: "code", client_id: client.client_id, redirect_uri: "https://claude.ai/api/mcp/auth_callback", resource: `${origin}/api/mcp`, scope: "tournaments:play", state: "idd7-participation", code_challenge_method: "S256", code_challenge: createHash("sha256").update(verifier).digest("base64url") }).toString();
+    await page.goto(authorization.href);
+    await page.getByText("Participation:", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "Allow participation access", exact: true }).click();
+    await page.getByRole("heading", { name: "Local callback intercepted", exact: true }).waitFor();
+    const callback = new URL(receiver.url!, origin); assert.equal(callback.searchParams.get("state"), "idd7-participation");
+    const tokenResponse = await organizer.request.post(`${origin}/oauth/token`, { form: { grant_type: "authorization_code", client_id: client.client_id, redirect_uri: "https://claude.ai/api/mcp/auth_callback", resource: `${origin}/api/mcp`, code: callback.searchParams.get("code")!, code_verifier: verifier } });
+    assert.equal(tokenResponse.status(), 200); const tokens = await tokenResponse.json(); assert.equal(tokens.scope, "tournaments:play");
+    const connector = await browser!.newContext({ ignoreHTTPSErrors: true });
+    const toolsResponse = await connector.request.post(`${origin}/api/mcp`, { headers: { authorization: `Bearer ${tokens.access_token}`, accept: "application/json, text/event-stream" }, data: { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} } });
+    assert.equal(toolsResponse.status(), 200);
+    const tools = (await toolsResponse.json()).result.tools;
+    assert.ok(tools.some((tool: {name:string}) => tool.name === "player_join_tournament"));
+    assert.ok(tools.every((tool: {name:string}) => !/^(admin_|owner_|create_draft|update_draft)/.test(tool.name)));
+    await connector.close();
+    cases.push("Native participation consent issues a player-only OAuth grant; cookie-free HTTP MCP advertises self-registration without administrator or owner tools");
+    evidence.status = "passed"; writeFileSync(resolve(output, "evidence.json"), JSON.stringify(evidence, null, 2));
+    console.log(JSON.stringify({ status: "passed", cases: cases.length, evidence: resolve(output, "evidence.json") }));
+    await organizer.close(); await opponent.close(); return;
+  }
   await page.goto(`${origin}/tournaments/build`, { timeout: 90000 });
   await page.getByLabel("Tournament name", { exact: true }).fill("Local two-player smoke");
   await page.getByLabel("Venue", { exact: true }).fill("Local test courts");

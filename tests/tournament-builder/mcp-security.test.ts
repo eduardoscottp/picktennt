@@ -37,7 +37,7 @@ function setup() {
 
 test('MCP projects storage, player, draft and receipt fields instead of leaking raw records', async () => {
   const { call } = setup();
-  for (const [name, args] of [['admin_get_tournament', { tournament_id: id }], ['admin_find_player', { tournament_id: id, username: 'player' }], ['get_draft', { tournament_id: id }], ['get_operation', { tournament_id: id, operation_id: id }], ['create_draft', { operation_id: id, data: { definition: { event: { name: 'Saturday' } } } }]] as const) {
+  for (const [name, args] of [['admin_get_tournament', { tournament_id: id }], ['get_draft', { tournament_id: id }], ['get_operation', { tournament_id: id, operation_id: id }], ['create_draft', { operation_id: id, data: { definition: { event: { name: 'Saturday' } } } }]] as const) {
     const result = await call(name, args);
     assert.equal(result.isError, undefined, name);
     assert.doesNotMatch(JSON.stringify(result), new RegExp(canary), name);

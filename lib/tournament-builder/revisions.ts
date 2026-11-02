@@ -48,14 +48,18 @@ export function previewRevision(s: CommandSnapshot, actor: CommandActor, data: R
   const approved = retained.filter(t => t.entry_state === 'approved').map(t => entries.find(e => e.entry_id === t.id) ?? { entry_id: t.id, entry_name: String(t.name), player_ids: entryPlayerIds(s, t.id) });
   const players = new Set<string>();
   const required = definition.registration.entry_type === 'singles' ? 1 : 2;
+  const beforeFixtures = s.matches.length === 0;
   for (const e of approved) {
-    if (e.player_ids.length !== required) fail('INCOMPLETE_ROSTER', `Each retained team must have ${required} registered player(s).`);
+    if (e.player_ids.length !== required && !(beforeFixtures && required === 2 && e.player_ids.length === 1)) fail('INCOMPLETE_ROSTER', `Each retained team must have ${required} registered player(s).`);
     for (const id of e.player_ids) {
       if (!UUID.test(id)) fail('ACCOUNT_REQUIRED', 'All players must have Picktennt accounts.');
+      if (beforeFixtures && !s.tournament_players.some(p => p.user_id === id && p.status === 'approved')) fail('NOT_REGISTERED', 'Only players who already joined can be placed in the revised roster.');
       if (players.has(id)) fail('DUPLICATE_ENTRY', 'A player cannot belong to two retained teams. Submit both sides of a swap together.');
       players.add(id);
     }
   }
+  const unplaced = s.tournament_players.filter(p => p.status === 'approved' && !players.has(String(p.user_id)) && !s.team_members.some(m => m.user_id === p.user_id && ['active', 'pending'].includes(String(m.membership_status))));
+  if (beforeFixtures && players.size + unplaced.length > definition.registration.max_entries * required) fail('CAPACITY_FULL', 'Capacity is below the retained joined players.');
   const pending = retained.filter(t => t.entry_state === 'pending');
   if (pending.length && (resolvedDefinition(s)?.definition as { registration?: { entry_type?: string } })?.registration?.entry_type !== definition.registration.entry_type) fail('INCOMPLETE_ROSTER', 'Resolve pending invitations before changing singles/doubles.');
   for (const m of s.team_members.filter(m => pending.some(t => t.id === m.team_id) && ['pending', 'active'].includes(String(m.membership_status)))) {
@@ -63,6 +67,7 @@ export function previewRevision(s: CommandSnapshot, actor: CommandActor, data: R
   }
   const affected_match_ids = s.matches.filter(m => m.is_current !== false).map(m => m.id).sort();
   const warnings = validation.warnings.map(w => w.message);
+  if (beforeFixtures) warnings.push('Joined players are retained; teams use individual positions. Incomplete teams must be filled before generating fixtures.');
   if (pending.length) warnings.push('Pending entrants must accept the current rules before approval.');
   if (approved.length < definition.registration.min_entries) warnings.push('More approved entries are required before generating matches.');
   const payload = { event_revision: Number(s.event!.revision), definition, entries, reason, affected_match_ids,
@@ -80,8 +85,16 @@ export function planRevision(s: CommandSnapshot, actor: CommandActor, data: Reco
   // Cancel outgoing memberships before reusing or inserting the approved memberships.
   for (const m of s.team_members.filter(m => affectedTeams.has(String(m.team_id)) && ['active', 'pending'].includes(String(m.membership_status)))) members.push({ id: m.id, team_id: m.team_id, user_id: m.user_id, membership_status: 'cancelled' });
   for (const e of preview.entries.filter(e => e.remove)) teams.push({ id: e.entry_id, entry_state: 'cancelled', seed: null });
+  const slots = new Set(s.teams.map(t => Number(t.registration_slot)).filter(slot => slot > 0));
   for (const e of preview.approved_entries) {
-    teams.push({ id: e.entry_id, name: e.entry_name, seed: null, admin_definition_id: id, registered_by: actor.id });
+    const team = s.teams.find(t => t.id === e.entry_id)!;
+    let slot = Number(team.registration_slot);
+    if (s.matches.length === 0 && !slot) {
+      slot = Array.from({ length: d.registration.max_entries }, (_, i) => i + 1).find(i => !slots.has(i)) ?? fail('CAPACITY_FULL', 'No visual team position is available.');
+      slots.add(slot);
+    }
+    if (s.matches.length === 0 && slot > d.registration.max_entries) fail('CAPACITY_FULL', 'Move retained players inside the revised team capacity before revising.');
+    teams.push({ id: e.entry_id, name: e.entry_name, seed: null, admin_definition_id: id, registered_by: actor.id, ...(s.matches.length === 0 ? { registration_slot: slot } : {}) });
     for (const user_id of e.player_ids) {
       const existing = s.team_members.find(m => m.team_id === e.entry_id && m.user_id === user_id);
       const patch = { id: existing?.id ?? context.id(), team_id: e.entry_id, user_id, membership_status: 'active', admission_source: 'administrator', consented_definition_id: existing?.consented_definition_id ?? null, consented_at: existing?.consented_at ?? null };

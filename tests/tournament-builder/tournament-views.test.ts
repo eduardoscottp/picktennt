@@ -49,7 +49,7 @@ test("admin view contains entry and lifecycle controls, links to score administr
 test("member views preserve own consent and opponent confirmation while restricting administrator actions", () => {
   const member = snapshot("registration_open", "player");
   const overview = render("overview", member, "new-player");
-  assert.match(overview, /Join as a player/); assert.match(overview, /I accept the published rules/);
+  assert.match(overview, /Join tournament/); assert.match(overview, /I accept the published rules/);
   assert.doesNotMatch(overview, /href="\/tournaments\/event\/admin"|Manage tournament|Approve entry/);
   const matches = render("matches", snapshot("active", "player"), "player");
   assert.match(matches, /Confirm opponent/); assert.doesNotMatch(matches, /Save &amp; Validate|Record a fair draw/);
@@ -103,11 +103,12 @@ test("administrator-enrolled real accounts show actual names and never pretend p
   assert.doesNotMatch(html, /0\/2 accepted|2\/2 accepted|Join as a player|Request my entry|Accept invitation/);
 });
 
-test("registered-account enrollment form is available only to current native administrators while registration is open", () => {
+test("individual roster placement is available to current native administrators while registration is open", () => {
   for (const [role, actor] of [["owner", "owner"], ["admin", "delegate"]]) {
     const html = render("admin", snapshot("registration_open", role), actor);
-    assert.match(html, /Register existing Picktennt players|Player’s Picktennt username|Partner’s Picktennt username/);
-    assert.match(html, /Find registered players|Enroll registered entry/);
+    assert.match(html, /Place a registered player/);
+    assert.match(html, /Only players who have already joined this tournament are available/);
+    assert.doesNotMatch(html, /Register existing Picktennt players|Player’s Picktennt username|Partner’s Picktennt username|Enroll registered entry/);
     assert.doesNotMatch(html, /No email or Picktennt account is needed/);
   }
   for (const state of ["draft", "registration_closed", "ready", "active", "completed"]) assert.doesNotMatch(render("admin", snapshot(state)), /Enroll registered entry/);

@@ -65,10 +65,10 @@ test('validates timezones, offsets, actual dates, deadlines and publication cloc
   assert.equal(validateDefinition(fixture(), { publication: true, now: new Date('2026-11-07T00:00:00Z') }).valid, false);
   assert.equal(validateDefinition(fixture(), { publication: true, now: new Date('2026-10-28T00:00:00Z') }).valid, true);
 });
-test('rejects invalid scalar constraints, ranking and consent', () => {
+test('accepts individual doubles and rejects invalid scalar constraints, ranking and singles consent', () => {
   const changes = [
     (d: ReturnType<typeof fixture>) => { d.event.courts = 9; }, (d: ReturnType<typeof fixture>) => { d.event.name = ' '; },
-    (d: ReturnType<typeof fixture>) => { d.registration.min_entries = 9; }, (d: ReturnType<typeof fixture>) => { d.registration.partner_consent = false; },
+    (d: ReturnType<typeof fixture>) => { d.registration.min_entries = 9; }, (d: ReturnType<typeof fixture>) => { d.registration.entry_type = 'singles'; d.registration.partner_consent = true; },
     (d: ReturnType<typeof fixture>) => { d.policies.match.cap = 15; }, (d: ReturnType<typeof fixture>) => { d.policies.match.games = 3; },
     (d: ReturnType<typeof fixture>) => { d.policies.ranking.order = ['points_for_desc', 'wins_desc']; },
     (d: ReturnType<typeof fixture>) => { d.policies.ranking.order.push('wins_desc'); },

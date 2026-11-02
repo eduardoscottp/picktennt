@@ -18,7 +18,7 @@ const fields: Field[] = [
   { path: "registration.min_entries", label: "Minimum entries to proceed", type: "number", min: 2, max: 16 },
   { path: "registration.max_entries", label: "Maximum entries", type: "number", min: 2, max: 16 },
   { path: "registration.closes_at", label: "Registration closes", type: "date" },
-  { path: "registration.partner_consent", label: "Partner consent", type: "choice", choices: [[true, "Both partners must accept (doubles)"], [false, "No partner required (singles)"]] },
+  { path: "registration.partner_consent", label: "Partner consent", type: "choice", choices: [[false, "Individual slots"]] },
   { path: "registration.organizer_plays", label: "Will the organizer play?", type: "choice", choices: [[true, "Yes — joins separately as a player"], [false, "No"]] },
   { path: "scheduling.estimated_slot_minutes", label: "Match slot (minutes)", type: "number", min: 5, max: 120 },
   { path: "scheduling.minimum_rest_minutes", label: "Planned rest (minutes)", type: "number", min: 0, max: 30 },
@@ -81,19 +81,20 @@ export function draftSetupError(definition: Record<string, unknown>, path: strin
   if (value === undefined || value === null || value === "") return `${field.label} is required.`;
   if (field.type === "number" && (!Number.isInteger(value) || Number(value) < field.min! || Number(value) > field.max!)) return `Enter a whole number from ${field.min} to ${field.max}.`;
   if (field.type === "text" && (typeof value !== "string" || !value.trim() || value !== value.trim() || value.length > field.maxLength!)) return `Enter ${field.label.toLowerCase()} without extra spaces (up to ${field.maxLength} characters).`;
-  if (field.type === "choice" && !field.choices?.some(([choice]) => choice === value)) return `Choose ${field.label.toLowerCase()}.`;
+  if (field.type === "choice" && !(path === "registration.partner_consent" && value === true && draftSetupValue(definition, "registration.entry_type") === "fixed_doubles") && !field.choices?.some(([choice]) => choice === value)) return `Choose ${field.label.toLowerCase()}.`;
   if (path === "event.timezone") { try { new Intl.DateTimeFormat("en-US", { timeZone: String(value) }).format(); } catch { return "Enter a valid timezone, such as America/New_York."; } }
   if (field.type === "date" && (typeof value !== "string" || !/(?:Z|[+-]\d{2}:\d{2})$/.test(value) || !eventTimestamp(value.slice(0, 19), String(object(definition.event).timezone ?? ""), value))) return "Choose a valid date and time in the event timezone.";
   if (path === "event.expected_end_at" && Date.parse(String(value)) <= Date.parse(String(draftSetupValue(definition, "event.starts_at")))) return "Expected finish must follow the tournament start.";
   if (path === "registration.closes_at" && Date.parse(String(value)) > Date.parse(String(draftSetupValue(definition, "event.starts_at")))) return "Registration must close before or at the tournament start.";
   if (path === "registration.min_entries" && Number(value) > Number(draftSetupValue(definition, "registration.max_entries"))) return "Minimum entries cannot exceed the maximum.";
-  if (path === "registration.partner_consent" && value !== (draftSetupValue(definition, "registration.entry_type") === "fixed_doubles")) return "Choose both partners accepting for doubles, or no partner for singles.";
+  if (path === "registration.partner_consent" && draftSetupValue(definition, "registration.entry_type") === "singles" && value) return "Singles cannot require partner consent.";
 }
 
 export function DraftSetupEditor({ definition, savedDefinition, issues, disabled, onChange }: { definition: Record<string, unknown>; savedDefinition: Record<string, unknown>; issues: ValidationIssue[]; disabled: boolean; onChange: (definition: Record<string, unknown>) => void }) {
   return <fieldset disabled={disabled} className="space-y-4 rounded-xl border p-4 disabled:opacity-60"><legend className="px-1 font-semibold">Complete tournament setup</legend>
     <p className="text-sm text-gray-600">Fields marked Required must be completed before approving the tournament. You can save a partial draft at any time. Dates and times use the event timezone.</p>
     <div className="grid gap-4 sm:grid-cols-2">{fields.map(field => {
+      if (field.path === "registration.partner_consent" && typeof draftSetupValue(definition, field.path) === "boolean") return null;
       const value = draftSetupValue(definition, field.path), id = draftFieldId(field.path);
       const serverIssue = value === draftSetupValue(savedDefinition, field.path) ? issues.find(issue => issue.field_path === field.path) : undefined;
       const error = draftSetupError(definition, field.path) ?? serverIssue?.message;

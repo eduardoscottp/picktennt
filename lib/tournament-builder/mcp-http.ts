@@ -63,7 +63,7 @@ export async function handleMcpRequest(request: Request, dependencies: McpHttpDe
   if (identity.error || typeof identity.user_id !== 'string' || typeof identity.client_id !== 'string' ||
     typeof identity.grant_id !== 'string' || identity.resource !== config.resource ||
     !identity.user_id || !identity.client_id || !identity.grant_id || identity.client_id === 'web' ||
-    !Array.isArray(identity.scopes) || !identity.scopes.every((scope) => [...DRAFT_PERMISSIONS, 'admin:manage', 'owner:manage'].includes(scope)) || !identity.scopes.some((scope) => scope === 'draft:read' || scope === 'admin:manage' || scope === 'owner:manage')) return unauthorized();
+    !Array.isArray(identity.scopes) || !identity.scopes.every((scope) => [...DRAFT_PERMISSIONS, 'admin:manage', 'owner:manage', 'player:manage'].includes(scope)) || !identity.scopes.some((scope) => scope === 'draft:read' || scope === 'admin:manage' || scope === 'owner:manage' || scope === 'player:manage')) return unauthorized();
   if (dependencies.rateLimit) {
     try {
       const limit = await dependencies.rateLimit(identity.user_id);
@@ -78,7 +78,7 @@ export async function handleMcpRequest(request: Request, dependencies: McpHttpDe
   let parsedBody: Record<string, unknown>;
   try { parsedBody = await rpcBody(request); } catch { return rejected(400); }
   const actorDependencies = dependencies.forActor({ id: identity.user_id, clientId: identity.client_id, grantId: identity.grant_id, permissions: [...identity.scopes] });
-  const server = createTournamentMcpServer({ ...actorDependencies, admin: identity.scopes.includes('admin:manage') ? actorDependencies.admin : undefined, owner: identity.scopes.includes('owner:manage') ? actorDependencies.owner : undefined, permissions: [...identity.scopes], reviewLink: async id => {
+  const server = createTournamentMcpServer({ ...actorDependencies, player: identity.scopes.includes('player:manage') ? actorDependencies.player : undefined, admin: identity.scopes.includes('admin:manage') ? actorDependencies.admin : undefined, owner: identity.scopes.includes('owner:manage') ? actorDependencies.owner : undefined, permissions: [...identity.scopes], reviewLink: async id => {
     const value = await actorDependencies.reviewLink(id);
     if (!value || typeof value !== 'object' || (value as Record<string, unknown>).review_url !== `${config.issuer}/tournaments/${id}/builder`) throw new Error('Invalid review link.');
     return value;

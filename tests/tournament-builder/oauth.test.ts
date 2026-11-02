@@ -32,7 +32,7 @@ test("metadata pins configured HTTPS origin and resource with only implemented O
   assert.equal(createOAuthConfig("https://picktennt.example/").issuer, config.issuer);
   const metadata = getAuthorizationServerMetadata(config);
   assert.deepEqual(metadata.code_challenge_methods_supported, ["S256"]);
-  assert.deepEqual(metadata.scopes_supported, [OAUTH_SCOPE, OAUTH_ADMIN_SCOPE, OAUTH_OWNER_SCOPE]);
+  assert.deepEqual(metadata.scopes_supported, [OAUTH_SCOPE, OAUTH_ADMIN_SCOPE, OAUTH_OWNER_SCOPE, "tournaments:play"]);
   assert.deepEqual(metadata.token_endpoint_auth_methods_supported, ["none"]);
   assert.equal(metadata.authorization_response_iss_parameter_supported, true);
   assert.equal("client_id_metadata_document_supported" in metadata, false);

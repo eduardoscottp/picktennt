@@ -1,3 +1,4 @@
+import { individualRoster } from './individual-roster';
 import { definitionJsonSchema, type DefinitionJsonSchema } from './definition-schema';
 import { DomainError } from './requests';
 import { resolvedDefinition } from './resolved-definition';
@@ -24,7 +25,7 @@ const definition = definitionShape(definitionJsonSchema(true));
 const issue: Shape = fields('code field_path node_id');
 const validation: Record<string, Shape> = { valid: scalar, errors: [issue], warnings: [issue], missing_fields: [issue], definition };
 const preview: Shape = { ...validation, ...fields('revision definitionHash maximumMatches estimatedMinutes entryType thirdPlace scoring generationReady'), moduleNames: [scalar], warningCodes: [scalar], generationIssues: [issue] };
-const mutation: Shape = { ...fields('definition_id entry_id entry_state admission_error runtime_state blocked_code match_id court_number source_match_id timing administrator_id user_id action'), validation, affected_match_ids: [scalar], replayed_match_ids: [scalar], qualifier_ids: [scalar], draw: [scalar] };
+const mutation: Shape = { ...fields('definition_id entry_id entry_state admission_error runtime_state blocked_code match_id court_number source_match_id timing administrator_id user_id action slot_index position player_status released'), validation, affected_match_ids: [scalar], replayed_match_ids: [scalar], qualifier_ids: [scalar], draw: [scalar] };
 const receipt: Shape = { ...fields('operation_id tournament_id revision status'), data: mutation };
 const player: Shape = fields('id username display_name');
 const correction: Shape = { ...fields('event_revision source_match_id source_result_revision preview_hash requires_reopen qualification_pending'), outcome: fields('score_a score_b outcome_kind winner_team_id'), affected_match_ids: [scalar], started_dependent_ids: [scalar], next_qualifier_ids: [scalar] };
@@ -39,10 +40,12 @@ function tournament(value: unknown, args: Record<string, unknown>) {
   const matches = rows('matches'), offset = Number.isSafeInteger(args.match_offset) && Number(args.match_offset) >= 0 ? Number(args.match_offset) : 0;
   const page = matches.slice(offset, offset + 64), roundIds = new Set(page.map(match => match.round_id));
   return {
+    roster: individualRoster({ event, caller_role: source.caller_role, definitions: rows('definitions'), stages: rows('stages'), teams: rows('teams'), team_members: rows('team_members'), tournament_players: rows('tournament_players'), matches: rows('matches'), rounds: [], standings: [] } as unknown as CommandSnapshot),
     tournament_id: project(event.id, scalar), ...row(project(event, fields('name revision roster_revision results_under_review'))),
     status: project(event.modular_state, scalar), caller_role: project(source.caller_role, scalar),
     definition_id: project(saved?.id, scalar), definition: project(saved?.definition, definition),
-    entries: rows('teams').map(entry => ({ ...row(project(entry, fields('id name seed entry_state'))), players: rows('team_members').filter(member => member.team_id === entry.id).map(member => ({ profile_id: project(member.user_id, scalar), ...row(project(member, fields('display_name membership_status admission_source'))) })) })),
+    entries: rows('teams').map(entry => ({ ...row(project(entry, fields('id name seed entry_state registration_slot'))), players: rows('team_members').filter(member => member.team_id === entry.id).map(member => ({ profile_id: project(member.user_id, scalar), ...row(project(member, fields('display_name membership_status admission_source'))) })) })),
+    registered_players: rows('tournament_players').filter(player => player.status === 'approved').map(player => ({ profile_id: project(player.user_id, scalar), display_name: project(player.display_name, scalar), status: 'approved' })),
     administrators: rows('admins').map(admin => ({ profile_id: project(admin.user_id, scalar), display_name: project(admin.display_name, scalar) })),
     stages: rows('stages').map(stage => {
       const output = row(stage.output);
@@ -60,7 +63,7 @@ function tournament(value: unknown, args: Record<string, unknown>) {
 }
 export function publicMcpResult(name: string, value: unknown, args: Record<string, unknown> = {}): unknown {
   if (name === 'list_modules' || name === 'get_capabilities') return value;
-  if (name === 'admin_get_tournament' || name === 'owner_get_tournament') return JSON.parse(JSON.stringify(tournament(value, args)));
+  if (name === 'admin_get_tournament' || name === 'owner_get_tournament' || name === 'player_get_tournament') return JSON.parse(JSON.stringify(tournament(value, args)));
   if (name === 'get_draft') return project(value, { ...fields('tournament_id revision status'), definition });
   if (['validate_draft', 'preview_tournament'].includes(name)) return project(value, preview);
   if (name === 'get_review_link') return project(value, fields('tournament_id revision review_url publication_requires_owner_review'));
@@ -70,6 +73,6 @@ export function publicMcpResult(name: string, value: unknown, args: Record<strin
   if (name === 'admin_preview_revision') return project(value, { ...fields('event_revision preview_hash reason next_state'), definition, entries: [{ ...fields('entry_id entry_name remove'), player_ids: [scalar] }], approved_entries: [{ ...fields('entry_id entry_name'), player_ids: [scalar] }], affected_match_ids: [scalar], affected_nodes: [scalar], warnings: [scalar] });
   if (name === 'admin_preview_schedule') return project(value, { ...fields('event_revision preview_hash estimated_slot_minutes'), fixtures: [{ ...fields('id stageId round wave court'), a: fields('kind entryId fixtureId'), b: fields('kind entryId fixtureId') }], fairness: [fields('entryId games idleSlots longestWait longestConsecutivePlay')], warnings: [scalar] });
   if (name === 'owner_preview_action') return project(value, ownerPreview);
-  if (name === 'get_operation' || name === 'create_draft' || name === 'update_draft' || name.startsWith('admin_') || name === 'owner_commit_action') return project(value, receipt);
+  if (name === 'get_operation' || name === 'create_draft' || name === 'update_draft' || name.startsWith('admin_') || name.startsWith('player_') || name === 'owner_commit_action') return project(value, receipt);
   throw new DomainError('INVALID_REQUEST', 'Unsupported result.');
 }

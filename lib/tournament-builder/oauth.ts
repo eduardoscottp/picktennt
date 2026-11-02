@@ -3,7 +3,8 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 export const OAUTH_SCOPE = "tournaments:draft";
 export const OAUTH_ADMIN_SCOPE = "tournaments:admin";
 export const OAUTH_OWNER_SCOPE = "tournaments:owner";
-export const OAUTH_SCOPES = [OAUTH_SCOPE, OAUTH_ADMIN_SCOPE, OAUTH_OWNER_SCOPE] as const;
+export const OAUTH_PLAYER_SCOPE = "tournaments:play";
+export const OAUTH_SCOPES = [OAUTH_SCOPE, OAUTH_ADMIN_SCOPE, OAUTH_OWNER_SCOPE, OAUTH_PLAYER_SCOPE] as const;
 export const DRAFT_PERMISSIONS = ["draft:create", "draft:read", "draft:update", "operation:read"] as const;
 
 export class OAuthProtocolError extends Error {
@@ -137,22 +138,22 @@ function parameter(params: URLSearchParams, name: string, maximum = 2048) {
 }
 export function validateOAuthScope(value: unknown): string {
   if (value === null) return OAUTH_SCOPE;
-  if (typeof value !== "string" || value.length > 100) fail("invalid_scope", "Unsupported scope.");
+  if (typeof value !== "string" || value.length > 150) fail("invalid_scope", "Unsupported scope.");
   const requested = value.split(" ");
   if (requested.length === 0 || new Set(requested).size !== requested.length || requested.some((scope) => !OAUTH_SCOPES.some((supported) => scope === supported))) fail("invalid_scope", "Unsupported scope.");
   return OAUTH_SCOPES.filter((scope) => requested.includes(scope)).join(" ");
 }
 export function permissionsForOAuthScope(scope: string): string[] {
   const requested = validateOAuthScope(scope).split(" ");
-  return [...(requested.includes(OAUTH_SCOPE) ? DRAFT_PERMISSIONS : []), ...(requested.includes(OAUTH_ADMIN_SCOPE) ? ["admin:manage"] : []), ...(requested.includes(OAUTH_OWNER_SCOPE) ? ["owner:manage"] : [])];
+  return [...(requested.includes(OAUTH_SCOPE) ? DRAFT_PERMISSIONS : []), ...(requested.includes(OAUTH_ADMIN_SCOPE) ? ["admin:manage"] : []), ...(requested.includes(OAUTH_OWNER_SCOPE) ? ["owner:manage"] : []), ...(requested.includes(OAUTH_PLAYER_SCOPE) ? ["player:manage"] : [])];
 }
 export function oauthScopeForPermissions(input: unknown): string {
-  if (!Array.isArray(input) || input.length === 0 || input.some((permission) => ![...DRAFT_PERMISSIONS, "admin:manage", "owner:manage"].includes(permission))) {
+  if (!Array.isArray(input) || input.length === 0 || input.some((permission) => ![...DRAFT_PERMISSIONS, "admin:manage", "owner:manage", "player:manage"].includes(permission))) {
     throw new OAuthProtocolError("server_error", "Invalid stored token permissions.", 500);
   }
   const draft = DRAFT_PERMISSIONS.every((permission) => input.includes(permission));
   if (!draft && input.some((permission) => DRAFT_PERMISSIONS.includes(permission))) throw new OAuthProtocolError("server_error", "Invalid stored token permissions.", 500);
-  return [...(draft ? [OAUTH_SCOPE] : []), ...(input.includes("admin:manage") ? [OAUTH_ADMIN_SCOPE] : []), ...(input.includes("owner:manage") ? [OAUTH_OWNER_SCOPE] : [])].join(" ");
+  return [...(draft ? [OAUTH_SCOPE] : []), ...(input.includes("admin:manage") ? [OAUTH_ADMIN_SCOPE] : []), ...(input.includes("owner:manage") ? [OAUTH_OWNER_SCOPE] : []), ...(input.includes("player:manage") ? [OAUTH_PLAYER_SCOPE] : [])].join(" ");
 }
 function validateResource(value: string | null, config: OAuthConfig) {
   if (value !== config.resource) fail("invalid_target", "Token resource must match the configured MCP resource.");

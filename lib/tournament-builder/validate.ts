@@ -74,7 +74,7 @@ export function validateDraft(input: unknown, options: ValidationOptions = {}): 
   const ranking = isObject(policies.ranking) ? policies.ranking : {};
   if (Array.isArray(ranking.order) && (ranking.order[0] !== 'wins_desc' || new Set(ranking.order).size !== ranking.order.length)) issue('UNSUPPORTED_RULE', 'policies.ranking.order', 'Wins must be first; ranking keys must be unique.');
   if (typeof registration.min_entries === 'number' && typeof registration.max_entries === 'number' && registration.min_entries > registration.max_entries) issue('INVALID_CAPACITY', 'registration.min_entries', 'Minimum entries exceeds capacity.');
-  if (typeof registration.partner_consent === 'boolean' && ['singles', 'fixed_doubles'].includes(String(registration.entry_type)) && registration.partner_consent !== (registration.entry_type === 'fixed_doubles')) issue('UNSUPPORTED_RULE', 'registration.partner_consent', 'Consent must be true for fixed doubles and false for singles.');
+  if (typeof registration.partner_consent === 'boolean' && registration.entry_type === 'singles' && registration.partner_consent) issue('UNSUPPORTED_RULE', 'registration.partner_consent', 'Singles cannot require partner consent.');
 
   let timezoneValid = false;
   if (typeof event.timezone === 'string') {

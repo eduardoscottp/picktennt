@@ -48,11 +48,12 @@ test('administrator tools require scoped dependencies, expose exact schemas and 
  const calls:unknown[]=[];
  const adminDeps:McpDependencies={...deps,execute:async(command,tournamentId,input)=>{calls.push({command,tournamentId,input});return {command};},admin:{snapshot:async()=>({revision:4,caller_role:'admin'}),findPlayer:async(_id,username)=>({id,username}),previewCorrection:async()=>({preview_hash:'current-impact'}),previewWithdrawal:async()=>({preview_hash:'current-impact'})}};
  const capability=await callTournamentTool('get_capabilities',{},adminDeps) as {participant_enrollment:{ai_can_enroll:boolean;instructions:string}};
- assert.equal(capability.participant_enrollment.ai_can_enroll,true);assert.match(capability.participant_enrollment.instructions,/admin_register_players/);assert.doesNotMatch(capability.participant_enrollment.instructions,/Never pre-enroll/);
- assert.ok(ADMIN_TOOLS.some(t=>t.name==='admin_register_players'));
+ assert.equal(capability.participant_enrollment.ai_can_enroll,false);assert.match(capability.participant_enrollment.instructions,/joins individually/);
+ assert.ok(ADMIN_TOOLS.some(t=>t.name==='admin_place_registered_player'));
+ assert.ok(!ADMIN_TOOLS.some(t=>['admin_register_players','admin_find_player'].includes(t.name)));
  await assert.rejects(callTournamentTool('admin_get_tournament',{tournament_id:id},deps));
  assert.deepEqual(await callTournamentTool('admin_get_tournament',{tournament_id:id},adminDeps),{revision:4,caller_role:'admin'});
- await assert.rejects(callTournamentTool('admin_lock_roster',{tournament_id:id,operation_id:id,expected_revision:4,data:{reviewed_roster_revision:3}},adminDeps),/structural impact/);
+ await assert.rejects(callTournamentTool('admin_lock_roster',{tournament_id:id,operation_id:id,expected_revision:4,data:{reviewed_roster_revision:3}},adminDeps),/generate the reviewed schedule/);
  assert.equal(calls.length,0);
  await callTournamentTool('admin_lock_roster',{tournament_id:id,operation_id:id,expected_revision:4,data:{reviewed_roster_revision:3},confirmed_structure_change:true},adminDeps);
  assert.equal(calls.length,1);

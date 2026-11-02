@@ -1,3 +1,5 @@
+import { confirmationQuestion } from './mcp-confirmation';
+import { PLAYER_TOOLS, callPlayerTool } from './mcp-player';
 import { ADMIN_TOOLS, callAdminTool, type AdminMcpDependencies } from './mcp-admin';
 import { OWNER_TOOLS, callOwnerTool, type OwnerMcpDependencies } from './mcp-owner';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -13,6 +15,7 @@ export interface McpDependencies {
   permissions?: readonly string[];
   /** Already authenticated connection. Each operation rechecks its current grant in the repository. */
   execute(command: string, tournamentId: string | null, input: unknown): Promise<unknown>;
+  player?: { snapshot(id: string): Promise<unknown> };
   admin?: AdminMcpDependencies;
   owner?: OwnerMcpDependencies;
   getDraft(tournamentId: string): Promise<unknown>;
@@ -37,11 +40,11 @@ function availableTools(dependencies: McpDependencies): Tool[] {
   return [...TOURNAMENT_TOOLS.filter(tool => {
     if (!dependencies.permissions || ['list_modules', 'get_capabilities'].includes(tool.name)) return true;
     const permission = tool.name === 'create_draft' ? 'draft:create' : tool.name === 'update_draft' ? 'draft:update' : tool.name === 'get_operation' ? 'operation:read' : 'draft:read';
-    return dependencies.permissions.includes(permission) || (permission === 'operation:read' && Boolean(dependencies.admin || dependencies.owner));
-  }), ...(dependencies.admin ? ADMIN_TOOLS : []), ...(dependencies.owner ? OWNER_TOOLS : [])];
+    return dependencies.permissions.includes(permission) || (permission === 'operation:read' && Boolean(dependencies.admin || dependencies.owner || dependencies.player));
+  }), ...(dependencies.player ? PLAYER_TOOLS : []), ...(dependencies.admin ? ADMIN_TOOLS : []), ...(dependencies.owner ? OWNER_TOOLS : [])];
 }
 const validator = new AjvJsonSchemaValidator();
-const validators = new Map([...TOURNAMENT_TOOLS, ...ADMIN_TOOLS, ...OWNER_TOOLS].map(tool => [tool.name, validator.getValidator(tool.inputSchema)]));
+const validators = new Map([...TOURNAMENT_TOOLS, ...ADMIN_TOOLS, ...OWNER_TOOLS, ...PLAYER_TOOLS].map(tool => [tool.name, validator.getValidator(tool.inputSchema)]));
 
 export async function callTournamentTool(name: string, args: Record<string, unknown>, dependencies: McpDependencies): Promise<unknown> {
   const tool = availableTools(dependencies).find(tool => tool.name === name);
@@ -50,12 +53,13 @@ export async function callTournamentTool(name: string, args: Record<string, unkn
   if (Object.keys(args).some(key => !Object.hasOwn(tool.inputSchema.properties ?? {}, key))) throw new DomainError('INVALID_REQUEST', 'Unknown tool argument.');
   // Confirmation handlers retain their specific, safe confirmation failure.
   const confirmation = Object.keys(tool.inputSchema.properties ?? {}).find(key => key.startsWith('confirmed_'));
-  if (confirmation && args[confirmation] !== true) throw new DomainError('CONFIRMATION_REQUIRED', 'Explain the concrete structural impact and obtain organizer confirmation.');
+  if (confirmation && args[confirmation] !== true) throw new DomainError('CONFIRMATION_REQUIRED', confirmationQuestion(name, {}, args) ?? 'Apply this reviewed change and its consequences?');
   if (!validators.get(name)?.(args).valid) throw new DomainError('INVALID_REQUEST', 'Arguments do not match the tool schema.');
+  if (name.startsWith('player_') && dependencies.player) return callPlayerTool(name,args,dependencies.player,dependencies.execute);
   if (name.startsWith('admin_') && dependencies.admin) return callAdminTool(name,args,dependencies.admin,(command,id,input)=>dependencies.execute(command,id,input));
   if (name.startsWith('owner_') && dependencies.owner) return callOwnerTool(name,args,dependencies.owner,(command,id,input)=>dependencies.execute(command,id,input));
   if (name === 'list_modules') return listModules();
-  if (name === 'get_capabilities') return getCapabilities(Boolean(dependencies.admin), Boolean(dependencies.owner));
+  if (name === 'get_capabilities') return getCapabilities(Boolean(dependencies.admin), Boolean(dependencies.owner), Boolean(dependencies.player));
   if (name === 'create_draft') return dependencies.execute('createDraft', null, parseEnvelope(args, true));
   const tournamentId = args.tournament_id;
   if (typeof tournamentId !== 'string' || !UUID.test(tournamentId)) throw new DomainError('INVALID_REQUEST', 'A tournament UUID is required.');
@@ -79,10 +83,11 @@ export function createTournamentMcpServer(dependencies: McpDependencies): Server
     try {
       const data = publicMcpResult(request.params.name, await callTournamentTool(request.params.name, request.params.arguments ?? {}, dependencies), request.params.arguments ?? {});
       assertPublicMcpOutput(data);
-      return { content: [{ type: 'text', text: JSON.stringify(data) }] };
+      const question = confirmationQuestion(request.params.name, data, request.params.arguments ?? {});
+      return { content: [{ type: 'text', text: question ?? JSON.stringify(data) }], ...(question ? { structuredContent: { ...data as Record<string, unknown>, confirmation_question: question } } : {}) };
     } catch (error) {
       const data = mcpError(error);
-      return { isError: true, content: [{ type: 'text', text: JSON.stringify(data) }] };
+      return { isError: true, content: [{ type: 'text', text: data.code === 'CONFIRMATION_REQUIRED' ? confirmationQuestion(request.params.name, {}, request.params.arguments ?? {}) ?? 'Apply this reviewed change and its consequences?' : JSON.stringify(data) }] };
     }
   });
   return server;

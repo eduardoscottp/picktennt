@@ -16,10 +16,10 @@ const empty = (): CommandSnapshot => ({ event: null, definitions: [], teams: [],
 async function snapshot(event: string) {
   return role(db, 'service_role', owner, async () => (await db.query<{ value: CommandSnapshot }>('SELECT public.tb_get_snapshot($1,$2,$3,$4) value', [owner, 'web', event, null])).rows[0].value);
 }
-async function apply(event: string, name: string, data: Record<string, unknown>, initial?: CommandSnapshot) {
+async function apply(event: string, name: string, data: Record<string, unknown>, initial?: CommandSnapshot, commandActor = actor) {
   const current = initial ?? await snapshot(event);
-  const plan = planCommand(current, actor, name, data, context);
-  await command(db, { event, command: name, revision: current.event ? Number(current.event.revision) : null, request: data, effects: plan.effects, result: plan.result });
+  const plan = planCommand(current, commandActor, name, data, context);
+  await command(db, { actor: commandActor.id, event, command: name, revision: current.event ? Number(current.event.revision) : null, request: data, effects: plan.effects, result: plan.result });
   return snapshot(event);
 }
 
@@ -36,6 +36,7 @@ test('actual SQL persists and completes a 16-doubles graph through all 27 result
   const users = Array.from({ length: 32 }, () => randomUUID());
   for (let index = 0; index < users.length; index++) await db.query('INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES($1,$2,$3)', [users[index], `graph-${index}@example.invalid`, JSON.stringify({ given_name: `Graph Player ${index + 1}` })]);
   assert.equal(Number((await db.query<{ n: number }>('SELECT count(*) n FROM profiles WHERE id=ANY($1::uuid[])', [users])).rows[0].n), 32);
+  for (const userId of users) current = await apply(event, 'joinTournament', { definition_id: definitionId, consent: true }, undefined, { id: userId, clientId: 'web' });
   for (let index = 0; index < 16; index++) current = await apply(event, 'addRegisteredEntry', { definition_id: definitionId, player_ids: users.slice(index * 2, index * 2 + 2), entry_name: `Pair ${index + 1}`, reason: 'Organizer enrolled verified Picktennt profiles.' });
   assert.equal(current.teams.length, 16);
   assert.equal(current.team_members.length, 32);

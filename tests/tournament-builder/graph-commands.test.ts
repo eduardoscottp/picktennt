@@ -28,7 +28,11 @@ export function activeGroups(d = JSON.parse(readFileSync('../examples/four-group
   const preview = previewDefinition(d, 1);
   let s = execute(empty(), 'createDraft', { definition: d });
   s = execute(s, 'publishTournament', { reviewed_definition_hash: preview.definitionHash, acknowledged_warning_codes: preview.warningCodes });
-  for (let i = 0; i < d.registration.max_entries; i++) s = execute(s, 'addRegisteredEntry', { definition_id: s.event!.definition_id, player_ids: [id(), id()], entry_name: `Team ${i + 1}`, reason: 'Organizer enrollment of real profiles' });
+  for (let i = 0; i < d.registration.max_entries; i++) {
+    const players = [id(), id()];
+    for (const userId of players) s = execute(s, 'joinTournament', { definition_id: s.event!.definition_id, consent: true }, { id: userId, clientId: 'web', role: 'player' });
+    s = execute(s, 'addRegisteredEntry', { definition_id: s.event!.definition_id, player_ids: players, entry_name: `Team ${i + 1}`, reason: 'Organizer placement of joined players' });
+  }
   s = execute(s, 'closeRegistration');
   s = execute(s, 'lockRoster', { reviewed_roster_revision: s.event!.roster_revision });
   return execute(s, 'startTournament');

@@ -8,6 +8,10 @@ Start with [project-docs/README.md](project-docs/README.md). It is the compact p
 
 Current implementation evidence and security documentation also live in [docs/](docs/).
 
+## Tickets
+
+The project ticket system is **Linear**, connected through **MCP**. Follow [LINEAR_PICKTENNT_GUIDE.md](LINEAR_PICKTENNT_GUIDE.md) for issue scope, acceptance criteria, status transitions and final verification comments.
+
 ## Local development
 
 ```bash

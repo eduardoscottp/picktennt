@@ -7,7 +7,7 @@ export const player = '00000000-0000-4000-8000-000000000002';
 export const stranger = '00000000-0000-4000-8000-000000000003';
 export const migration = resolve('supabase/migrations/202610280001_tournament_builder.sql');
 
-export async function storageDatabase() {
+export async function storageDatabase(deferIndividualRoster = false) {
   const db = new PGlite();
   await db.exec(`CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS;
     CREATE SCHEMA auth; CREATE TABLE auth.users(id uuid PRIMARY KEY,email text,raw_user_meta_data jsonb DEFAULT '{}');
@@ -57,6 +57,11 @@ export async function storageDatabase() {
   if (existsSync(administrators)) await db.exec(readFileSync(administrators, 'utf8'));
   const revisions = resolve('supabase/migrations/202610290001_tournament_revisions.sql');
   if (existsSync(revisions)) await db.exec(readFileSync(revisions, 'utf8'));
+  const individualSlots = resolve('supabase/migrations/202611010001_individual_registration_slots.sql');
+  if (existsSync(individualSlots)) await db.exec(readFileSync(individualSlots, 'utf8'));
+  const individualRevisions = resolve('supabase/migrations/202611010002_doubles_revision_individual_slots.sql');
+  if (existsSync(individualRevisions)) await db.exec(readFileSync(individualRevisions, 'utf8'));
+  if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611020001_individual_roster_management.sql'), 'utf8'));
   return db;
 }
 export async function role<T>(db: PGlite, name: 'anon'|'authenticated'|'service_role', actor: string, fn: () => Promise<T>) {

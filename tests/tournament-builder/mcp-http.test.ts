@@ -47,7 +47,7 @@ test('MCP passes only verified permissions, accepts admin-only grants and reject
   for (scopes of [[], ['operation:read'], ['tournaments:admin'], ['admin:manage', 1], null]) {
     const response = await handleMcpRequest(request(), dependencies);
     assert.equal(response.status, 401);
-    assert.match(response.headers.get('www-authenticate')!, /scope="tournaments:draft tournaments:admin tournaments:owner"/);
+    assert.match(response.headers.get('www-authenticate')!, /scope="tournaments:draft tournaments:admin tournaments:owner tournaments:play"/);
   }
   scopes = ['admin:manage']; revoked = true;
   assert.equal((await handleMcpRequest(request(), dependencies)).status, 401);
