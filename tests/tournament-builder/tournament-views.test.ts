@@ -35,8 +35,17 @@ test("matches view retains scoring and ties while standings view contains rankin
   assert.match(matches, /id="entries"/);
   assert.doesNotMatch(matches, /id="rules"|id="placements"/);
   const standings = render("standings");
-  assert.match(standings, /<table/); assert.match(standings, /id="placements"/); assert.match(standings, /Shared placement/); assert.match(standings, /Resolve remaining ties/);
+  assert.match(standings, /Leaderboard/); assert.match(standings, /🥇/); assert.match(standings, /2W – 0L · 22:10/); assert.match(standings, /Tied/); assert.match(standings, /id="placements"/); assert.match(standings, /Shared placement/); assert.match(standings, /Resolve remaining ties/);
   assert.doesNotMatch(standings, /id="rules"|id="entries"|id="matches"/);
+});
+test("standings show player names and the legacy empty state", () => {
+  const data = snapshot();
+  data.team_members[0].display_name = "Player One";
+  assert.match(render("standings", data), /Player One/);
+  data.standings = [];
+  const empty = render("standings", data);
+  assert.match(empty, /No results yet/);
+  assert.match(empty, /Standings will appear after matches are validated/);
 });
 test("admin view contains entry and lifecycle controls, links to score administration and excludes match wall", () => {
   const html = render("admin", snapshot("registration_open"));

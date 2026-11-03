@@ -80,11 +80,10 @@ test("later round-robin match sides describe their exact incoming group ranks", 
 test("standings remain separate by group and RR2 unresolved ties have administrator draw controls", () => {
   const html = renderToStaticMarkup(createElement(TournamentBuilder, { actorId: "owner", initialSnapshot: snapshot(), initialPreview: preview, view: "standings" }));
   assert.match(html, /Group A/); assert.match(html, /Group B/);
-  assert.equal((html.match(/<table/g) ?? []).length, 2);
-  const tables = [...html.matchAll(/<h3[^>]*>(Group [AB])<\/h3>(<table[\s\S]*?<\/table>)/g)];
-  assert.equal(tables.length, 2);
-  assert.match(tables[0][2], /Alpha/); assert.doesNotMatch(tables[0][2], /Beta/);
-  assert.match(tables[1][2], /Beta/); assert.doesNotMatch(tables[1][2], /Alpha/);
+  const groupA = html.slice(html.indexOf(">Group A</h3>"), html.indexOf(">Group B</h3>"));
+  const groupB = html.slice(html.indexOf(">Group B</h3>"), html.indexOf("Resolve remaining ties"));
+  assert.match(groupA, /Alpha/); assert.doesNotMatch(groupA, /Beta/);
+  assert.match(groupB, /Beta/); assert.doesNotMatch(groupB, /Alpha/);
   assert.match(html, /Resolve remaining ties.*Group A/);
   assert.match(html, /Record a fair draw/);
 });
