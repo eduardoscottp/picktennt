@@ -11,7 +11,7 @@ interface TournamentNavProps {
 }
 
 function TournamentNavItems({ tournamentId, isAdmin = false, placement = "bottom" }: TournamentNavProps) {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   const items = [
     { href: `/tournaments/${tournamentId}`, label: "Overview", icon: ClipboardList, exact: true },
     { href: `/tournaments/${tournamentId}/matches`, label: "Matches", icon: ListChecks },

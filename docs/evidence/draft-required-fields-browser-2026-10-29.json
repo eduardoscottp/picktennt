@@ -1,0 +1,16 @@
+{
+  "scope": "Isolated hydrated browser fixture, synthetic HTTP adapter with real command planner; no production authentication, database or deployment.",
+  "checks": [
+    "Seven required controls highlighted initially",
+    "1440px and 390px without horizontal overflow",
+    "All seven fields completed interactively; red feedback clears",
+    "Unsaved edits block publication",
+    "Save through real command planner and refresh review",
+    "Explicit review enables publication; registration opens without players",
+    "Zero browser page errors"
+  ],
+  "commands": [
+    "updateDraft",
+    "publishTournament"
+  ]
+}

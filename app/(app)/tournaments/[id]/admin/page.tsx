@@ -1,3 +1,4 @@
+import { modularTournamentPage } from "@/lib/tournament-builder/server-page";
 import { createClient } from "@/lib/supabase/server";
 import { notFound, redirect } from "next/navigation";
 import { MobileHeader } from "@/components/layout/navbar";
@@ -20,6 +21,8 @@ import type { Profile, Tournament, TournamentAdmin, Match } from "@/types/databa
 
 export default async function AdminPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const modular = await modularTournamentPage(id, 'admin');
+  if (modular) return modular;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
@@ -431,3 +434,4 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
     </div>
   );
 }
+

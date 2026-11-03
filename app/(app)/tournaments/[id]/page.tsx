@@ -1,3 +1,4 @@
+import { modularTournamentPage } from "@/lib/tournament-builder/server-page";
 import { createClient } from "@/lib/supabase/server";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
@@ -53,6 +54,8 @@ function hasPlayerInMatch(match: any, playerId: string, teamIds: Set<string>) {
 
 export default async function TournamentPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const modular = await modularTournamentPage(id, 'overview');
+  if (modular) return modular;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -785,3 +788,4 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
     </div>
   );
 }
+

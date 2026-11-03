@@ -38,11 +38,19 @@ interface PreviewMatch {
 }
 
 interface PreflightResponse {
+  revision?: number;
   ok: boolean;
   validatedMatchCount: number;
   totalPlayers: number;
   missing: MissingPlayer[];
   preview: PreviewMatch[];
+}
+
+async function fetchPreflight(tournamentId: string): Promise<PreflightResponse> {
+  const response = await fetch(`/api/tournaments/${tournamentId}/upload-dupr/preflight`);
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error ?? "Could not review DUPR submission");
+  return body;
 }
 
 interface FailedMatch {
@@ -85,10 +93,9 @@ export function AdminUploadDupr({ tournamentId }: { tournamentId: string }) {
   async function loadPreflight() {
     setLoadingPreflight(true);
     try {
-      const res = await fetch(`/api/tournaments/${tournamentId}/upload-dupr/preflight`);
-      const body = await res.json();
-      setPreflight(body);
+      setPreflight(await fetchPreflight(tournamentId));
     } catch (err: any) {
+      setPreflight(null);
       toast(err.message ?? "Preflight failed", "error");
     } finally {
       setLoadingPreflight(false);
@@ -96,7 +103,13 @@ export function AdminUploadDupr({ tournamentId }: { tournamentId: string }) {
   }
 
   useEffect(() => {
-    loadPreflight();
+    let active = true;
+    void fetchPreflight(tournamentId).then(body => {
+      if (active) setPreflight(body);
+    }).catch(error => {
+      if (active) { setPreflight(null); toast(error.message ?? "Preflight failed", "error"); }
+    }).finally(() => { if (active) setLoadingPreflight(false); });
+    return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tournamentId]);
 
@@ -148,7 +161,10 @@ export function AdminUploadDupr({ tournamentId }: { tournamentId: string }) {
     setConfirmOpen(false);
     setConfirmText("");
     try {
-      const res = await fetch(`/api/tournaments/${tournamentId}/upload-dupr`, { method: "POST" });
+      const res = await fetch(`/api/tournaments/${tournamentId}/upload-dupr`, {
+        method: "POST",
+        ...(preflight?.revision !== undefined ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ expected_revision: preflight.revision }) } : {}),
+      });
       const body = (await res.json()) as UploadResponse;
       setResult(body);
       if (body.ok) {

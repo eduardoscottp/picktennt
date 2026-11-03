@@ -7,6 +7,7 @@ if (process.env.VERCEL_ENV === "production" && !legalPublication.effectiveDate) 
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  logging: { incomingRequests: { ignore: [/^\/auth\/(web-confirm|callback|confirm)(\?|$)/] } },
   async headers() {
     return [{ source: "/:path*", headers: [
       { key: "X-Content-Type-Options", value: "nosniff" },

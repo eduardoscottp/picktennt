@@ -1,0 +1,77 @@
+{
+  "recorded_at_utc": "2026-10-28T16:03:00Z",
+  "project_ref": "qmiljmxnnryhuaudpuff",
+  "origin": "https://app.picktennt.com",
+  "deployment_id": "dpl_2UA9NUZnG7KUQBhH6a5UgvXkFXHU",
+  "synthetic_run": "4bf6bf41-ebf0-4019-9bf7-0b29a33edc4d",
+  "passed": true,
+  "checks": [
+    "hosted_discovery_and_auth_challenge",
+    "four_synthetic_native_sessions_with_own_explicit_consents",
+    "real_dynamic_client_registration_pkce_native_consent_and_refresh_rotation",
+    "mcp_initialize_nine_tools_seven_modules_partial_create_full_update_validate_preview_review_link_receipt",
+    "owner_native_publication_of_exact_reviewed_revision",
+    "native_grant_revocation_immediately_rejects_mcp_receipt_replay_and_refresh",
+    "ten_native_participant_started_submitted_and_opponent_confirmed_games_after_connector_revocation",
+    "official_standings_exclude_provisional_score",
+    "distinct_first_second_third_fourth_and_preserved_round_robin_match_uuids",
+    "completed_confirmation_replay_preserves_single_result_version",
+    "independent_parallel_http_identical_operation_and_same_revision_races",
+    "last_slot_one_winner_and_losing_fresh_retry_retained_pending_capacity_full",
+    "ordinary_authenticated_role_cannot_execute_trusted_effects_rpc",
+    "parallel_court_start_serialization_and_fresh_live_court_busy_guard"
+  ],
+  "completed_tournament": {
+    "id": "77cd410a-c69a-56b0-a88a-b058c6bb007e",
+    "url": "https://app.picktennt.com/tournaments/77cd410a-c69a-56b0-a88a-b058c6bb007e/builder",
+    "status": "completed",
+    "entry_type": "singles",
+    "entries": 4,
+    "courts": 2,
+    "round_robin_matches": 6,
+    "semifinals": 2,
+    "gold_matches": 1,
+    "bronze_matches": 1,
+    "total_matches": 10,
+    "minimum_rest_minutes": 0,
+    "result_version": 1,
+    "placements": [
+      { "rank": 1, "synthetic_label": "A", "entry_id": "d440f3b4-2c5c-4506-8c75-0c5315999006" },
+      { "rank": 2, "synthetic_label": "B", "entry_id": "30da80a1-b161-43a6-abbc-67ec78ae90b7" },
+      { "rank": 3, "synthetic_label": "C", "entry_id": "3de7e156-00fc-4381-b3bf-8826447bfed8" },
+      { "rank": 4, "synthetic_label": "D", "entry_id": "398efcc1-037d-4797-9801-b278dbdeb218" }
+    ]
+  },
+  "concurrency_tournament": {
+    "id": "829f05ae-9ba8-5e56-a7ca-07c42ff34ba3",
+    "status": "cancelled",
+    "audit_and_history_preserved": true
+  },
+  "prior_harness_attempt": {
+    "tournament_id": "f623013b-8d4e-5a94-af6d-031c1b99ab73",
+    "status": "cancelled",
+    "reason": "Harness initially rejected the intentionally empty revoked-token HTTP 401 body; parser fixed and the same four accounts reused."
+  },
+  "synthetic_accounts": [
+    { "id": "d6a6876e-3951-4b94-8623-be29e3de494e", "label": "A" },
+    { "id": "c5ae9d44-45cf-4d16-8465-e056ddc5fe2d", "label": "B" },
+    { "id": "ba99b2c1-17e2-4337-b578-2e0bc422b85d", "label": "C" },
+    { "id": "a31556e0-1735-42db-8a74-98878708218e", "label": "D" }
+  ],
+  "cleanup": {
+    "synthetic_sessions_signed_out": 4,
+    "marker_verified_synthetic_accounts_disabled": 4,
+    "synthetic_connector_grants_revoked": true,
+    "unfinished_test_events_cancelled": true,
+    "tournaments_profiles_receipts_and_operation_history_retained": true,
+    "credentials_cookies_codes_passwords_and_tokens_saved": false
+  },
+  "limits": {
+    "actual_chatgpt_or_claude_account_journey": false,
+    "hosted_eight_team_fixed_doubles_f01": false,
+    "hosted_waited_physical_rest_test": false,
+    "notes": "OAuth/MCP used an explicitly named synthetic public client and real native sessions; no external Claude callback was followed. Full eight-team doubles and timed-rest cases remain separately evidenced by local PostgreSQL/browser tests."
+  },
+  "reproduce": "node scripts/tournament-builder/hosted-acceptance.mjs --run --project-ref qmiljmxnnryhuaudpuff --management-keys",
+  "credential_handling": "Existing authenticated Supabase management CLI stdout is captured and parsed only in process memory. No credential file is created."
+}

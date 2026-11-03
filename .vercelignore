@@ -1,0 +1,10 @@
+test-results/
+/.vercel/
+tests/
+scripts/tournament-builder/
+.env*
+/supabase/.temp/
+/node_modules/
+/.next/
+/coverage/
+*.pem

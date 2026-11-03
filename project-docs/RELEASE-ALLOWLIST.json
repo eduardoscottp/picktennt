@@ -1,0 +1,1032 @@
+{
+  "recorded_at": "2026-10-28T23:00:20.446Z",
+  "mode": "reviewed_source_checkpoint_NO_STAGING_COMMIT_PUSH_OR_DEPLOY",
+  "repository": "app",
+  "branch": "codex/tournament-builder-mvp",
+  "head": "d3821bd29d9de851cea2e0491dd622aa72fc523b",
+  "remote": "https://github.com/eduardoscottp/picktennt.git",
+  "confirmed_remote_refs": {
+    "master": "137b5e08e5880973a51025dfabafcac0a32547a0",
+    "session_games": "d3821bd29d9de851cea2e0491dd622aa72fc523b",
+    "main_ios": "cca7fa7189f5ab9bc4405a815e5d3ab1558e3cef"
+  },
+  "current_upstream": "origin/codex/session-games",
+  "source_preservation": {
+    "original_backend": {
+      "branch": "codex/session-games",
+      "head": "d3821bd29d9de851cea2e0491dd622aa72fc523b",
+      "dirty": [
+        " M scripts/test-session-games.mjs",
+        "?? supabase/.temp/",
+        "?? supabase/migrations/013_session_games_v2.sql"
+      ],
+      "modified_by_this_audit": false
+    },
+    "alternate_coding_checkout": {
+      "dirty": [],
+      "modified_by_this_audit": false
+    }
+  },
+  "counts": {
+    "all_dirty": 145,
+    "candidate_mvp": 128,
+    "held": 17
+  },
+  "candidate_paths": [
+    ".gitignore",
+    ".vercelignore",
+    "app/(app)/dashboard/page.tsx",
+    "app/(app)/tournaments/[id]/admin/page.tsx",
+    "app/(app)/tournaments/[id]/builder/page.tsx",
+    "app/(app)/tournaments/[id]/leaderboard/page.tsx",
+    "app/(app)/tournaments/[id]/matches/page.tsx",
+    "app/(app)/tournaments/[id]/page.tsx",
+    "app/(app)/tournaments/build/page.tsx",
+    "app/.well-known/oauth-authorization-server/route.ts",
+    "app/.well-known/oauth-protected-resource/api/mcp/route.ts",
+    "app/.well-known/oauth-protected-resource/route.ts",
+    "app/api/mcp/route.ts",
+    "app/api/tournament-builder/[id]/commands/route.ts",
+    "app/api/tournament-builder/[id]/owner-preview/route.ts",
+    "app/api/tournament-builder/[id]/preview/route.ts",
+    "app/api/tournament-builder/[id]/route.ts",
+    "app/api/tournament-builder/drafts/route.ts",
+    "app/api/tournament-builder/players/lookup/route.ts",
+    "app/join/[code]/page.tsx",
+    "app/oauth/authorize/route.ts",
+    "app/oauth/connections/route.ts",
+    "app/oauth/register/route.ts",
+    "app/oauth/revoke/route.ts",
+    "app/oauth/token/route.ts",
+    "components/tournament-builder/builder.tsx",
+    "components/tournament-builder/draft-policy-editor.tsx",
+    "components/tournament-builder/impact-review.tsx",
+    "components/tournament-builder/match-card.tsx",
+    "components/tournament-builder/match-presentation.ts",
+    "components/tournament-builder/new-draft.tsx",
+    "components/tournament-builder/operations.ts",
+    "components/tournament-builder/owner-administrators.tsx",
+    "components/tournament-builder/registered-entry.tsx",
+    "components/tournament-builder/use-command.tsx",
+    "components/tournament/tournament-bottom-nav.tsx",
+    "docs/evidence/admin-one-click-validation-local-2026-10-28.json",
+    "docs/evidence/direct-score-browser-local-2026-10-28.json",
+    "docs/evidence/guest-enrollment-browser-local-2026-10-28.json",
+    "docs/evidence/hosted-acceptance-2026-10-28.json",
+    "docs/evidence/no-rest-browser-local-2026-10-28.json",
+    "docs/evidence/normal-tournament-routes-local-2026-10-28.json",
+    "docs/evidence/owner-admin-browser-local-2026-10-28.json",
+    "docs/evidence/owner-release-2026-10-28.json",
+    "docs/evidence/real-account-ui-local-2026-10-28.json",
+    "docs/evidence/registered-account-admin-mcp-local-2026-10-28.json",
+    "docs/tournament-builder-release.md",
+    "lib/tournament-builder/catalog.ts",
+    "lib/tournament-builder/commands.ts",
+    "lib/tournament-builder/corrections.ts",
+    "lib/tournament-builder/definition-schema.ts",
+    "lib/tournament-builder/definition.ts",
+    "lib/tournament-builder/entry-roster.ts",
+    "lib/tournament-builder/http.ts",
+    "lib/tournament-builder/mcp-admin.ts",
+    "lib/tournament-builder/mcp-http.ts",
+    "lib/tournament-builder/mcp-owner.ts",
+    "lib/tournament-builder/mcp.ts",
+    "lib/tournament-builder/modules/elimination.ts",
+    "lib/tournament-builder/modules/placements.ts",
+    "lib/tournament-builder/modules/round-robin.ts",
+    "lib/tournament-builder/navigation.ts",
+    "lib/tournament-builder/oauth-server.ts",
+    "lib/tournament-builder/oauth.ts",
+    "lib/tournament-builder/owner-actions.ts",
+    "lib/tournament-builder/page-loader.ts",
+    "lib/tournament-builder/policies.ts",
+    "lib/tournament-builder/preview.ts",
+    "lib/tournament-builder/repository.ts",
+    "lib/tournament-builder/requests.ts",
+    "lib/tournament-builder/runtime.ts",
+    "lib/tournament-builder/server-page.tsx",
+    "lib/tournament-builder/types.ts",
+    "lib/tournament-builder/validate.ts",
+    "package-lock.json",
+    "package.json",
+    "scripts/tournament-builder/README.md",
+    "scripts/tournament-builder/hosted-acceptance.mjs",
+    "scripts/tournament-builder/hosted-concurrency.mjs",
+    "scripts/tournament-builder/setup-staging.mjs",
+    "scripts/tournament-builder/staging-baseline.sql",
+    "supabase/migrations/202610280001_tournament_builder.sql",
+    "supabase/migrations/202610280002_tournament_connector_oauth.sql",
+    "supabase/migrations/202610280003_tournament_admin_rest_override.sql",
+    "supabase/migrations/202610280004_remove_tournament_rest_constraint.sql",
+    "supabase/migrations/202610280005_tournament_guest_entries.sql",
+    "supabase/migrations/202610280006_require_picktennt_accounts.sql",
+    "supabase/migrations/202610280007_tournament_registered_entries.sql",
+    "supabase/migrations/202610280008_tournament_connector_administration.sql",
+    "supabase/migrations/202610280009_tournament_connector_owner_actions.sql",
+    "supabase/migrations/202610280010_tournament_administrator_management.sql",
+    "tests/e2e/README.md",
+    "tests/e2e/oauth-consent-origin.ts",
+    "tests/e2e/tournament-smoke.ts",
+    "tests/tournament-builder/account-policy.test.ts",
+    "tests/tournament-builder/administrator-commands.test.ts",
+    "tests/tournament-builder/administrator-storage.test.ts",
+    "tests/tournament-builder/commands.test.ts",
+    "tests/tournament-builder/connector-admin-storage.test.ts",
+    "tests/tournament-builder/corrections-storage.test.ts",
+    "tests/tournament-builder/corrections.test.ts",
+    "tests/tournament-builder/definition-contract.test.ts",
+    "tests/tournament-builder/definition.test.ts",
+    "tests/tournament-builder/draft-policy-editor.test.ts",
+    "tests/tournament-builder/fixtures/tournament-definition.json",
+    "tests/tournament-builder/helpers/storage-db.ts",
+    "tests/tournament-builder/hosted-acceptance.test.ts",
+    "tests/tournament-builder/match-ui.test.ts",
+    "tests/tournament-builder/mcp-http.test.ts",
+    "tests/tournament-builder/mcp-owner-storage.test.ts",
+    "tests/tournament-builder/mcp-owner.test.ts",
+    "tests/tournament-builder/mcp.test.ts",
+    "tests/tournament-builder/navigation.test.ts",
+    "tests/tournament-builder/oauth-server.test.ts",
+    "tests/tournament-builder/oauth-storage.test.ts",
+    "tests/tournament-builder/oauth.test.ts",
+    "tests/tournament-builder/owner-actions.test.ts",
+    "tests/tournament-builder/policies.test.ts",
+    "tests/tournament-builder/preview.test.ts",
+    "tests/tournament-builder/registered-storage.test.ts",
+    "tests/tournament-builder/repository.test.ts",
+    "tests/tournament-builder/requests.test.ts",
+    "tests/tournament-builder/rest-override-storage.test.ts",
+    "tests/tournament-builder/runtime.test.ts",
+    "tests/tournament-builder/staging-baseline.test.ts",
+    "tests/tournament-builder/storage.test.ts",
+    "tests/tournament-builder/tournament-views.test.ts",
+    "tests/tournament-builder/ui-operations.test.ts"
+  ],
+  "held": [
+    {
+      "status": " M",
+      "path": "AGENTS.md",
+      "classification": "hold_generated_agent_metadata",
+      "sha256": "ec1b6e023814ae1a510b02ea62229e5eb035d75e39e3335d5ea7f5ce5654d567"
+    },
+    {
+      "status": " M",
+      "path": "next.config.ts",
+      "classification": "hold_master_legal_prerequisite",
+      "sha256": "cc7a5bcb03f81be9015db28cb6d53738b523b808567fa2317e5a7b9fd5116855"
+    },
+    {
+      "status": "??",
+      "path": "app/ios/layout.tsx",
+      "classification": "hold_master_legal_prerequisite",
+      "sha256": "8ae31308bc70cf808715551284b2fe87ac53f167db2bb20cc5e22a4005ca7868"
+    },
+    {
+      "status": "??",
+      "path": "app/ios/privacy/page.tsx",
+      "classification": "hold_master_legal_prerequisite",
+      "sha256": "c7ad84d8a0ce91318f226f5a88ae5456865d480787d9f65ff16e7fdaafd82e99"
+    },
+    {
+      "status": "??",
+      "path": "app/ios/terms/page.tsx",
+      "classification": "hold_master_legal_prerequisite",
+      "sha256": "87874ded8cf3de796bf7e19a74e66fb44346ec4480e56e862d2a855c3a8e821f"
+    },
+    {
+      "status": "??",
+      "path": "app/policy/page.tsx",
+      "classification": "hold_master_legal_prerequisite",
+      "sha256": "2138875f3c26e44689cb2eeb39c70d8b5482471ebf1338412259ea8dabcc4867"
+    },
+    {
+      "status": "??",
+      "path": "app/support/page.tsx",
+      "classification": "hold_master_legal_prerequisite",
+      "sha256": "45d69dea8b2c1619398c2aa05caf00066deee07dea125c8aae42f6b524e20b4d"
+    },
+    {
+      "status": "??",
+      "path": "components/legal/legal-document.tsx",
+      "classification": "hold_master_legal_prerequisite",
+      "sha256": "51af163b6ce6488b508679507e465e66a543b5f043bac3496f098a6a7b9a7427"
+    },
+    {
+      "status": "??",
+      "path": "content/legal/ios/privacy-policy.md",
+      "classification": "hold_master_legal_prerequisite",
+      "sha256": "c3bf7b0a5c9cd2ef696bc69b3c8832b4c644d96bb90fd028f67df59eb565721d"
+    },
+    {
+      "status": "??",
+      "path": "content/legal/ios/privacy.json",
+      "classification": "hold_master_legal_prerequisite",
+      "sha256": "9c41b30fb29c7afcd86f5c4d1066dc2b95dac30544807d09fa1cf937ec62224e"
+    },
+    {
+      "status": "??",
+      "path": "content/legal/ios/publication.json",
+      "classification": "hold_master_legal_prerequisite",
+      "sha256": "56e85d50ca50a396eb83bbe3e6d176f366bb1fd9531549fcc891631833261cdf"
+    },
+    {
+      "status": "??",
+      "path": "content/legal/ios/terms-of-use.md",
+      "classification": "hold_master_legal_prerequisite",
+      "sha256": "5ed577f53ae057335dd0dc0c74c597b28d0980cad4e5f09fdf0fd914c173f23a"
+    },
+    {
+      "status": "??",
+      "path": "content/legal/ios/terms.json",
+      "classification": "hold_master_legal_prerequisite",
+      "sha256": "cc5660703792ebb5b81f34fe12583d45a3a6413f423973d162c18cc2c68d6959"
+    },
+    {
+      "status": "??",
+      "path": "docs/legal/README.md",
+      "classification": "hold_master_legal_prerequisite",
+      "sha256": "df526865af40303bc4f77d76ce47390d4a16029613f19b63a942bf9f1c1779fb"
+    },
+    {
+      "status": "??",
+      "path": "scripts/legal/build-documents.mjs",
+      "classification": "hold_master_legal_prerequisite",
+      "sha256": "af5e42097a0a4ef1f74f05b8b98579a0f55cc3ab6c594e8a1469c5b533dc4c7d"
+    },
+    {
+      "status": "??",
+      "path": "scripts/tournament-builder/add-two-specific-test-players.mjs",
+      "classification": "hold_local_production_operation",
+      "sha256": "625a4ca7ab475895c8db60f3987dccd85b897a1bc7834a60b26051adefd8fac9"
+    },
+    {
+      "status": "??",
+      "path": "scripts/tournament-builder/check-user-test.mjs",
+      "classification": "hold_local_production_operation",
+      "sha256": "2a7459993152e552a3f7bdc3f0673015cdfca57c4d3216e732334d5babb6e3b6"
+    }
+  ],
+  "candidate_file_hashes": [
+    {
+      "path": ".gitignore",
+      "sha256": "c63cc73fe70df4a47ba281e5c469c92a419a4cd4ec2434f321d6b77cba5f7b33",
+      "status": " M"
+    },
+    {
+      "path": ".vercelignore",
+      "sha256": "d1d9cd2aabb1ccff1e4468accc8f9f4639464767d451bdbbae9c09ad2d4cec5e",
+      "status": "??"
+    },
+    {
+      "path": "app/(app)/dashboard/page.tsx",
+      "sha256": "572107134469a0eca79ae6db1852aa2bf9074b4b871dae0a744615df45930541",
+      "status": " M"
+    },
+    {
+      "path": "app/(app)/tournaments/[id]/admin/page.tsx",
+      "sha256": "388bb0aa978219ac4c506d70237b279e991552b3a5ebe376e1b3bcaf0799c388",
+      "status": " M"
+    },
+    {
+      "path": "app/(app)/tournaments/[id]/builder/page.tsx",
+      "sha256": "6679052dc9389a7856ded5e024c26b5997f7b21cccb6df02354b883219d3e1ff",
+      "status": "??"
+    },
+    {
+      "path": "app/(app)/tournaments/[id]/leaderboard/page.tsx",
+      "sha256": "691f453689adf8c35e3b58956ec6272a3badb8f5142dbe95960dbc189bb5c385",
+      "status": " M"
+    },
+    {
+      "path": "app/(app)/tournaments/[id]/matches/page.tsx",
+      "sha256": "6c7e4ed047f31457ec1f52debb00b150f701be4de7488dd89a27eefa312b09d7",
+      "status": " M"
+    },
+    {
+      "path": "app/(app)/tournaments/[id]/page.tsx",
+      "sha256": "6995332e87dc18563fd921402bd2b36575cf452096c849cc9bbbc7d3384fe223",
+      "status": " M"
+    },
+    {
+      "path": "app/(app)/tournaments/build/page.tsx",
+      "sha256": "2b72a7de03d36ff776b1c6dc70c7f98b19137ae8ff81f8a2471a688a739d39e9",
+      "status": "??"
+    },
+    {
+      "path": "app/.well-known/oauth-authorization-server/route.ts",
+      "sha256": "1c0c64ee1ab20c5e734b278423f8a94f7c561325f1f06c59edf4764760380c0d",
+      "status": "??"
+    },
+    {
+      "path": "app/.well-known/oauth-protected-resource/api/mcp/route.ts",
+      "sha256": "af8229a73380df10d10693065267f2a244456d61c244c9e3faaab8d50abe1d22",
+      "status": "??"
+    },
+    {
+      "path": "app/.well-known/oauth-protected-resource/route.ts",
+      "sha256": "4915febc8d93ecea7146e6b5482c8c8791ecfea86ca02e9c723881a909cb8295",
+      "status": "??"
+    },
+    {
+      "path": "app/api/mcp/route.ts",
+      "sha256": "9c957b0adbf612f0028dd19adb2005d9db77759e045439d341345cb1155cc559",
+      "status": "??"
+    },
+    {
+      "path": "app/api/tournament-builder/[id]/commands/route.ts",
+      "sha256": "bb8453e40f2120f257b421f4f68eb9a0d83c83f564969e77b5df94c56b5ea9b1",
+      "status": "??"
+    },
+    {
+      "path": "app/api/tournament-builder/[id]/owner-preview/route.ts",
+      "sha256": "ca75172119040cbecd3a8487de225c42bf08fc7f5be001307fdcf50a5c53e0bc",
+      "status": "??"
+    },
+    {
+      "path": "app/api/tournament-builder/[id]/preview/route.ts",
+      "sha256": "1f5df50df3115a68494dd998662eee744bf97b1b9ca75eff8dbaaff81d2d8d5a",
+      "status": "??"
+    },
+    {
+      "path": "app/api/tournament-builder/[id]/route.ts",
+      "sha256": "7a7fb62f809f257080532d01ee6e4ab612a4823ba4a36aa9eae5aedafe25ad6a",
+      "status": "??"
+    },
+    {
+      "path": "app/api/tournament-builder/drafts/route.ts",
+      "sha256": "277b7647e2341dc55d6fb760d2d0924fbf0eb6807e1af321aeb067aa8ffb65df",
+      "status": "??"
+    },
+    {
+      "path": "app/api/tournament-builder/players/lookup/route.ts",
+      "sha256": "d9c5ce81fec468af123f47f2baa6b8b4b20da44340c9680e98fa27a9326ef03e",
+      "status": "??"
+    },
+    {
+      "path": "app/join/[code]/page.tsx",
+      "sha256": "11e7d204d491ddaa8867a5f09655be368ae96a297a548f2a738b8f26f095ec19",
+      "status": " M"
+    },
+    {
+      "path": "app/oauth/authorize/route.ts",
+      "sha256": "17fc62d9d08d7a56069d69f7781cf1770c880ede3108ea100d947790a53acae9",
+      "status": "??"
+    },
+    {
+      "path": "app/oauth/connections/route.ts",
+      "sha256": "99d786e939cf5461f38c482150c2743e60aad1e34e0f4ca18803882bb51652b2",
+      "status": "??"
+    },
+    {
+      "path": "app/oauth/register/route.ts",
+      "sha256": "8e09f89528d72e57513d511266de40649a8e8409b5b33f77b70fa3cacf4f1829",
+      "status": "??"
+    },
+    {
+      "path": "app/oauth/revoke/route.ts",
+      "sha256": "afff4c182aac834f90036f621d54ff4a1f2cde95c1b696fefbc89805c8993b10",
+      "status": "??"
+    },
+    {
+      "path": "app/oauth/token/route.ts",
+      "sha256": "c50382d5c95315c31cf13ebd7bfb91c9ebc115d91353ed2320dc27c9812d31c1",
+      "status": "??"
+    },
+    {
+      "path": "components/tournament-builder/builder.tsx",
+      "sha256": "7f440d393190c0fb7dc82a7a7235ba27095727cc52528c31ff5d9b04b1ceb368",
+      "status": "??"
+    },
+    {
+      "path": "components/tournament-builder/draft-policy-editor.tsx",
+      "sha256": "b8f51cfab92e91ff507208b88ec4a26ec9e9ae6c912b21c3de4544109b3f40e0",
+      "status": "??"
+    },
+    {
+      "path": "components/tournament-builder/impact-review.tsx",
+      "sha256": "6b533453a58127d4547ece2332b82b38865bf1df6b3ea4819f3728101ae2d6ad",
+      "status": "??"
+    },
+    {
+      "path": "components/tournament-builder/match-card.tsx",
+      "sha256": "d52cbaedb70fa802c70c2281b7f2eae62850e7dd957a3fcdd3420629e98c114e",
+      "status": "??"
+    },
+    {
+      "path": "components/tournament-builder/match-presentation.ts",
+      "sha256": "6af80d377657f993a894adab1821831a09ba7c9b00b5599b5af5dfa7a4993ad3",
+      "status": "??"
+    },
+    {
+      "path": "components/tournament-builder/new-draft.tsx",
+      "sha256": "dbec0e32fdc02b738a4787407ba1f85808d8919e700849e3dfbc99e77d8edb28",
+      "status": "??"
+    },
+    {
+      "path": "components/tournament-builder/operations.ts",
+      "sha256": "86d18ea8dea9324d37c38b8c72fa1bcf9a478b2e96a19ec8e9049a564e418f09",
+      "status": "??"
+    },
+    {
+      "path": "components/tournament-builder/owner-administrators.tsx",
+      "sha256": "98a35041982bae27146bfccae4839ff82a16f076e3ddc8b0f9bace4a9bef6141",
+      "status": "??"
+    },
+    {
+      "path": "components/tournament-builder/registered-entry.tsx",
+      "sha256": "088a00d035afb4f6828efd0aa69ff9f4fe54e145fab5f2a11e2fa1f1421cf6b7",
+      "status": "??"
+    },
+    {
+      "path": "components/tournament-builder/use-command.tsx",
+      "sha256": "b3f07b86d97c0d02729ef2b05d03106fc1d32dc6d9b63f3d11cdd4daffa70881",
+      "status": "??"
+    },
+    {
+      "path": "components/tournament/tournament-bottom-nav.tsx",
+      "sha256": "686a579f31d65cf69e6ebee33bfa330297a6db3908f5041729246f67b4293e4c",
+      "status": " M"
+    },
+    {
+      "path": "docs/evidence/admin-one-click-validation-local-2026-10-28.json",
+      "sha256": "cf3f9c997d1440b9c57ca203a95246ef6a7cb9641072f165e7350833fbc919cd",
+      "status": "??"
+    },
+    {
+      "path": "docs/evidence/direct-score-browser-local-2026-10-28.json",
+      "sha256": "a1c93dce4f1f7a3fcc90c3c51c900679395222ee7bfece1d9018daf22c5a0eba",
+      "status": "??"
+    },
+    {
+      "path": "docs/evidence/guest-enrollment-browser-local-2026-10-28.json",
+      "sha256": "ea5651b036324f67fda10cc61e3e8c5dc038eed5e8c55551071fb09d43460a34",
+      "status": "??"
+    },
+    {
+      "path": "docs/evidence/hosted-acceptance-2026-10-28.json",
+      "sha256": "55f0f8a8e59880f624adff2aadc0aa23abfedc932c480927cbcb76d707cef024",
+      "status": "??"
+    },
+    {
+      "path": "docs/evidence/no-rest-browser-local-2026-10-28.json",
+      "sha256": "44157ef78cfbc38ad03587a80f32b2bdecc406089afc05fe2f644f27a92876f2",
+      "status": "??"
+    },
+    {
+      "path": "docs/evidence/normal-tournament-routes-local-2026-10-28.json",
+      "sha256": "62c766c18da8445fe939baa652c52954fe75c7c1a46d1c737b21a1b6125746a0",
+      "status": "??"
+    },
+    {
+      "path": "docs/evidence/owner-admin-browser-local-2026-10-28.json",
+      "sha256": "af5790859b20ac1b463436f4d6629b3128e359c582a79f5e9cd879276fbf2b55",
+      "status": "??"
+    },
+    {
+      "path": "docs/evidence/owner-release-2026-10-28.json",
+      "sha256": "c370bfd0470feb71e80b4bbbe7bcbfa3bed75b4b190d732197f4ab6eed9b73eb",
+      "status": "??"
+    },
+    {
+      "path": "docs/evidence/real-account-ui-local-2026-10-28.json",
+      "sha256": "e1a2ead02a3c74ee8e6568559ddc2020ef0a0f47821002f67221fc177ef6ca41",
+      "status": "??"
+    },
+    {
+      "path": "docs/evidence/registered-account-admin-mcp-local-2026-10-28.json",
+      "sha256": "3dec41df3cac5d20f4d51622fcaa3e168f42cecf5a1764264844ddf955705213",
+      "status": "??"
+    },
+    {
+      "path": "docs/tournament-builder-release.md",
+      "sha256": "5f7e9febeb0334bee2cae05e4686dd58e3f48cef3b8700bd8592d7bfea47619a",
+      "status": "??"
+    },
+    {
+      "path": "lib/tournament-builder/catalog.ts",
+      "sha256": "7e591adb39b8e6406771779e707323d21d92ff76ad28ca1dbebf3c5ae9f3a581",
+      "status": "??"
+    },
+    {
+      "path": "lib/tournament-builder/commands.ts",
+      "sha256": "0e15cfc6007b8e8210efa682de3a5a14d77a0df4e159f18aeb872ce82f5ab31f",
+      "status": "??"
+    },
+    {
+      "path": "lib/tournament-builder/corrections.ts",
+      "sha256": "a51f3a200022a298eb29b4a181c3494fdfd8a27c10292aca0e30e3e7f56d0e05",
+      "status": "??"
+    },
+    {
+      "path": "lib/tournament-builder/definition-schema.ts",
+      "sha256": "27779c21428659a78ba806fe908543f7b6412d4fe02e647982a373777d098e09",
+      "status": "??"
+    },
+    {
+      "path": "lib/tournament-builder/definition.ts",
+      "sha256": "5d5151fb8651e7c3ddc92ad92abf462fd0a674de74a6be85d009b12d0700f151",
+      "status": "??"
+    },
+    {
+      "path": "lib/tournament-builder/entry-roster.ts",
+      "sha256": "6093e1c90021b4c066682f6637c509d7ba9384c27f1da121410e4a9e2dacd0c8",
+      "status": "??"
+    },
+    {
+      "path": "lib/tournament-builder/http.ts",
+      "sha256": "1833d9bbc80d269832e5e6f9acbdd304929bb4eff22e186e31d863ecdc68c792",
+      "status": "??"
+    },
+    {
+      "path": "lib/tournament-builder/mcp-admin.ts",
+      "sha256": "f1e7325bf88454f8bd08c50c03c2f3174eea1ff5e266d40f043b79a145e2d6e7",
+      "status": "??"
+    },
+    {
+      "path": "lib/tournament-builder/mcp-http.ts",
+      "sha256": "c8699382e3b569337ed5dfdbed652bffff39b85abaae56f35fe314896e48ad4e",
+      "status": "??"
+    },
+    {
+      "path": "lib/tournament-builder/mcp-owner.ts",
+      "sha256": "722cccee4f8df9bfcc34ab1134a8a16bb872154b9416ae24ae57d1306106a40c",
+      "status": "??"
+    },
+    {
+      "path": "lib/tournament-builder/mcp.ts",
+      "sha256": "1159acba2a6e43fed3800a03030ef5b82472a60580c73c32a848c90549e59577",
+      "status": "??"
+    },
+    {
+      "path": "lib/tournament-builder/modules/elimination.ts",
+      "sha256": "82e26cadba1be6f29c7f21bdca2e863f33892c87d83479eadeeb0259ee5023b6",
+      "status": "??"
+    },
+    {
+      "path": "lib/tournament-builder/modules/placements.ts",
+      "sha256": "905e3cb9fd0627a0dbc54c50db634f80e9cc2f681e5107e9e39e645d172fcfd3",
+      "status": "??"
+    },
+    {
+      "path": "lib/tournament-builder/modules/round-robin.ts",
+      "sha256": "90755dcfdfdf5b0f875f3211384ff4cd20fc1248168293871efa2d58f6b72637",
+      "status": "??"
+    },
+    {
+      "path": "lib/tournament-builder/navigation.ts",
+      "sha256": "4337b1bb91f8b4c1250caa645f0e7c7fe5f9feb4702584acbcbf9fb85c141e0e",
+      "status": "??"
+    },
+    {
+      "path": "lib/tournament-builder/oauth-server.ts",
+      "sha256": "628651fa12bae48ba83278fb56afe4bcf0f80cbaf6c07024a2202beeac59ea56",
+      "status": "??"
+    },
+    {
+      "path": "lib/tournament-builder/oauth.ts",
+      "sha256": "a06dc5f4d9d0f63c77050e8a463ed96cf5d5cf8059705fc4dbbda352b9c39e27",
+      "status": "??"
+    },
+    {
+      "path": "lib/tournament-builder/owner-actions.ts",
+      "sha256": "c987a223addd913b43ba1746d46766f8a76ad74b50120cf01e8c693ba2522594",
+      "status": "??"
+    },
+    {
+      "path": "lib/tournament-builder/page-loader.ts",
+      "sha256": "06a85636885291d01b168e9de394386b9858053ddb4a33335f14b7987c2f4586",
+      "status": "??"
+    },
+    {
+      "path": "lib/tournament-builder/policies.ts",
+      "sha256": "94bc360a506bf3b2bb03554d896a1b61031630c4f6d34ee484c25531feb236ef",
+      "status": "??"
+    },
+    {
+      "path": "lib/tournament-builder/preview.ts",
+      "sha256": "c11ca65436fd52b6881d71da4ac9a2cdc7d0cf42522b82b663f506c54b7eaa76",
+      "status": "??"
+    },
+    {
+      "path": "lib/tournament-builder/repository.ts",
+      "sha256": "ccab431238410580bff85e8dd41772b7fe2cb737b6ff96ec0b76e515e606ab0b",
+      "status": "??"
+    },
+    {
+      "path": "lib/tournament-builder/requests.ts",
+      "sha256": "ce154372b010840b1f207a13e73e41ad0bf0183ede276fb4d9ec73b6bcf1ed5f",
+      "status": "??"
+    },
+    {
+      "path": "lib/tournament-builder/runtime.ts",
+      "sha256": "7a91ea66b5ca48deb7c6aff00ac30635f24862f2f26edc2f2dfca5cebe93b0bd",
+      "status": "??"
+    },
+    {
+      "path": "lib/tournament-builder/server-page.tsx",
+      "sha256": "3660675e354faee141f7fe3ddebd1a3f9de6e6397e2f221cfd75faba71ce4a8b",
+      "status": "??"
+    },
+    {
+      "path": "lib/tournament-builder/types.ts",
+      "sha256": "df46fbe2200435679a3ffbfc864c72cd29b5130c3d165620e4cf3ed362ad0ad5",
+      "status": "??"
+    },
+    {
+      "path": "lib/tournament-builder/validate.ts",
+      "sha256": "9435f031e02ed4c53b0f6779c1e70deee03db1bc49f15b57d184f9e3215e0e0e",
+      "status": "??"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "77a1b2f81531f5419c8e7f193924d762635a39e260063db119b67496771d7e24",
+      "status": " M"
+    },
+    {
+      "path": "package.json",
+      "sha256": "f9968d84922d0198b6bf54fc7f0d034dbeae664108a1af0483cf7a6d3bbeebec",
+      "status": " M"
+    },
+    {
+      "path": "scripts/tournament-builder/README.md",
+      "sha256": "36cb5a4b3dcf566cc3ab139129c555785c10dd0b5a6d053b84b4946c62fbec0e",
+      "status": "??"
+    },
+    {
+      "path": "scripts/tournament-builder/hosted-acceptance.mjs",
+      "sha256": "e774207ce85f6e87c72dd10b59b72ba80afeeb4a4e7bdf2fbd59f7e6fe57d01c",
+      "status": "??"
+    },
+    {
+      "path": "scripts/tournament-builder/hosted-concurrency.mjs",
+      "sha256": "649ecabe1db8e9269c9ad4672f33da677f133fffa06853c04e584ec6048731c9",
+      "status": "??"
+    },
+    {
+      "path": "scripts/tournament-builder/setup-staging.mjs",
+      "sha256": "d2b94dc0ad23719402e6b5152c6c722325eb85f9e18ccc6bf9981fbc1f4b2843",
+      "status": "??"
+    },
+    {
+      "path": "scripts/tournament-builder/staging-baseline.sql",
+      "sha256": "c5183a6900d7b6f6cb2ac854c1f2783501ed2af9c9da206672120b293e8acf58",
+      "status": "??"
+    },
+    {
+      "path": "supabase/migrations/202610280001_tournament_builder.sql",
+      "sha256": "61ba22b9bd67d7427cb4caff39f5b478c2b089ef34218244aebb2e20bb3a65d3",
+      "status": "??"
+    },
+    {
+      "path": "supabase/migrations/202610280002_tournament_connector_oauth.sql",
+      "sha256": "6d11a2d9e36663720afb5a8eccaebbc557b979a997e368a9fdc32972f20a6859",
+      "status": "??"
+    },
+    {
+      "path": "supabase/migrations/202610280003_tournament_admin_rest_override.sql",
+      "sha256": "3e1ae37dfa10bab3a65ab6afc1a41f0a4f8ee1b601f4e019943918d171cc2977",
+      "status": "??"
+    },
+    {
+      "path": "supabase/migrations/202610280004_remove_tournament_rest_constraint.sql",
+      "sha256": "2118492eed16f9df088db48e21496e0a5547376e3013d0ffeec780f1784f5ac3",
+      "status": "??"
+    },
+    {
+      "path": "supabase/migrations/202610280005_tournament_guest_entries.sql",
+      "sha256": "7991f93d074da1ba0717311320d9bd8a283557a500ad961d29e848afd9614cdf",
+      "status": "??"
+    },
+    {
+      "path": "supabase/migrations/202610280006_require_picktennt_accounts.sql",
+      "sha256": "c9fd3ea9dba70be1383a5df3f26067c7c17d7f86af0d29904a51ddf280fd3106",
+      "status": "??"
+    },
+    {
+      "path": "supabase/migrations/202610280007_tournament_registered_entries.sql",
+      "sha256": "48825b737da221b662208371c1f1b0dd1cf9effc75d48d13ac2dd6da92fd6fde",
+      "status": "??"
+    },
+    {
+      "path": "supabase/migrations/202610280008_tournament_connector_administration.sql",
+      "sha256": "7c3cd38e66ca53e9791651e4d8a53c8b4c8c39d786a386c5d4b4a51f5d642d28",
+      "status": "??"
+    },
+    {
+      "path": "supabase/migrations/202610280009_tournament_connector_owner_actions.sql",
+      "sha256": "21eeaf95284312a736defb514c720f209b5c52f2b31036fc2f77370dfda590a6",
+      "status": "??"
+    },
+    {
+      "path": "supabase/migrations/202610280010_tournament_administrator_management.sql",
+      "sha256": "7b529fca6f29269d4ac7104a13f3287468c9f05d7e8538720e5910a98120adb4",
+      "status": "??"
+    },
+    {
+      "path": "tests/e2e/README.md",
+      "sha256": "6c68de19cee4404a4e6b5a1549280ea8986d275e9d051c40f00587a446b04719",
+      "status": "??"
+    },
+    {
+      "path": "tests/e2e/oauth-consent-origin.ts",
+      "sha256": "ed2275ba138eb6382d7b797e543db6aaa844fc4e7b1267009c32bf86ea0f5657",
+      "status": "??"
+    },
+    {
+      "path": "tests/e2e/tournament-smoke.ts",
+      "sha256": "a1ce7e6dfbde33391319f51d0b2f08a2206f4d1bab577abda87d6c13b6b79516",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/account-policy.test.ts",
+      "sha256": "fb1590c645368e6ce86cb3aeb7905311317fe49c49a0e6132a99a77fe64c8f3f",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/administrator-commands.test.ts",
+      "sha256": "8f2e607ad94f42149485d96f0e22f3f293d3c7eff63e56aba493c54fcacbfc29",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/administrator-storage.test.ts",
+      "sha256": "5f49180944ca14c76c9a6c8673a34c95b16ba2b2bb8736cbe32a96aff3f57790",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/commands.test.ts",
+      "sha256": "dea6a00e32b6532ec5b3bb1ff9e589685f9a129c61e095bbb3ff9f36ed9fa818",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/connector-admin-storage.test.ts",
+      "sha256": "3de9448b003e9ff3436d5ddeb3ed6ee6af268e6e047a24453dd92c1a10b37d7e",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/corrections-storage.test.ts",
+      "sha256": "c06999541901a74dde32c671731cf68b75124be130245296491daf8908222e53",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/corrections.test.ts",
+      "sha256": "907909195a9d2af86a565aca7d73a027afb2bb2005aaa049864652d100396acf",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/definition-contract.test.ts",
+      "sha256": "2290f5df8155d03461eb5641bd15322936cb1bebc77f4d5df1c24ee00acfc693",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/definition.test.ts",
+      "sha256": "f2c23f343cd4bd0ef5cd259e8fb379a8d5f38fa1f2297ecae0abb815a478e219",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/draft-policy-editor.test.ts",
+      "sha256": "d3c786900758654a5704fa019b6508deeb0e4b73e90f1c7bb38e7015d9e0b26f",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/fixtures/tournament-definition.json",
+      "sha256": "2c633d1fbaf7bd82b13632b02f63e74025433349269227716a85ee679a83b53e",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/helpers/storage-db.ts",
+      "sha256": "667f968e36f1468e91b44d6856f0b5b21d620bac4b2cecee62f9a5dc09f32414",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/hosted-acceptance.test.ts",
+      "sha256": "6cf3bf32ba7e5fa6ad508ab4cbc87ed4fdfdbed05e82f131733eab62f4a51a72",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/match-ui.test.ts",
+      "sha256": "d17742f906483f140cb2331c01370d3037da715d8f1e84d91f23f89fc032106f",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/mcp-http.test.ts",
+      "sha256": "1af67a3cb33f2cf018a2c2719609e908938aef83c1937ae01016b3c8af874b05",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/mcp-owner-storage.test.ts",
+      "sha256": "d16fcdb64b36b0a07ad414da4eec406c3d578b6db5f6a6819e4ad5b272c42ffa",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/mcp-owner.test.ts",
+      "sha256": "d0c6248114e7a9e2aa43a00a203a0342eed682bd717148468e8c39261b5ee8c7",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/mcp.test.ts",
+      "sha256": "46723dfb1d49215c1b1a2e8c1c33859a1d31d4ec275e00f94660856ece75f074",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/navigation.test.ts",
+      "sha256": "f1ffe91f9079f16a50c064956bbadfa214ced77f3f5a952c209035af6c32b7e1",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/oauth-server.test.ts",
+      "sha256": "f4560024da0eecfe170b9a47887ce1fce1b77dcfdc35e5e4a113e4d70a3c3e42",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/oauth-storage.test.ts",
+      "sha256": "119bd0b11c450694167681be794b49842e877371b10d2d213090d9aa42f9dff6",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/oauth.test.ts",
+      "sha256": "bc024539ec7e6ed8c9ad0af14daee74d3574341717bffc0e64a07c483dff1e8e",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/owner-actions.test.ts",
+      "sha256": "71c73e9da6dd6972304edca881471e1ac9566128492dd56ae9691a0aca8194eb",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/policies.test.ts",
+      "sha256": "95f4f762c99495e71f097d6a40cf2ea4a36cafec30730a3c7c98d7c94d1aef61",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/preview.test.ts",
+      "sha256": "6b6a44adc13bf5339593d69b01b797ceec52aee98ce421f4087fe948d11e5f8b",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/registered-storage.test.ts",
+      "sha256": "d13318bdf65f6185c731d6f9949f6c21055786a5ca611b3529e5cf8ee44dc84d",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/repository.test.ts",
+      "sha256": "287d3d4afad6ca31f530608845df9d4f92764375f77c0032d823ab7bf240cefc",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/requests.test.ts",
+      "sha256": "73203def2550776fa19b1859165289ce3c3a7ec001fa0ffe99135f19f1818d22",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/rest-override-storage.test.ts",
+      "sha256": "9fb142303e696c4947785602c1fa03a606ee5d0e694b01cbef5a7c7676b8a6ff",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/runtime.test.ts",
+      "sha256": "efacebf85caac796b0ccd68e3430fb239f977851ff7f86833035f202ec182fb8",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/staging-baseline.test.ts",
+      "sha256": "e512ad751780512b9ed483111d7eedace2fbee1aec6def3e6b54290f672e097f",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/storage.test.ts",
+      "sha256": "45a90df2da436d6fb359aa01c7b08d20578bbe62a58fc76c11f0cde9e470854c",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/tournament-views.test.ts",
+      "sha256": "7cad08693bffafd997754711d76b9698d241b859e4311e0d55e93248da472934",
+      "status": "??"
+    },
+    {
+      "path": "tests/tournament-builder/ui-operations.test.ts",
+      "sha256": "f8d9895d9baa39429b80d134503ef0ea77e6a2f86efc1f5fd72458d682d8938d",
+      "status": "??"
+    }
+  ],
+  "legal_master_comparisons": [
+    {
+      "path": "next.config.ts",
+      "origin_master_git_blob": "e46b55f6284b7ccb090470f2eb9674c4ccd064bc",
+      "working_git_blob": "e46b55f6284b7ccb090470f2eb9674c4ccd064bc",
+      "identical": true
+    },
+    {
+      "path": "app/ios/layout.tsx",
+      "origin_master_git_blob": "716fb6ec7d9f3f965e4fe9f1bfe88182e99943a2",
+      "working_git_blob": "716fb6ec7d9f3f965e4fe9f1bfe88182e99943a2",
+      "identical": true
+    },
+    {
+      "path": "app/ios/privacy/page.tsx",
+      "origin_master_git_blob": "ba013020fde124e9720ebbea776e8819ce7eb9be",
+      "working_git_blob": "ba013020fde124e9720ebbea776e8819ce7eb9be",
+      "identical": true
+    },
+    {
+      "path": "app/ios/terms/page.tsx",
+      "origin_master_git_blob": "7479e15429f795fb82be714874d496c6038aa1c4",
+      "working_git_blob": "7479e15429f795fb82be714874d496c6038aa1c4",
+      "identical": true
+    },
+    {
+      "path": "app/policy/page.tsx",
+      "origin_master_git_blob": "f9895482f50d0d0db402fa37931df0d7b2534210",
+      "working_git_blob": "f9895482f50d0d0db402fa37931df0d7b2534210",
+      "identical": true
+    },
+    {
+      "path": "app/support/page.tsx",
+      "origin_master_git_blob": "d60487f13c32f09bd3b5e7b1afee18e1420f74d2",
+      "working_git_blob": "d60487f13c32f09bd3b5e7b1afee18e1420f74d2",
+      "identical": true
+    },
+    {
+      "path": "components/legal/legal-document.tsx",
+      "origin_master_git_blob": "f5f6a40faa20fd2ca358ef25c2733dfb6ca193c0",
+      "working_git_blob": "f5f6a40faa20fd2ca358ef25c2733dfb6ca193c0",
+      "identical": true
+    },
+    {
+      "path": "content/legal/ios/privacy-policy.md",
+      "origin_master_git_blob": "f75d5ef47e633ae10bb51ca0247cafce6eb04a08",
+      "working_git_blob": "f75d5ef47e633ae10bb51ca0247cafce6eb04a08",
+      "identical": true
+    },
+    {
+      "path": "content/legal/ios/privacy.json",
+      "origin_master_git_blob": "8df3007252c6413eb1a08120fd2c5b1b619d37a2",
+      "working_git_blob": "8df3007252c6413eb1a08120fd2c5b1b619d37a2",
+      "identical": true
+    },
+    {
+      "path": "content/legal/ios/publication.json",
+      "origin_master_git_blob": "4198b51744e7baeff7f659cd1beeefdac749a072",
+      "working_git_blob": "4198b51744e7baeff7f659cd1beeefdac749a072",
+      "identical": true
+    },
+    {
+      "path": "content/legal/ios/terms-of-use.md",
+      "origin_master_git_blob": "25a13ea9743855e1aada04cce1e875b736cf5972",
+      "working_git_blob": "25a13ea9743855e1aada04cce1e875b736cf5972",
+      "identical": true
+    },
+    {
+      "path": "content/legal/ios/terms.json",
+      "origin_master_git_blob": "40ba79b13647d11c3079df551d31e5b392c26e6d",
+      "working_git_blob": "40ba79b13647d11c3079df551d31e5b392c26e6d",
+      "identical": true
+    },
+    {
+      "path": "docs/legal/README.md",
+      "origin_master_git_blob": "3bee257b4435e8be44d1b61af887259f9bf5c5df",
+      "working_git_blob": "3bee257b4435e8be44d1b61af887259f9bf5c5df",
+      "identical": true
+    },
+    {
+      "path": "scripts/legal/build-documents.mjs",
+      "origin_master_git_blob": "80cd2b65fabc0685ceedaf9fc6cbc600d1ae5ff8",
+      "working_git_blob": "80cd2b65fabc0685ceedaf9fc6cbc600d1ae5ff8",
+      "identical": true
+    }
+  ],
+  "secret_pattern_scan": {
+    "scope": "All candidate source, reusable tests, sanitized evidence and release docs. Match contents never printed.",
+    "findings": [],
+    "synthetic_fixture_exceptions": [
+      {
+        "path": "tests/tournament-builder/hosted-acceptance.test.ts",
+        "pattern": "hardcoded_credential",
+        "classification": "Explicit synthetic test fixture; no live credential."
+      }
+    ],
+    "evidence_sensitive_value_findings": []
+  },
+  "sensitive_tracked_paths": [],
+  "caveat": "Final source frozen checkpoint with new owner browser evidence. Recheck hashes if any final docs/evidence change before staging. Audit did not stage, commit, push, or deploy.",
+  "previous_inventory_recorded_at": "2026-10-28T22:57:35.971Z",
+  "delta_from_previous_inventory": {
+    "added_paths": [
+      "docs/evidence/owner-admin-browser-local-2026-10-28.json"
+    ],
+    "removed_paths": [],
+    "changed_previously_allowlisted_paths": [
+      "docs/evidence/owner-release-2026-10-28.json",
+      "docs/tournament-builder-release.md"
+    ]
+  },
+  "sensitive_candidate_paths": [],
+  "prior_metadata_notice": "confirmed_remote_refs, source_preservation, and legal_master_comparisons retain the prior audit evidence; this refresh performed no network requests or writes outside these inventories.",
+  "staging_instruction": "From app/, load candidate_paths and use git --literal-pathspecs add -- followed by only those exact paths after authorization and a final hash check. Do not stage held files or root/nested repositories together.",
+  "checkpoint": {
+    "exact_feature_files": 128,
+    "merged": false,
+    "remote_branch": "refs/heads/codex/tournament-builder-mvp",
+    "commit": "51adadeb181af6cdb3242bac3910308e27453aa0",
+    "remote_sha_verified": true
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "scope": "Guarded production database release and final application deployment",
+  "deployment": {"id": "dpl_B2XtEZgZcQwqKhsdVP7FxJ5MW4e4", "state": "READY", "url": "https://app.picktennt.com", "build": "passed", "typescript": "passed"},
+  "verification": {"automated_tests": 213, "automated_failures": 0, "isolated_browser_cases": 14, "scoped_lint": "passed", "oauth_metadata_http": 200, "advertised_scopes": ["tournaments:draft", "tournaments:admin", "tournaments:owner"], "unauthenticated_mcp_http": 401, "unauthenticated_build_admin_standings_http": 307},
+  "migrations": ["202610280009", "202610280010"],
+  "database": "existing authorized disposable production testing environment",
+  "event_id": "549b556b-3533-5b64-a89a-b4552294fa2b",
+  "event_revision": 43,
+  "event_core_preserved": true,
+  "row_counts_preserved": true,
+  "existing_grants_unchanged": true,
+  "function_security_preserved": true,
+  "source_md5_after": {
+    "tb_apply_command": "e1d8422859f530fa6d81f92b6f49c2fa",
+    "tb_get_snapshot": "f0b306b318ad8a5bcc83a2c2493acf11",
+    "tb_oauth_store": "ad1d724d34bd754779b99cef88d3fdc4",
+    "authorize": "2a5c84d903136f04a9927b6b99cb0084",
+    "snapshot": "051be61c62104de739b1a9d227dd16e5"
+  },
+  "limits": ["Existing assistant grants were not upgraded", "Does not establish actual Claude owner-tool use"]
+}

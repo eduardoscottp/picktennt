@@ -1,0 +1,61 @@
+{
+  "recorded_at": "2026-10-28T22:25:05.127Z",
+  "status": "local_verified_NOT_DEPLOYED_BY_THIS_AGENT",
+  "scope": "Native website registration of existing Picktennt profile identities and explicit admin OAuth consent through real localhost HTTP MCP commands and PGlite SQL.",
+  "ui": {
+    "registered_entry_form": "Current website owner/admin only during open registration. Exact usernames resolve existing profiles; no auth account, profile, or DUPR ID is created by the form.",
+    "disabled_cases": [
+      "unresolved or blank usernames",
+      "blank entry name",
+      "duplicate username or resolved profile IDs",
+      "profile already active/pending in this tournament",
+      "full capacity"
+    ],
+    "roster_semantics": "admin_definition_id bound to current definition plus registered_by renders Administrator enrolled · Picktennt account with actual display names. administrator admission_source is enrolled, not invited, and no personal acceptance count is invented.",
+    "historical_guests": "Existing labels/read compatibility retained."
+  },
+  "verification": {
+    "ui_and_navigation_tests": "18/18 pass",
+    "scoped_eslint": "pass",
+    "typescript": "pass",
+    "browser": {
+      "evidence": "local Next browser + PGlite SQL; simulated Supabase Auth/REST; no Google or host OAuth verification",
+      "cases": [
+        "Website creates and owner publishes an exact reviewed definition; published builder bookmark converges on Overview without a loop",
+        "Two independent browser accounts consent and enroll separately",
+        "Ordinary participant cannot open the server-gated Admin view",
+        "Admin lifecycle controls and Matches scoring render on their distinct normal routes",
+        "Administrator can save a scheduled game directly without Start, typed reason or competing provisional action",
+        "Administrator validates a saved player score with automatic audit note; interrupted response recovers without duplicate command",
+        "Administrator validation advances the tournament and final first/second placements render",
+        "Browser OAuth consent uses original native account, 303 GET callback, isolated opaque token and native revocation",
+        "Same OAuth client explicitly reconnects with native administrator consent; isolated bearer-only HTTP MCP lists admin tools and reads the completed tournament",
+        "Administrator resolves existing usernames and enrolls two real-profile identities without creating accounts or personal consent; duplicates, blank entry names and capacity are disabled",
+        "Native administrator OAuth grant drives real HTTP MCP result command through SQL and final placements; identical receipt replay does not duplicate the result",
+        "Separate synthetic final-placement fixture renders shared third place for both entries (render evidence only)"
+      ],
+      "status": "passed",
+      "completed_at": "2026-10-28T20:14:46.848Z"
+    },
+    "real_mcp_boundaries": [
+      "existing OAuth client explicitly reconsents to tournaments:admin via native form and PKCE",
+      "opaque token exists only in process memory",
+      "MCP uses separate browser context with no native account cookies",
+      "actual HTTP tools/list advertises admin_register_players and admin_save_result",
+      "actual HTTP admin_get_tournament reads original completed event with current owner role",
+      "native UI enrolls existing profile IDs through addRegisteredEntry and actual SQL007",
+      "membership administrator source recorded with null consent fields and no new auth users",
+      "native reviewed lifecycle then actual HTTP admin_save_result commits through command/SQL",
+      "identical operation receipt replay creates one result operation",
+      "actual HTTP snapshot and website Standings show both final placements"
+    ]
+  },
+  "limits": [
+    "All servers bind localhost; nonlocal fetches blocked.",
+    "Supabase Auth/REST adapter and native identities are simulated; database command logic runs in real PGlite PostgreSQL.",
+    "Local fixtures contain TEST DUPR values; no real remote DUPR linkage or actual ChatGPT/Claude account connection is claimed.",
+    "Shared-third fixture remains presentation-only."
+  ],
+  "production_schema_or_data_changes_by_this_agent": false,
+  "credentials_or_tokens_in_evidence": false
+}

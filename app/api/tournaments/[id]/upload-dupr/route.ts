@@ -14,7 +14,7 @@ import {
 } from "@/lib/dupr/client";
 import type { Match, Profile, Tournament } from "@/types/database";
 
-export async function POST(_request: Request, ctx: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -26,7 +26,20 @@ export async function POST(_request: Request, ctx: { params: Promise<{ id: strin
     .eq("tournament_id", id)
     .eq("user_id", user.id)
     .single();
-  if (!adminRow) return NextResponse.json({ error: "Not a tournament admin" }, { status: 403 });
+  const { data: event, error: eventError } = await supabase.from("tournaments")
+    .select("created_by,engine_version,modular_state,results_under_review,revision").eq("id", id).maybeSingle();
+  if (eventError) return NextResponse.json({ error: "Could not load tournament" }, { status: 503 });
+  const modular = event?.engine_version === "modular_v1";
+  if (!adminRow && !(modular && event.created_by === user.id)) return NextResponse.json({ error: "Not a tournament admin" }, { status: 403 });
+  if (modular && (event.modular_state !== "completed" || event.results_under_review)) {
+    return NextResponse.json({ error: "Complete the tournament and resolve results under review before DUPR submission" }, { status: 409 });
+  }
+  if (modular) {
+    const review = await request.json().catch(() => null);
+    if (!Number.isSafeInteger(review?.expected_revision) || review.expected_revision !== event.revision) {
+      return NextResponse.json({ error: "Tournament changed. Refresh and review DUPR submission again." }, { status: 409 });
+    }
+  }
 
   const admin = createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -54,19 +67,22 @@ export async function POST(_request: Request, ctx: { params: Promise<{ id: strin
   }
   const clubId = Number(clubIdEnv);
 
-  const { data: matchesRaw } = await admin
+  let matchQuery = admin
     .from("matches")
     .select("*")
     .eq("tournament_id", id)
     .eq("status", "validated")
     .eq("submit_to_dupr", true);
+  if (modular) matchQuery = matchQuery.eq("is_current", true).is("voided_at", null).is("excluded_at", null).eq("outcome_kind", "played");
+  const { data: matchesRaw, error: matchesError } = await matchQuery;
+  if (matchesError) return NextResponse.json({ error: "Could not load eligible matches" }, { status: 503 });
   const matches = (matchesRaw ?? []) as Match[];
 
   if (matches.length === 0) {
     return NextResponse.json({ error: "No validated matches to upload" }, { status: 409 });
   }
 
-  const userIds = await collectMatchUserIds(admin, matches);
+  const userIds = await collectMatchUserIds(admin, matches, modular);
 
   // Exclude non-playing admins from the DUPR submission
   const { data: nonPlayingAdmins } = await admin
@@ -75,7 +91,7 @@ export async function POST(_request: Request, ctx: { params: Promise<{ id: strin
     .eq("tournament_id", id)
     .eq("is_playing", false);
   const nonPlayingIds = new Set((nonPlayingAdmins ?? []).map((a: any) => a.user_id));
-  for (const uid of nonPlayingIds) userIds.delete(uid);
+  if (!modular) for (const uid of nonPlayingIds) userIds.delete(uid);
 
   const profiles = await fetchProfiles(admin, Array.from(userIds));
 
@@ -83,7 +99,10 @@ export async function POST(_request: Request, ctx: { params: Promise<{ id: strin
   const missing: Pick<Profile, "id" | "first_name" | "last_name" | "email">[] = [];
   for (const uid of userIds) {
     const p = profiles.get(uid);
-    if (!p) continue;
+    if (!p) {
+      if (modular) return NextResponse.json({ error: "An eligible match has a missing Picktennt profile" }, { status: 409 });
+      continue;
+    }
     if (!p.dupr_id || p.dupr_id.trim() === "") {
       missing.push({ id: p.id, first_name: p.first_name, last_name: p.last_name, email: p.email });
     }
@@ -112,7 +131,7 @@ export async function POST(_request: Request, ctx: { params: Promise<{ id: strin
   }
 
   // All gated. Submit each match.
-  const resolved = await resolveMatchPlayers(admin, matches, profiles);
+  const resolved = await resolveMatchPlayers(admin, matches, profiles, modular);
 
   type MatchDescriptor = {
     matchId: string;
@@ -149,6 +168,13 @@ export async function POST(_request: Request, ctx: { params: Promise<{ id: strin
 
   const submitted: MatchDescriptor[] = [];
   const failed: FailedMatch[] = [];
+
+  if (modular) {
+    const { data: current, error } = await admin.from("tournaments").select("revision,modular_state,results_under_review").eq("id", id).single();
+    if (error || current?.revision !== event.revision || current.modular_state !== "completed" || current.results_under_review) {
+      return NextResponse.json({ error: "Tournament changed. Refresh and review DUPR submission again." }, { status: 409 });
+    }
+  }
 
   for (const r of resolved) {
     const descriptor: MatchDescriptor = {
