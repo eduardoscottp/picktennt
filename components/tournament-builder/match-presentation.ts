@@ -5,6 +5,18 @@ import { generateRoundRobin } from "@/lib/tournament-builder/modules/round-robin
 import { resolvedDefinition } from "@/lib/tournament-builder/resolved-definition";
 
 type MatchSchedule = Pick<CommandSnapshot, "rounds" | "matches"> & Partial<Pick<CommandSnapshot, "stages" | "definitions" | "event">>;
+export function orderedMatches(matches: StorageRow[], rounds: StorageRow[], ownTeamIds: string[], prioritizeOwn: boolean, graph: boolean) {
+  const own = (match: StorageRow) => ownTeamIds.some(id => id === match.team_a_id || id === match.team_b_id);
+  const roundNumber = (match: StorageRow) => {
+    const round = rounds.find(row => row.id === match.round_id);
+    const localRound = graph ? /:r(\d+):/.exec(String(match.logical_key ?? ""))?.[1] : undefined;
+    const value = Number(localRound ?? round?.[graph ? "logical_wave" : "round_number"]);
+    return Number.isFinite(value) ? value : Infinity;
+  };
+  return matches.filter(match => match.is_current !== false && !match.voided_at).slice().sort((a, b) =>
+    (prioritizeOwn ? Number(own(b)) - Number(own(a)) : 0) || roundNumber(a) - roundNumber(b)
+  );
+}
 function graphMatch(match: StorageRow, schedule: MatchSchedule) {
   const definition = resolvedDefinition({ event: schedule.event ?? null, definitions: schedule.definitions ?? [], stages: schedule.stages ?? [] })?.definition as Record<string, unknown> | undefined;
   if (definition?.schema_version !== "2.0") return;
@@ -37,6 +49,42 @@ export function matchTitle(match: StorageRow, schedule: MatchSchedule): string {
     current = schedule.matches.find((row) => row.id === current?.bracket_next_winner_match_id);
   }
   return round?.round_type === "elimination" ? `Elimination · Round ${String(round.round_number)}` : "Match";
+}
+export function reachedStage(teamId: unknown, schedule: MatchSchedule): string | undefined {
+  if (typeof teamId !== "string" || !teamId) return undefined;
+  const labels = schedule.matches
+    .filter(match => match.is_current !== false && !match.voided_at && (match.team_a_id === teamId || match.team_b_id === teamId))
+    .map(match => {
+      const graph = graphMatch(match, schedule);
+      if (graph?.node.module === "match@1") {
+        const nodes = graph.definition.nodes as Record<string, unknown>[];
+        const placements = nodes.find(node => node.module === "placements@2");
+        const nodeId = String(graph.node.id);
+        if (placements?.bronze === nodeId) return "Third-place match";
+        let frontier = typeof placements?.final === "string" ? [placements.final] : [];
+        const visited = new Set<string>();
+        for (let distance = 0; frontier.length && distance < 4; distance++) {
+          if (frontier.includes(nodeId)) return ["Final", "Semifinal", "Quarterfinal", "Round of 16"][distance];
+          const next: string[] = [];
+          for (const id of frontier) {
+            if (visited.has(id)) continue;
+            visited.add(id);
+            const node = nodes.find(item => item.id === id && item.module === "match@1");
+            if (!Array.isArray(node?.inputs)) continue;
+            for (const input of node.inputs as Record<string, unknown>[]) {
+              if (input.kind === "winner" && typeof input.node_id === "string") next.push(input.node_id);
+            }
+          }
+          frontier = next;
+        }
+      }
+      return matchTitle(match, schedule);
+    });
+  if (labels.some(label => /^Final(?:\s|$|·)/i.test(label))) return "Final";
+  if (labels.some(label => /^Third-place match/i.test(label))) return "Third place";
+  if (labels.some(label => /^Semifinal/i.test(label))) return "Semifinal";
+  if (labels.some(label => /^Quarterfinal/i.test(label))) return "Quarterfinal";
+  return undefined;
 }
 export function unresolvedSideLabel(match: StorageRow, side: "a" | "b", schedule: MatchSchedule) {
   const graph = graphMatch(match, schedule);

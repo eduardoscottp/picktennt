@@ -1,23 +1,37 @@
 import { positionedMembers } from './individual-roster';
+import { isEligibleEntry } from './disciplinary-eligibility';
 import { guestPlayers, entryPlayerIds } from './entry-roster';
 import { isOwnerAction, requireReviewedOwnerAction } from './owner-actions';
 import { planGraphRuntime } from './graph-command-runtime';
 import { finalizeGraph, assignGroupSlots } from './group-finalization';
 import { resolvedDefinition } from './resolved-definition';
+import { planPlayerReplacement } from './player-replacement';
+import { planAdminFillPosition } from './admin-fill-position';
+import { planPlayerWithdrawal } from './player-withdrawal';
+import { planForcedPendingMatch } from './force-pending-match';
+import { planReplayTerminalMatch } from './replay-terminal-match';
+import { planAppendTerminalMatch } from './append-terminal-match';
 import { planRevision, planEventDetails } from './revisions';
 import { previewSchedule, generationOrder } from './schedule-preview';
 export type StorageRow = { id: string } & Record<string, unknown>;
-export interface CommandSnapshot { event: StorageRow | null; definitions: StorageRow[]; teams: StorageRow[]; team_members: StorageRow[]; tournament_players: StorageRow[]; stages: StorageRow[]; rounds: StorageRow[]; matches: StorageRow[]; standings: StorageRow[]; admins?: StorageRow[] }
+export interface CommandSnapshot { event: StorageRow | null; definitions: StorageRow[]; teams: StorageRow[]; team_members: StorageRow[]; tournament_players: StorageRow[]; stages: StorageRow[]; rounds: StorageRow[]; matches: StorageRow[]; standings: StorageRow[]; admins?: StorageRow[]; disciplinary_excluded_team_ids?: string[] }
 export interface CommandActor { id: string; clientId: string; grantId?: string; role?: 'owner' | 'admin' | 'player'; permissions?: readonly string[] }
 export interface CommandContext { now: string; id: () => string; draw?: (entryIds: readonly string[]) => string[] }
 export interface CommandEffects { event?: Record<string, unknown>; definition?: StorageRow; teams?: StorageRow[]; team_members?: StorageRow[]; tournament_players?: StorageRow[]; stages?: StorageRow[]; rounds?: StorageRow[]; matches?: StorageRow[]; standings?: StorageRow[]; replace_standings_stage_ids?: string[]; admin_change?: { action: 'add' | 'remove'; id: string; user_id: string } }
 export interface CommandPlan { effects: CommandEffects; result: Record<string, unknown> }
 const fields: Record<string, readonly string[]> = {
+  internalRuntime: [],
   createDraft: ['definition'], updateDraft: ['definition'], publishTournament: ['reviewed_definition_hash', 'acknowledged_warning_codes', 'confirmed_owner_action', 'reviewed_action_hash'],
   reviseTournament: ['definition', 'entries', 'reason', 'preview_hash'], updateEventDetails: ['name', 'venue_name', 'reason'],
   setDuprSubmission: ['match_id', 'enabled'],
   requestEntry: ['definition_id', 'consent', 'partner_id', 'entry_name'], acceptPartner: ['entry_id', 'definition_id', 'consent'],
   joinTournament: ['definition_id', 'consent', 'slot_index', 'position'], selectEntrySlot: ['slot_index', 'position'], cancelRegistration: [], placeRegisteredPlayer: ['user_id', 'slot_index', 'position'], removeRegisteredPlayer: ['user_id', 'release_only'],
+  replacePlayer: ['team_id', 'old_user_id', 'new_user_id', 'reason', 'preview_hash'],
+  withdrawPlayer: ['team_id', 'user_id', 'reason', 'preview_hash'],
+  adminFillPosition: ['user_id', 'slot_index', 'position', 'reason'],
+  forcePendingMatch: ['match_id', 'team_a_id', 'team_b_id', 'reason', 'preview_hash'],
+  replayTerminalMatch: ['match_id', 'team_a_id', 'team_b_id', 'reason', 'resolution', 'preview_hash'],
+  appendTerminalMatch: ['nodes', 'reason', 'preview_hash'],
   addGuestEntry: ['definition_id', 'player_names', 'reason'],
   addRegisteredEntry: ['definition_id', 'player_ids', 'entry_name', 'reason'],
   addAdministrator: ['user_id', 'reason', 'confirmed_owner_action', 'reviewed_action_hash'], removeAdministrator: ['user_id', 'reason', 'confirmed_owner_action', 'reviewed_action_hash'],
@@ -28,9 +42,11 @@ const fields: Record<string, readonly string[]> = {
   adjudicateDispute: ['match_id', 'score_a', 'score_b', 'outcome_kind', 'winner_entry_id', 'reason'],
   resolveTie: ['stage_id', 'entry_ids', 'input_revision'], reopenResults: ['reason', 'confirmed_owner_action', 'reviewed_action_hash'], cancelTournament: ['reason', 'confirmed_owner_action', 'reviewed_action_hash'],
   commitCorrection: ['match_id', 'score_a', 'score_b', 'outcome_kind', 'winner_entry_id', 'preview_hash', 'reason', 'resolution'],
+  bulkAdjudicate: ['entry_id', 'match_ids', 'mode', 'winner_score', 'loser_score', 'reason', 'regenerate_downstream', 'overwrite_existing', 'preview_hash'],
   withdrawEntry: ['entry_id', 'reason', 'preview_hash'], changeCourt: ['match_id', 'court_number'],
 };
 const record = (value: unknown): Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+const runtimeCapability = Symbol('runtime planner');
 const fail = (code: string, message: string, details?: unknown): never => { throw new DomainError(code, message, details); };
 function text(value: unknown, label: string, max = 200): string {
   if (typeof value !== 'string' || !value.trim() || value.length > max) return fail('INVALID_REQUEST', `Specify ${label}.`);
@@ -53,9 +69,10 @@ function strings(value: unknown, label: string): string[] {
 /** Trusted server planner only. Auth, current grants, receipt replay and CAS are rechecked by the SQL boundary.
  * Actor.role comes from server membership, never command data. IDs/draws/time are injected server capabilities.
  */
-export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, command: string, data: Record<string, unknown>, context: CommandContext): CommandPlan {
+export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, command: string, data: Record<string, unknown>, context: CommandContext, capability?: symbol): CommandPlan {
   if (!actor.id || !actor.clientId) return fail('UNAUTHENTICATED', 'Sign in before issuing a command.');
   if (!Object.hasOwn(fields, command)) return fail('INVALID_COMMAND', 'Unsupported command.');
+  if (command === 'internalRuntime' && capability !== runtimeCapability) return fail('INVALID_COMMAND', 'Unsupported command.');
   if (!data || Array.isArray(data) || Object.keys(data).some(key => !fields[command].includes(key))) return fail('INVALID_REQUEST', 'Command contains unknown fields.');
   if (command === 'addGuestEntry') return fail('ACCOUNT_REQUIRED', 'Every player must have a Picktennt account. Register an existing player profile instead.');
   if (actor.clientId !== 'web' && !['createDraft', 'updateDraft'].includes(command) && !(['joinTournament', 'selectEntrySlot', 'cancelRegistration'].includes(command) && actor.permissions?.includes('player:manage')) && !(isOwnerAction(command) ? actor.permissions?.includes('owner:manage') : actor.permissions?.includes('admin:manage'))) return fail('FORBIDDEN', 'Explicit permission is required for this assistant action.');
@@ -86,6 +103,22 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
     return validation.definition;
   }
   function members(teamId: string): StorageRow[] { return work.team_members.filter(row => row.team_id === teamId && !['cancelled', 'withdrawn'].includes(String(row.membership_status))); }
+  function requireCompleteMatchRoster(row: StorageRow, d: TournamentDefinition) {
+    const expected = d.registration.entry_type === 'singles' ? 1 : 2;
+    for (const teamId of [row.team_a_id, row.team_b_id]) {
+      const team = work.teams.find(candidate => candidate.id === teamId);
+      const players = [...work.team_members.filter(member => member.team_id === teamId && member.membership_status === 'active').map(member => member.user_id), ...guestPlayers(team).map(player => player.id)];
+      if (!team || players.length !== expected || players.some(player => typeof player !== 'string' || !player) || new Set(players).size !== expected) fail('INCOMPLETE_ROSTER', 'Both teams need a complete active roster before playing or entering a played score.');
+    }
+  }
+  function hasRecordedPlayedRoster(row: StorageRow, d: TournamentDefinition) {
+    if (!['score_entered', 'disputed'].includes(String(row.status)) || row.outcome_kind !== 'played') return false;
+    const expected = d.registration.entry_type === 'singles' ? 1 : 2;
+    return ['a', 'b'].every(side => {
+      const players = [row[`player_${side}1_id`], row[`player_${side}2_id`]].filter(id => typeof id === 'string');
+      return players.length === expected && new Set(players).size === expected;
+    });
+  }
   function ownEntry(match: StorageRow): string | undefined {
     return work.team_members.find(row => row.user_id === actor.id && row.membership_status === 'active' && [match.team_a_id, match.team_b_id].includes(row.team_id))?.team_id as string | undefined;
   }
@@ -131,17 +164,21 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
     const active = work.team_members.filter(row => row.user_id === userId && row.membership_status === 'active');
     let target: StorageRow | undefined = work.teams.find(row => Number(row.registration_slot) === slot);
     if (work.matches.length) fail('STRUCTURE_LOCKED', 'Player positions are locked after fixtures are generated.');
-    if (target && active.some(member => member.team_id === target!.id)) fail('INVALID_STATE', 'This is already your current position.');
     const size = d.registration.entry_type === 'singles' ? 1 : 2;
     const occupied = positionedMembers(target ? members(target.id) : [], size);
     const position = data.position === undefined ? occupied.findIndex(row => !row) + 1 : integer(data.position, 'position');
+    const current = target && active.find(member => member.team_id === target!.id);
+    if (current && (position === 0 || occupied[position - 1]?.id === current.id)) fail('INVALID_STATE', 'This is already your current position.');
     if (position < 1 || position > size || occupied[position - 1]) fail('SLOT_FULL', 'That player position is no longer available.');
 
     if (target && members(target.id).length >= (d.registration.entry_type === 'singles' ? 1 : 2)) fail('SLOT_FULL', 'That team position is no longer available.');
+    if (current) {
+      put('team_members', { id: current.id, ...(command === 'placeRegisteredPlayer' ? { user_id: userId } : {}), player_slot: position });
+      result = { entry_id: target!.id, slot_index: slot, position, entry_state: 'approved' };
+      return;
+    }
     for (const member of active) {
-      put('team_members', { id: member.id, membership_status: 'cancelled' });
-      const former = work.teams.find(team => team.id === member.team_id);
-      if (former && members(former.id).length === 0) put('teams', { id: former.id, entry_state: 'cancelled' });
+      put('team_members', { id: member.id, ...(command === 'placeRegisteredPlayer' ? { user_id: userId } : {}), membership_status: 'cancelled' });
     }
     if (!target) {
       target = { id: context.id(), name: `Team ${slot}`, entry_state: 'approved', registration_slot: slot };
@@ -185,8 +222,8 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
     const inputRevision = Math.max(0, ...activeMatches.filter(m => m.stage_id === rrStage?.id).map(m => Number(m.result_revision ?? 0)));
     const output = record(rankingStage?.output);
     const runtimeOptions: RuntimeOptions = {
-      rosterRevision: Number(work.event!.roster_revision), inputRevision,
-      eligibleEntryIds: work.teams.filter(t => rosterIds.includes(t.id) && t.entry_state === 'approved').map(t => t.id),
+      allowIncompleteRoster: true, rosterRevision: Number(work.event!.roster_revision), inputRevision,
+      eligibleEntryIds: work.teams.filter(t => rosterIds.includes(t.id) && isEligibleEntry(work,t)).map(t => t.id),
       directDraw: rosterOutput.directDraw as RuntimeOptions['directDraw'],
       rankingDraws: output.rankingDraws as RuntimeOptions['rankingDraws'],
       roundRobinExclusions: rosterOutput.roundRobinExclusions as string[] | undefined,
@@ -269,6 +306,7 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
     result = { ...result, runtime_state: analysis.state, ...(analysis.blockedCode ? { blocked_code: analysis.blockedCode } : {}) };
   }
 
+  if (command === 'internalRuntime') { needAdmin(); syncRuntime(); return { effects, result }; }
   if (command === 'reviseTournament') return planRevision(snapshot, actor, data, context);
   if (command === 'updateEventDetails') return planEventDetails(snapshot, actor, data);
   if (command === 'setDuprSubmission') {
@@ -300,12 +338,35 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
     if (command === 'removeAdministrator' && !existing) fail('INVALID_STATE', 'This account is not a tournament administrator.');
     const change = { action: command === 'addAdministrator' ? 'add' as const : 'remove' as const, id: existing?.id ?? context.id(), user_id: userId };
     effects.admin_change = change; result = { administrator_id: change.id, user_id: userId, action: change.action };
-  } else if (['commitCorrection', 'withdrawEntry', 'changeCourt'].includes(command)) {
-    const intervention = command === 'commitCorrection' ? planCorrection(snapshot, actor, data, context) : command === 'withdrawEntry' ? planWithdrawal(snapshot, actor, data, context) : planCourtChange(snapshot, actor, data);
+  } else if (command === 'adminFillPosition') {
+    const placement = planAdminFillPosition(snapshot, actor, data, context);
+    if (placement.effects.event) event(placement.effects.event);
+    for (const table of ['teams', 'team_members', 'tournament_players', 'matches'] as const) for (const patch of placement.effects[table] ?? []) put(table, patch);
+    result = placement.result;
+  } else if (command === 'appendTerminalMatch') {
+    const intervention = planAppendTerminalMatch(snapshot, actor, data, context);
+    for (const table of ['stages', 'rounds', 'matches'] as const) for (const patch of intervention.effects[table] ?? []) put(table, patch);
+    result = intervention.result;
+  } else if (command === 'forcePendingMatch' || command === 'replayTerminalMatch') {
+    const intervention = command === 'forcePendingMatch' ? planForcedPendingMatch(snapshot, actor, data) : planReplayTerminalMatch(snapshot, actor, data, context);
+    for (const table of ['stages', 'matches'] as const) for (const patch of intervention.effects[table] ?? []) put(table, patch);
+    result = intervention.result;
+  } else if (command === 'withdrawPlayer') {
+    const withdrawal = planPlayerWithdrawal(snapshot, actor, data);
+    if (withdrawal.effects.event) event(withdrawal.effects.event);
+    for (const table of ['team_members', 'tournament_players', 'matches'] as const) for (const patch of withdrawal.effects[table] ?? []) put(table, patch);
+    result = withdrawal.result;
+  } else if (command === 'replacePlayer') {
+    const replacement = planPlayerReplacement(snapshot, actor, data, context);
+    if (replacement.effects.event) event(replacement.effects.event);
+    for (const table of ['teams', 'team_members', 'tournament_players', 'matches'] as const) for (const patch of replacement.effects[table] ?? []) put(table, patch);
+    result = replacement.result;
+  } else if (['commitCorrection', 'bulkAdjudicate', 'withdrawEntry', 'changeCourt'].includes(command)) {
+    const intervention = command === 'commitCorrection' ? planCorrection(snapshot, actor, data, context) : command === 'bulkAdjudicate' ? planBulkOperation(snapshot, actor, data, context) : command === 'withdrawEntry' ? planWithdrawal(snapshot, actor, data, context) : planCourtChange(snapshot, actor, data);
     if (intervention.effects.event) event(intervention.effects.event);
     for (const table of ['teams', 'team_members', 'tournament_players', 'stages', 'rounds', 'matches', 'standings'] as const) for (const patch of intervention.effects[table] ?? []) put(table, patch);
     result = intervention.result;
-    if (command !== 'changeCourt' && work.event?.modular_state === 'active') syncRuntime();
+    if (command !== 'changeCourt' && command !== 'bulkAdjudicate' && work.event?.modular_state === 'active') syncRuntime();
   } else if (command === 'cancelTournament') {
     if (!work.event) fail('NOT_FOUND', 'Event not found.');
     needOwner(); state('draft', 'registration_open', 'registration_closed', 'ready', 'active'); text(data.reason, 'reason', 1000);
@@ -341,6 +402,7 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
       else placeRegisteredPlayer(actor.id, slot);
       bumpRoster();
     } else if (command === 'cancelRegistration' || command === 'removeRegisteredPlayer') {
+      if (command === 'cancelRegistration' && (work.event!.modular_state !== 'registration_open' || Date.parse(d.registration.closes_at) <= now.getTime())) fail('REGISTRATION_CLOSED', 'Registration is closed. Contact the tournament administrator to withdraw.');
       admissionWindow(d);
       if (work.matches.length) fail('STRUCTURE_LOCKED', 'Player positions are locked after fixtures are generated.');
       const userId = command === 'removeRegisteredPlayer' ? (needAdmin(), reference(data.user_id, 'user_id')) : actor.id;
@@ -348,8 +410,6 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
       if (!work.tournament_players.some(player => player.user_id === userId && player.status === 'approved')) fail('NOT_REGISTERED', 'You have not joined this tournament.');
       for (const member of work.team_members.filter(row => row.user_id === userId && ['active', 'pending'].includes(String(row.membership_status)))) {
         put('team_members', { id: member.id, membership_status: 'cancelled' });
-        const former = work.teams.find(team => team.id === member.team_id);
-        if (former && members(former.id).length === 0) put('teams', { id: former.id, entry_state: 'cancelled' });
       }
       if (!data.release_only) projectMember(userId, 'rejected');
       bumpRoster(); result = { user_id: userId, player_status: data.release_only ? 'approved' : 'rejected', released: data.release_only === true };
@@ -409,7 +469,10 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
         } else {
           state('registration_open', 'registration_closed');
           if (command === 'rejectEntry') { needAdmin(); text(data.reason, 'reason', 1000); if (team.entry_state !== 'pending') fail('INVALID_STATE', 'Only pending entries can be rejected.'); }
-          else if (!members(team.id).some(m => m.user_id === actor.id)) fail('FORBIDDEN', 'Only an entry participant can cancel it.');
+          else {
+            if (!members(team.id).some(m => m.user_id === actor.id)) fail('FORBIDDEN', 'Only an entry participant can cancel it.');
+            if (work.event!.modular_state !== 'registration_open' || Date.parse(d.registration.closes_at) <= now.getTime()) fail('REGISTRATION_CLOSED', 'Registration is closed. Contact the tournament administrator to withdraw.');
+          }
           put('teams', { id: team.id, entry_state: command === 'cancelEntry' ? 'cancelled' : 'rejected' });
           for (const member of members(team.id)) { put('team_members', { id: member.id, membership_status: 'cancelled' }); if (member.consented_at || member.admission_source === 'administrator') projectMember(member.user_id, 'rejected'); }
           result = { entry_id: team.id, entry_state: command === 'cancelEntry' ? 'cancelled' : 'rejected' };
@@ -450,7 +513,8 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
       if (Object.hasOwn(data, 'rest_override_reason')) {
         needAdmin(); restOverrideReason = text(data.rest_override_reason, 'rest_override_reason', 500);
       }
-      if (row.status !== 'scheduled' || !row.team_a_id || !row.team_b_id || ![row.team_a_id, row.team_b_id].every(teamId => work.teams.some(t => t.id === teamId && t.entry_state === 'approved'))) fail('INVALID_STATE', 'Match dependencies and participants must be eligible.');
+      if (row.status !== 'scheduled' || !row.team_a_id || !row.team_b_id || ![row.team_a_id, row.team_b_id].every(teamId => work.teams.some(t => t.id === teamId && isEligibleEntry(work,t)))) fail('INVALID_STATE', 'Match dependencies and participants must be eligible.');
+      requireCompleteMatchRoster(row, d);
       const live = work.matches.filter(m => m.id !== row.id && m.is_current !== false && !m.voided_at && m.status === 'in_progress');
       if (live.some(m => m.court_number === row.court_number)) fail('COURT_BUSY', 'The assigned court is occupied.');
       const players = [...entryPlayerIds(work, String(row.team_a_id)), ...entryPlayerIds(work, String(row.team_b_id))];
@@ -463,13 +527,15 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
       if (command === 'submitScore') {
         if (!own && !admin) fail('FORBIDDEN', 'Only a participant or admin may submit.');
         if (!['scheduled', 'in_progress'].includes(String(row.status))) fail('INVALID_STATE', 'Only an unscored match can receive a score.');
-        if (!row.team_a_id || !row.team_b_id || ![row.team_a_id, row.team_b_id].every(teamId => work.teams.some(t => t.id === teamId && t.entry_state === 'approved'))) fail('INVALID_STATE', 'Match dependencies and participants must be eligible.');
+        if (!row.team_a_id || !row.team_b_id || ![row.team_a_id, row.team_b_id].every(teamId => work.teams.some(t => t.id === teamId && isEligibleEntry(work,t)))) fail('INVALID_STATE', 'Match dependencies and participants must be eligible.');
+        requireCompleteMatchRoster(row, d);
         if (!isLegalScore(data.score_a as number, data.score_b as number, d.policies.match)) fail('INVALID_SCORE', 'Completed score violates the published game rules.');
         put('matches', { id: row.id, status: 'score_entered', outcome_kind: 'played', score_a: data.score_a, score_b: data.score_b, winner_team_id: Number(data.score_a) > Number(data.score_b) ? row.team_a_id : row.team_b_id, submitted_entry_id: own ?? null, entered_by: actor.id, ended_at: iso, result_revision: nextRevision, revision: nextRevision });
       } else if (command === 'confirmScore') {
         if (row.status !== 'score_entered') fail('INVALID_STATE', 'There is no provisional score to confirm.');
         if (integer(data.result_revision, 'result_revision') !== Number(row.result_revision)) fail('STALE_REVISION', 'Confirm the current submitted result.');
-        if (!own || !row.submitted_entry_id || own === row.submitted_entry_id) fail('FORBIDDEN', 'Only the actual opposing entry may confirm; admins use reasoned attestation.');
+        if (!admin && !work.tournament_players.some(player => player.user_id === actor.id && player.status === 'approved')) fail('FORBIDDEN', 'Only a registered tournament player or administrator may validate.');
+        if (!hasRecordedPlayedRoster(row, d)) requireCompleteMatchRoster(row, d);
         put('matches', { id: row.id, status: 'validated', validated_by: actor.id, result_revision: nextRevision, revision: nextRevision }); syncRuntime();
       } else if (command === 'disputeScore') {
         if (!own && !admin) fail('FORBIDDEN', 'Only a participant or admin may dispute.');
@@ -487,13 +553,14 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
         if (kind === 'retirement') for (const value of [data.score_a, data.score_b]) if (value != null && (!Number.isSafeInteger(value) || Number(value) < 0)) fail('INVALID_SCORE', 'Partial retirement scores must be nonnegative integers.');
         let winner: unknown = data.winner_entry_id ?? null;
         if (kind === 'played') {
-          if (!row.team_a_id || !row.team_b_id || ![row.team_a_id, row.team_b_id].every(teamId => work.teams.some(t => t.id === teamId && t.entry_state === 'approved'))) fail('INVALID_STATE', 'Match dependencies and participants must be eligible.');
+          if (!row.team_a_id || !row.team_b_id || ![row.team_a_id, row.team_b_id].every(teamId => work.teams.some(t => t.id === teamId && isEligibleEntry(work,t)))) fail('INVALID_STATE', 'Match dependencies and participants must be eligible.');
+          if (!hasRecordedPlayedRoster(row, d) || row.score_a !== data.score_a || row.score_b !== data.score_b) requireCompleteMatchRoster(row, d);
           if (!isLegalScore(data.score_a as number, data.score_b as number, d.policies.match)) fail('INVALID_SCORE', 'Played scores require a legal final score.');
           winner = Number(data.score_a) > Number(data.score_b) ? row.team_a_id : row.team_b_id;
           if (data.winner_entry_id !== undefined && data.winner_entry_id !== winner) fail('INVALID_SCORE', 'Winner disagrees with the played score.');
         } else if (kind === 'no_contest') { if (winner !== null) fail('INVALID_SCORE', 'No-contest has no winner.'); }
         else if (!winner || ![row.team_a_id, row.team_b_id].includes(winner)) fail('INVALID_SCORE', 'Administrative outcome requires a participating winner.');
-        if (winner && !work.teams.some(t => t.id === winner && t.entry_state === 'approved')) fail('INVALID_STATE', 'Winner is ineligible.');
+        if (winner && !work.teams.some(t => t.id === winner && isEligibleEntry(work,t))) fail('INVALID_STATE', 'Winner is ineligible.');
         put('matches', { id: row.id, status: kind === 'walkover' ? 'walkover' : 'validated', outcome_kind: kind, winner_team_id: winner, score_a: ['played', 'retirement'].includes(String(kind)) ? data.score_a ?? null : null, score_b: ['played', 'retirement'].includes(String(kind)) ? data.score_b ?? null : null, validated_by: actor.id, ended_at: row.started_at || ['played', 'retirement'].includes(String(kind)) ? row.ended_at ?? iso : null, result_revision: nextRevision, revision: nextRevision }); syncRuntime();
       }
       result.match_id = row.id;
@@ -531,6 +598,9 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
   }
   return { effects, result };
 }
+export function planInternalRuntime(snapshot: CommandSnapshot, actor: CommandActor, context: CommandContext): CommandPlan {
+  return planCommand(snapshot, actor, 'internalRuntime', {}, context, runtimeCapability);
+}
 import type { TournamentDefinition } from './definition';
 import { validateDraft } from './validate';
 import { definitionHash, DomainError, UUID } from './requests';
@@ -538,3 +608,4 @@ import { isLegalScore, type OutcomeKind } from './policies';
 import { analyzeTournament } from './runtime';
 import type { FixtureResult, RuntimeOptions, TournamentEntry } from './types';
 import { planCorrection, planCourtChange, planWithdrawal } from './corrections';
+import { planBulkOperation } from './bulk-adjudication';

@@ -9,7 +9,6 @@ import { planCommand } from '../../lib/tournament-builder/commands';
 test('DUPR selection requires current admin, completed played results and revision; SQL rejects forged effects', async () => {
   const db = await storageDatabase();
   try {
-    await db.exec(readFileSync('supabase/migrations/202610290004_tournament_dupr_selection.sql', 'utf8'));
     const rpc: RpcClient = { rpc: async (name,args) => role(db,'service_role',owner,async () => {
       const keys=Object.keys(args);
       try { const result=await db.query<{data:unknown}>(`SELECT public.${name}(${keys.map((key,i)=>`${key}=>$${i+1}`).join(',')}) AS data`,keys.map(key=>typeof args[key]==='object'&&args[key]!==null?JSON.stringify(args[key]):args[key])); return {data:result.rows[0].data,error:null}; }

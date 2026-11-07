@@ -54,7 +54,7 @@ export function getCapabilities(administratorAccess = false, ownerAccess = false
       'policies.match': 'One game, legal target and win-by from the schema; side_out awards points only to the serving side, rally awards each rally.',
       'policies.ranking.order': 'Wins first, then organizer-selected unique secondary criteria. Descending keys prefer larger metrics; points_against_asc prefers fewer conceded points; points_for_in_losses_desc counts points only in losses.',
       'policies.ranking.final_tie': 'An exact unresolved tie requires an owner-recorded draw; never invent or silently choose a winner.',
-      'policies.confirmation': 'A submitted score is provisional until the opponent confirms or an authorized administrator attests it.',
+      'policies.confirmation': 'A submitted score is provisional until a registered tournament player or authorized administrator validates it.',
       'policies.withdrawal': 'Stage-sensitive withdrawal: exclude incomplete round-robin participation, preserve completed-stage history, and never backfill a started playoff.',
       'policies.correction': 'Owner reviews downstream impact; started dependent games require explicit void and replay with history preserved.',
     },

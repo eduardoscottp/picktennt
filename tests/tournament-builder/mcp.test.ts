@@ -62,3 +62,29 @@ test('administrator tools require scoped dependencies, expose exact schemas and 
  await Promise.all([server.connect(a),client.connect(b)]);
  try{const listed=await client.listTools();assert.ok(listed.tools.some(t=>t.name==='admin_save_result'));assert.ok(!listed.tools.some(t=>/publish|reopen_results|cancel_tournament|guest/.test(t.name)));}finally{await client.close();await server.close();}
 });
+
+test('bulk adjudication MCP requires exact preview fields and explicit structural confirmation', async () => {
+ const calls: unknown[] = [];
+ const data = { entry_id: id, match_ids: [id], mode: 'score', winner_score: 11, loser_score: 0, reason: 'Reviewed award', overwrite_existing: true, regenerate_downstream: false };
+ const adminDeps: McpDependencies = { ...deps, execute: async (name, tournamentId, input) => { calls.push({ name, tournamentId, input }); return {}; }, admin: { snapshot: async () => ({}), findPlayer: async () => ({}), previewCorrection: async () => ({}), previewWithdrawal: async () => ({}), previewBulkOperation: async (_id, proposal) => ({ event_revision: 4, preview_hash: 'a'.repeat(64), selected_matches: [proposal] }) } };
+ assert.equal((await callTournamentTool('admin_preview_bulk_adjudication', { tournament_id: id, data }, adminDeps) as { event_revision: number }).event_revision, 4);
+ const args = { tournament_id: id, operation_id: id, expected_revision: 4, data: { ...data, preview_hash: 'a'.repeat(64) } };
+ await assert.rejects(callTournamentTool('admin_commit_bulk_adjudication', args, adminDeps), { code: 'CONFIRMATION_REQUIRED' });
+ assert.equal(calls.length, 0);
+ await callTournamentTool('admin_commit_bulk_adjudication', { ...args, confirmed_structure_change: true }, adminDeps);
+ assert.equal((calls[0] as { name: string }).name, 'bulkAdjudicate');
+ await assert.rejects(callTournamentTool('admin_preview_bulk_adjudication', { tournament_id: id, data: { ...data, actor_id: id } }, adminDeps), { code: 'INVALID_REQUEST' });
+ await assert.rejects(callTournamentTool('admin_commit_bulk_adjudication', { ...args, confirmed_structure_change: true }, deps));
+});
+
+test('forcing pending teams requires an admin and explicit confirmation of the reviewed route', async () => {
+ const calls: unknown[] = [], proposal = { match_id: id, team_a_id: 'c27c31ec-0c66-4bf6-94c4-708432cd11a0', team_b_id: 'd27c31ec-0c66-4bf6-94c4-708432cd11a0', reason: 'Reviewed replacement' };
+ const adminDeps: McpDependencies = { ...deps, execute: async (name, tournamentId, input) => { calls.push({ name, tournamentId, input }); return {}; }, admin: { snapshot: async () => ({}), findPlayer: async () => ({}), previewCorrection: async () => ({}), previewWithdrawal: async () => ({}), previewForcedPendingMatch: async (_id, data) => ({ before: {}, after: data, preview_hash: 'a'.repeat(64) }) } };
+ const reviewed = await callTournamentTool('admin_preview_force_pending_match', { tournament_id: id, data: proposal }, adminDeps) as { preview_hash: string };
+ const args = { tournament_id: id, operation_id: id, expected_revision: 4, data: { ...proposal, preview_hash: reviewed.preview_hash } };
+ await assert.rejects(callTournamentTool('admin_force_pending_match', args, adminDeps), { code: 'CONFIRMATION_REQUIRED' });
+ await assert.rejects(callTournamentTool('admin_force_pending_match', { ...args, confirmed_structure_change: true }, deps), { code: 'INVALID_REQUEST' });
+ assert.equal(calls.length, 0);
+ await callTournamentTool('admin_force_pending_match', { ...args, confirmed_structure_change: true }, adminDeps);
+ assert.equal((calls[0] as { name: string }).name, 'forcePendingMatch');
+});

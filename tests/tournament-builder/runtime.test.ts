@@ -12,6 +12,18 @@ const entries = (n: number): TournamentEntry[] => Array.from({ length: n }, (_, 
 const definition = (): TournamentDefinition => JSON.parse(readFileSync('tests/tournament-builder/fixtures/tournament-definition.json', 'utf8'));
 const win = (fixture: Fixture, a: string, b: string, winner: string): FixtureResult => ({ fixtureId: fixture.id, outcome: 'played', accepted: true, winnerEntryId: winner, scoreA: winner === a ? 11 : 5, scoreB: winner === b ? 11 : 5 });
 
+test('locked v1 roster can recalculate with an empty team without allowing initial incomplete generation or team collisions', () => {
+  const d = definition(), roster = entries(8); roster[0] = { ...roster[0], playerIds: [] };
+  assert.equal(analyzeTournament(d, roster, []).blockedCode, 'INVALID_CAPACITY');
+  assert.throws(() => generateRoundRobin(roster, 4));
+  const result = analyzeTournament(d, roster, [], { allowIncompleteRoster: true });
+  assert.equal(result.fixtures.length, 28);
+  for (const wave of new Set(result.fixtures.map(match => match.wave))) {
+    const teams = result.fixtures.filter(match => match.wave === wave).flatMap(match => [match.a, match.b].flatMap(slot => slot.kind === 'entry' ? [slot.entryId] : []));
+    assert.equal(new Set(teams).size, teams.length);
+  }
+});
+
 test('RR schedules every pair exactly once for all supported sizes/courts without collisions', () => {
   for (let n = 2; n <= 16; n++) for (const courts of [1, 2, 4, 8]) {
     const roster = entries(n), fixtures = generateRoundRobin(roster, courts);
@@ -116,6 +128,15 @@ test('eight entry elimination groups quarterfinal losers at fifth without seed f
   const placed = computePlacements(resolveBracket(fixtures, results));
   assert.equal(placed.state, 'completed');
   assert.deepEqual(placed.groups?.map(g => [g.rank, g.entryIds.length]), [[1, 1], [2, 1], [3, 2], [5, 4]]);
+});
+test('an administrative score advances the bracket only with a legal score and matching winner', () => {
+  const fixtures = generateElimination(entries(2), 1, { seeding: 'ranked', bronze: false });
+  const match = fixtures[0];
+  const scheduled = resolveBracket(fixtures, []).fixtures[0];
+  const awarded: FixtureResult = { fixtureId: match.id, accepted: true, outcome: 'administrative_score', winnerEntryId: scheduled.entryA!, scoreA: 11, scoreB: 0 };
+  assert.equal(resolveBracket(fixtures, [awarded]).fixtures[0].winnerEntryId, scheduled.entryA);
+  assert.throws(() => resolveBracket(fixtures, [{ ...awarded, winnerEntryId: scheduled.entryB }]), /Winner disagrees/);
+  assert.throws(() => resolveBracket(fixtures, [{ ...awarded, scoreA: 5 }]), /illegal/);
 });
 test('exact RR ties block qualifiers until a current recorded whole-group draw is supplied', () => {
   const d = definition(); d.registration.min_entries = 3; d.registration.max_entries = 3;

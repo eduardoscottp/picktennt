@@ -127,6 +127,22 @@ async function activeFixtures(){
  return {event,stage,round,a,b,c,first,second};
 }
 
+test('administrative scores require a matching winner, points and DUPR exclusion and cannot use ordinary attestation', async()=>{
+ const f=await activeFixtures();
+ await assert.rejects(command(db,{event:f.event,command:'attestScore',revision:5,effects:{matches:[{id:f.first,status:'validated',outcome_kind:'administrative_score',score_a:11,score_b:0,winner_team_id:f.a,submit_to_dupr:false}]}}),/INVALID_EFFECTS/);
+ await db.exec('CREATE TEMP TABLE administrative_score_check_test (LIKE public.matches INCLUDING DEFAULTS INCLUDING CONSTRAINTS)');
+ await db.query('INSERT INTO administrative_score_check_test SELECT * FROM public.matches WHERE id=$1',[f.first]);
+ const update=(scoreA:number|null,scoreB:number|null,winner:string|null,dupr:boolean)=>db.query("UPDATE administrative_score_check_test SET status='validated',outcome_kind='administrative_score',score_a=$1,score_b=$2,winner_team_id=$3,submit_to_dupr=$4 WHERE id=$5",[scoreA,scoreB,winner,dupr,f.first]);
+ await assert.rejects(update(11,0,f.a,true),/matches_administrative_score_check/);
+ await assert.rejects(update(11,0,f.b,false),/matches_administrative_score_check/);
+ await assert.rejects(update(11,0,null,false),/matches_administrative_score_check/);
+ await assert.rejects(update(null,0,f.a,false),/matches_administrative_score_check/);
+ await assert.rejects(update(11,11,f.a,false),/matches_administrative_score_check/);
+ await update(11,0,f.a,false);
+ const saved=await db.query<{outcome_kind:string;submit_to_dupr:boolean}>('SELECT outcome_kind,submit_to_dupr FROM administrative_score_check_test WHERE id=$1',[f.first]);
+ assert.deepEqual(saved.rows[0],{outcome_kind:'administrative_score',submit_to_dupr:false});
+});
+
 test('court/player occupancy and retry guards remain; recent completion never blocks another game',async()=>{
  const {event,first,second}=await activeFixtures();
  await command(db,{event,command:'startMatch',revision:5,request:{match_id:first},effects:{matches:[{id:first,status:'in_progress',court_number:1,started_at:new Date().toISOString()}]}});
@@ -159,11 +175,14 @@ test('operation preflight is authorized and checks stored command/resource/hash 
 test('published unlisted links are readable; pending entries and draft definitions stay scoped to own invitations',async()=>{
  const event=await create(),definition=uuid(),ownTeam=uuid(),privateTeam=uuid(),viewer=uuid();
  await db.query("INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES($1,'viewer@example.invalid','{\"given_name\":\"Viewer\"}')",[viewer]);
+ await db.query("UPDATE public.profiles SET avatar_url='https://example.invalid/avatar.png' WHERE id=$1",[viewer]);
  await command(db,{event,command:'updateDraft',revision:1,effects:{event:{definition_id:definition},definition:{id:definition,definition:{title:'Published'},status:'draft'}}});
  await command(db,{event,command:'publishTournament',revision:2,effects:{definition:{id:definition,definition:{title:'Published'},status:'published'},event:{modular_state:'registration_open',is_public:false}}});
  await command(db,{event,command:'requestEntry',actor:player,revision:3,effects:{teams:[{id:ownTeam,entry_state:'pending'},{id:privateTeam,entry_state:'pending'}],team_members:[{id:uuid(),team_id:ownTeam,user_id:player,membership_status:'pending'},{id:uuid(),team_id:ownTeam,user_id:stranger,membership_status:'pending'},{id:uuid(),team_id:privateTeam,user_id:viewer,membership_status:'pending'}]}});
  async function snap(actor:string){return role(db,'service_role',actor,async()=>{const r=await db.query<{r:{teams:{id:string}[];team_members:{id:string;user_id:string}[];definitions:{status:string}[];caller_role:string}}>('SELECT tb_get_snapshot($1,$2,$3,NULL) r',[actor,'web',event]);return r.rows[0].r;});}
  const invited=await snap(stranger);assert.deepEqual(invited.teams.map(t=>t.id),[ownTeam]);assert.equal(invited.team_members.length,2);assert.ok(invited.definitions.every(d=>d.status==='published'));assert.equal(invited.caller_role,'player');
+ assert.doesNotMatch(JSON.stringify(invited),/example\.invalid\/avatar\.png/);
+ const ownerView=await snap(owner);assert.match(JSON.stringify(ownerView),/example\.invalid\/avatar\.png/);
  const ordinary=uuid();await db.query("INSERT INTO auth.users(id,email) VALUES($1,'ordinary@example.invalid')",[ordinary]);
  assert.deepEqual((await snap(ordinary)).teams,[]);
  const before=await create();await assert.rejects(role(db,'service_role',ordinary,()=>db.query('SELECT tb_get_snapshot($1,$2,$3,NULL)',[ordinary,'web',before])),/FORBIDDEN/);
@@ -201,9 +220,26 @@ test('F01 real SQL persists sixteen-player fixed doubles through 28 round-robin 
   assert.ok(played++<32,'Progression must terminate at supported fixture count.');
   const match=snapshot.matches.find(m=>m.status==='scheduled'&&m.team_a_id&&m.team_b_id);assert.ok(match);
   const a=snapshot.teams.find(t=>t.id===match.team_a_id)!,b=snapshot.teams.find(t=>t.id===match.team_b_id)!;
-  await run('startMatch',{match_id:match.id});const aWins=String(a.name)<String(b.name);
+  if (played !== 2) await run('startMatch',{match_id:match.id});
+  const expectedA = players[String(a.name).charCodeAt(0)-65].map(p=>p.id).sort();
+  const expectedB = players[String(b.name).charCodeAt(0)-65].map(p=>p.id).sort();
+  const aWins=String(a.name)<String(b.name);
   await run('submitScore',{match_id:match.id,score_a:aWins?11:5,score_b:aWins?5:11},players[String(a.name).charCodeAt(0)-65][0]);
-  await run('confirmScore',{match_id:match.id,result_revision:snapshot.matches.find(m=>m.id===match.id)!.result_revision},players[String(b.name).charCodeAt(0)-65][0]);
+  const started = snapshot.matches.find(m=>m.id===match.id)!;
+  assert.deepEqual([started.player_a1_id, started.player_a2_id].sort(),expectedA);
+  assert.deepEqual([started.player_b1_id, started.player_b2_id].sort(),expectedB);
+  const validation = { match_id: match.id, result_revision: snapshot.matches.find(m=>m.id===match.id)!.result_revision };
+  if (played === 1) {
+   await assert.rejects(db.query('SELECT tournament_builder_private.authorize($1,$2,$3,$4,$5::jsonb,NULL)',[stranger,'web',event,'confirmScore',JSON.stringify(validation)]),/FORBIDDEN/);
+   const unrelated = players.flat().find(actor => !snapshot.team_members.some(member => member.user_id === actor.id && [match.team_a_id, match.team_b_id].includes(member.team_id)))!;
+   await run('confirmScore',validation,unrelated);
+   assert.equal(snapshot.matches.find(m=>m.id===match.id)!.validated_by,unrelated.id);
+  } else {
+   await run('confirmScore',validation,played === 2 ? players[String(a.name).charCodeAt(0)-65][0] : players[String(b.name).charCodeAt(0)-65][0]);
+  }
+  const completed = snapshot.matches.find(m=>m.id===match.id)!;
+  assert.deepEqual([completed.player_a1_id, completed.player_a2_id].sort(),expectedA);
+  assert.deepEqual([completed.player_b1_id, completed.player_b2_id].sort(),expectedB);
  }
  assert.equal(snapshot.matches.length,31);assert.equal(snapshot.event!.result_version,1);assert.ok(initial.every(id=>snapshot.matches.some(m=>m.id===id)));
  const output=snapshot.stages.find(s=>s.module_id==='placements')!.output as {groups:{rank:number;entryIds:string[]}[]};assert.deepEqual(output.groups.map(g=>[g.rank,g.entryIds.length]),[[1,1],[2,1],[3,2],[5,1],[6,1],[7,1],[8,1]]);
@@ -213,11 +249,11 @@ test('F01 real SQL persists sixteen-player fixed doubles through 28 round-robin 
 
 test('own withdrawal is permitted before roster lock and remains admin-only after lock',async()=>{
  const event=await create(),definition=uuid(),team=uuid(),member=uuid();
- await command(db,{event,command:'publishTournament',revision:1,effects:{definition:{id:definition,definition:{},status:'published'},event:{definition_id:definition,modular_state:'registration_open'}}});
+ await command(db,{event,command:'publishTournament',revision:1,effects:{definition:{id:definition,definition:{registration:{closes_at:'2099-01-01T00:00:00Z'}},status:'published'},event:{definition_id:definition,modular_state:'registration_open'}}});
  await command(db,{event,actor:player,command:'requestEntry',revision:2,effects:{teams:[{id:team,entry_state:'pending'}],team_members:[{id:member,team_id:team,user_id:player,membership_status:'pending'}]}});
  await command(db,{event,actor:player,command:'withdrawEntry',revision:3,request:{entry_id:team,reason:'Own pre-lock cancellation'},effects:{teams:[{id:team,entry_state:'cancelled'}],team_members:[{id:member,membership_status:'cancelled'}]}});
  const active=await activeFixtures();
- await assert.rejects(command(db,{event:active.event,actor:player,command:'withdrawEntry',revision:5,request:{entry_id:active.b,reason:'After-lock participant bypass'},effects:{teams:[{id:active.b,entry_state:'withdrawn'}]}}),/FORBIDDEN/);
+ await assert.rejects(command(db,{event:active.event,actor:player,command:'withdrawEntry',revision:5,request:{entry_id:active.b,reason:'After-lock participant bypass'},effects:{teams:[{id:active.b,entry_state:'withdrawn'}]}}),/REGISTRATION_CLOSED/);
 });
 
 test('voiding a started match preserves history without imposing elapsed rest',async()=>{

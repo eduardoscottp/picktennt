@@ -32,7 +32,7 @@ test("partial draft renders explicit choices with supported ranking criteria and
   assert.match(html, /Start ranking with wins/);
   assert.match(html, /Choose a confirmation policy/);
   assert.match(html, /Choose a correction policy/);
-  assert.match(html, /opponent confirms/i);
+  assert.match(html, /tournament player or administrator validates/i);
   assert.match(html, /void and replay/i);
   assert.deepEqual(rankingChoices.map((choice) => choice.key), ["wins_desc", "differential_desc", "points_for_desc", "points_against_asc", "points_for_in_losses_desc"]);
 });

@@ -3,6 +3,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { AppRouterContext } from 'next/dist/shared/lib/app-router-context.shared-runtime';
 import { canReviseTournament, RevisionEditor } from '../../components/tournament-builder/revision-editor';
 import { GroupFinalization } from '../../components/tournament-builder/group-finalization';
 import type { CommandSnapshot } from '../../lib/tournament-builder/commands';
@@ -21,6 +22,13 @@ test('after play only name venue and reason controls are available and display o
   assert.match(html, /value="New display name"/);
   assert.match(html, /value="New venue"/);
   assert.match(html, /Fixtures and results are preserved/);
+  for (const label of ['Tournament starts (locked)', 'Courts (locked)', 'Maximum entries (locked)']) {
+    const start = html.indexOf(`>${label}</label>`);
+    assert.ok(start >= 0, label);
+    const input = html.slice(start, html.indexOf('</div>', start));
+    assert.match(input, /<input[^>]*disabled=""/);
+    assert.match(input, /<input[^>]*readOnly=""/);
+  }
   assert.doesNotMatch(html, /Revised tournament definition|Review proposed revision|Approved teams/);
   assert.match(html, /<button[^>]*disabled=""[^>]*>Save name and venue/);
 });
@@ -58,14 +66,16 @@ test('Doubles registration always renders individual slots regardless of histori
   const render = (partnerConsent: boolean, joined: boolean) => {
     const doubles = structuredClone(definition);
     doubles.registration.entry_type = 'fixed_doubles'; doubles.registration.partner_consent = partnerConsent;
+    doubles.registration.closes_at = '2099-01-01T00:00:00Z';
     const snapshot: CommandSnapshot = { ...base, event: { ...base.event!, modular_state: 'registration_open', definition_id: 'new-definition', created_by: 'owner' }, definitions: [{ id: 'new-definition', definition: doubles }], teams: [], team_members: [], tournament_players: joined ? [{ id: 'registration', user_id: 'player', display_name: 'Registered player', status: 'approved' }] : [] };
-    return renderToStaticMarkup(createElement(TournamentBuilder, { actorId: 'player', initialSnapshot: snapshot, initialPreview: previewDefinition(doubles, 3), view: 'overview' }));
+    const router = { back() {}, forward() {}, refresh() {}, push() {}, replace() {}, prefetch() {}, bfcacheId: 'test' };
+    return renderToStaticMarkup(createElement(AppRouterContext.Provider, { value: router }, createElement(TournamentBuilder, { actorId: 'player', initialSnapshot: snapshot, initialPreview: previewDefinition(doubles, 3), view: 'overview' })));
   };
   for (const joined of [false, true]) {
     assert.equal(render(true, joined), render(false, joined));
     const html = render(true, joined);
-    assert.match(html, /Open position/);
-    assert.match(html, joined ? /Choose this position/ : /Join tournament/);
+    assert.match(html, /position 1/);
+    assert.match(html, joined ? /Choose this spot/ : /Join tournament/);
     assert.doesNotMatch(html, /Team name|Your entry name|Partner’s Picktennt username|Request entry and invite partner|Accept invitation for/);
     assert.doesNotMatch(html, /<input[^>]*type="text"/);
   }

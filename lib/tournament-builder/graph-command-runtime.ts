@@ -1,5 +1,6 @@
 import type { CommandActor, CommandContext, CommandPlan, CommandSnapshot, StorageRow } from './commands';
-import type { GraphDefinition, GraphRuntimeOptions } from './graph-types';
+import { isEligibleEntry } from './disciplinary-eligibility';
+import { graphManualEntries, type GraphDefinition, type GraphRuntimeOptions } from './graph-types';
 import { analyzeGraph } from './graph-runtime';
 import { entryPlayerIds } from './entry-roster';
 import { DomainError } from './requests';
@@ -9,7 +10,7 @@ const record = (v: unknown): Record<string, unknown> => v !== null && typeof v =
 const accepted = (m: StorageRow) => ['validated', 'walkover'].includes(String(m.status));
 
 /** Produce effects through the existing atomic command boundary; never write independently. */
-export function planGraphRuntime(snapshot: CommandSnapshot, d: GraphDefinition, actor: CommandActor, context: CommandContext, revision: number): CommandPlan {
+export function planGraphRuntime(snapshot: CommandSnapshot, d: GraphDefinition, actor: CommandActor, context: CommandContext, revision: number, disciplinaryExcludedEntryIds: ReadonlySet<string> = new Set()): CommandPlan {
   const s = structuredClone(snapshot), effects: CommandPlan['effects'] = {};
   function put(table: 'stages' | 'rounds' | 'matches' | 'standings', patch: StorageRow) {
     const old = s[table].findIndex(r => r.id === patch.id);
@@ -27,7 +28,8 @@ export function planGraphRuntime(snapshot: CommandSnapshot, d: GraphDefinition, 
     const inputRevision = Math.max(0, ...current().filter(m => m.stage_id === stage.id).map(m => Number(m.result_revision ?? 0)));
     return [node.id, { inputRevision, rankingDraws: record(stage.output).rankingDraws as GraphRuntimeOptions['rankingDraws'] }];
   }));
-  const options: GraphRuntimeOptions = { seedAssignments: output.seedAssignments as GraphRuntimeOptions['seedAssignments'], eligibleEntryIds: s.teams.filter(t => ids.includes(t.id) && t.entry_state === 'approved').map(t => t.id), stageInputs, excludedByNode: output.excludedByNode as Record<string, string[]> | undefined };
+  const manualMatchEntries = graphManualEntries(s.stages, d);
+  const options: GraphRuntimeOptions = { allowIncompleteRoster: true, seedAssignments: output.seedAssignments as GraphRuntimeOptions['seedAssignments'], eligibleEntryIds: s.teams.filter(t => ids.includes(t.id) && isEligibleEntry(s,t) && !disciplinaryExcludedEntryIds.has(t.id)).map(t => t.id), stageInputs, excludedByNode: output.excludedByNode as Record<string, string[]> | undefined, manualMatchEntries };
   let analysis;
   // Each iteration accepts at least one automatic empty-slot outcome; graph size bounds propagation.
   for (let iteration = 0; iteration <= 128; iteration++) {

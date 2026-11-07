@@ -1,5 +1,13 @@
 import { previewCorrection, previewWithdrawal } from '@/lib/tournament-builder/corrections';
+import { previewBulkAdjudication } from '@/lib/tournament-builder/bulk-adjudication-preview';
+import { previewBulkOperation } from '@/lib/tournament-builder/bulk-adjudication';
 import { previewRevision } from '@/lib/tournament-builder/revisions';
+import { previewPlayerReplacement } from '@/lib/tournament-builder/player-replacement';
+import { previewPlayerWithdrawal } from '@/lib/tournament-builder/player-withdrawal';
+import { analyzeReplan } from '@/lib/tournament-builder/replan-analysis';
+import { previewForcedPendingMatch } from '@/lib/tournament-builder/force-pending-match';
+import { previewReplayTerminalMatch } from '@/lib/tournament-builder/replay-terminal-match';
+import { previewAppendTerminalMatch } from '@/lib/tournament-builder/append-terminal-match';
 import { previewSchedule } from '@/lib/tournament-builder/schedule-preview';
 import { createAdminClient } from '@/lib/supabase/server';
 import { createOAuthConfig, hashOAuthSecret } from '@/lib/tournament-builder/oauth';
@@ -40,8 +48,16 @@ async function handle(request: Request) {
           snapshot: (id:string) => authorizedSnapshot(actor,id),
           findPlayer: (id:string,username:string) => findPlayer(actor,id,username),
           previewCorrection: async (id:string,data:Record<string,unknown>) => { const snapshot=await getSnapshot(db,actor,id); return previewCorrection(snapshot,{...actor,role:snapshot.caller_role==='admin'?'admin':'player'},data); },
+          previewBulkAdjudication: async (id:string,data:Record<string,unknown>) => { const snapshot=await authorizedSnapshot(actor,id); return previewBulkAdjudication(snapshot,{...actor,role:snapshot.caller_role==='admin'?'admin':'owner'},data); },
+          previewBulkOperation: async (id:string,data:Record<string,unknown>) => { const snapshot=await authorizedSnapshot(actor,id); return previewBulkOperation(snapshot,{...actor,role:snapshot.caller_role==='admin'?'admin':'owner'},data); },
+          analyzeReplan: async (id:string,data:Record<string,unknown>) => { const snapshot=await authorizedSnapshot(actor,id); return analyzeReplan(snapshot,{...actor,role:snapshot.caller_role==='admin'?'admin':'owner'},data); },
+          previewForcedPendingMatch: async (id:string,data:Record<string,unknown>) => { const snapshot=await authorizedSnapshot(actor,id); return previewForcedPendingMatch(snapshot,{...actor,role:snapshot.caller_role==='admin'?'admin':'owner'},data); },
+          previewReplayTerminalMatch: async (id:string,data:Record<string,unknown>) => { const snapshot=await authorizedSnapshot(actor,id); return previewReplayTerminalMatch(snapshot,{...actor,role:snapshot.caller_role==='admin'?'admin':'owner'},data); },
+          previewAppendTerminalMatch: async (id:string,data:Record<string,unknown>) => { const snapshot=await authorizedSnapshot(actor,id); return previewAppendTerminalMatch(snapshot,{...actor,role:snapshot.caller_role==='admin'?'admin':'owner'},data); },
           previewWithdrawal: async (id:string,data:Record<string,unknown>) => { const snapshot=await getSnapshot(db,actor,id); return previewWithdrawal(snapshot,{...actor,role:snapshot.caller_role==='admin'?'admin':'player'},data); },
           previewRevision: async (id:string,data:Record<string,unknown>) => { const snapshot=await getSnapshot(db,actor,id); return previewRevision(snapshot,{...actor,role:snapshot.caller_role==='admin'?'admin':'player'},data); },
+          previewPlayerReplacement: async (id:string,data:Record<string,unknown>) => { const snapshot=await authorizedSnapshot(actor,id); return previewPlayerReplacement(snapshot,{...actor,role:snapshot.caller_role==='admin'?'admin':'owner'},data); },
+          previewPlayerWithdrawal: async (id:string,data:Record<string,unknown>) => { const snapshot=await authorizedSnapshot(actor,id); return previewPlayerWithdrawal(snapshot,{...actor,role:snapshot.caller_role==='admin'?'admin':'owner'},data); },
           previewSchedule: async (id:string,data:Record<string,unknown>) => { const snapshot=await getSnapshot(db,actor,id); return previewSchedule(snapshot,{...actor,role:snapshot.caller_role==='admin'?'admin':'player'},data); },
         }} : {}),
         ...(actor.permissions?.includes('owner:manage') ? { owner: {

@@ -5,6 +5,12 @@ import { handleMcpRequest } from '../../lib/tournament-builder/mcp-http';
 import { createOAuthConfig, createOAuthSecret, permissionsForOAuthScope, oauthScopeForPermissions } from '../../lib/tournament-builder/oauth';
 import { confirmationQuestion } from '../../lib/tournament-builder/mcp-confirmation';
 
+test('score correction asks for a resolution before confirmation and names explicit replay', () => {
+  assert.match(confirmationQuestion('admin_preview_correction', {})!, /which available resolution/i);
+  assert.match(confirmationQuestion('admin_preview_correction', { requires_reopen: true })!, /owner must reopen/i);
+  assert.match(confirmationQuestion('admin_commit_correction', {}, { data: { resolution: 'void_and_replay' } })!, /invalidate.*replay/i);
+});
+
 test('participation requires explicit new consent without expanding existing grants', () => {
   assert.deepEqual(permissionsForOAuthScope('tournaments:play'), ['player:manage']);
   assert.equal(oauthScopeForPermissions(['player:manage']), 'tournaments:play');

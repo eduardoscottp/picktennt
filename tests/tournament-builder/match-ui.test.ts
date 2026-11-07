@@ -10,7 +10,7 @@ const props = { match, label: (id: unknown) => String(id), admin: true, disabled
 test("administrator can validate a saved played score without typing a reason", () => {
   const html = renderToStaticMarkup(createElement(BuilderMatch, { ...props, feedback: "The court is occupied. Move to a free court." }));
   assert.match(html, /Validate saved score/);
-  assert.match(html, /Validation note \(optional\)/);
+  assert.match(html, /Edit or decide result/);
   assert.doesNotMatch(html, /Enter a decision reason/);
   const validate = [...html.matchAll(/<button([^>]*)>(.*?)<\/button>/g)].find((button) => button[2].includes("Validate saved score"));
   assert.ok(validate);
@@ -21,11 +21,15 @@ test("administrator can validate a saved played score without typing a reason", 
 
 test("administrator who is also a player gets one primary save-and-validate action", () => {
   const html = renderToStaticMarkup(createElement(BuilderMatch, { ...props, ownEntry: "a", match: { ...match, status: "in_progress" } }));
-  assert.match(html, /Save &amp; Validate/);
+  assert.match(html, /Enter and validate score/);
   assert.doesNotMatch(html, /Submit provisional score/);
   const disputed = renderToStaticMarkup(createElement(BuilderMatch, { ...props, match: { ...match, status: "disputed" } }));
-  assert.match(disputed, /Decision reason \(required to validate\)/);
-  assert.match(disputed, /Enter a decision reason/);
+  assert.match(disputed, /Enter and validate score/);
+});
+test("administrative scores remain identified and require an explicit corrected outcome", () => {
+  const html = renderToStaticMarkup(createElement(BuilderMatch, { ...props, match: { ...match, status: "validated", outcome_kind: "administrative_score" } }));
+  assert.match(html, /administrative score/);
+  assert.match(html, /<option value="" selected="">Choose corrected outcome<\/option>/);
 });
 test("disabled decisions explain physical start, legal scores, reason and outcome constraints", () => {
   const valid = { kind: "played", started: true, scoreA: "11", scoreB: "5", winner: "", reason: "Observed final score", policy: { target: 11, win_by: 2 } };

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Match, Profile } from '../../types/database';
-import { collectMatchUserIds, resolveMatchPlayers } from '../../lib/dupr/tournament-helpers';
+import { collectMatchUserIds, hasAmbiguousHistoricalRosters, hasCompleteMatchRosters, resolveMatchPlayers } from '../../lib/dupr/tournament-helpers';
 
 test('modular DUPR excludes replaced players while preserving actual players who later withdrew', async () => {
   const members = [
@@ -21,6 +21,7 @@ test('modular DUPR excludes replaced players while preserving actual players who
     return query;
   } } as unknown as SupabaseClient;
   const matches=[{id:'match',team_a_id:'a',team_b_id:'b',score_a:11,score_b:4,updated_at:'2026-10-29'} as Match];
+  assert.equal(await hasAmbiguousHistoricalRosters(db,matches,'singles'),true);
   const profiles=new Map(['replaced','actual-a','actual-b'].map(id=>[id,{id,dupr_id:`DUPR-${id}`} as Profile]));
   assert.deepEqual([...await collectMatchUserIds(db,matches,true)],['actual-a','actual-b']);
   const resolved=await resolveMatchPlayers(db,matches,profiles,true);
@@ -28,4 +29,13 @@ test('modular DUPR excludes replaced players while preserving actual players who
   assert.deepEqual(resolved[0].teamB.map(player=>player.userId),['actual-b']);
   assert.equal(resolved[0].format,'singles');
   assert.deepEqual([...await collectMatchUserIds(db,matches)],['replaced','actual-a','actual-b']);
+  const historical = [{ ...matches[0], player_a1_id: 'replaced', player_b1_id: 'actual-b' } as Match];
+  assert.equal(await hasAmbiguousHistoricalRosters(db,historical,'singles'),false);
+  assert.deepEqual([...await collectMatchUserIds(db,historical,true)],['replaced','actual-b']);
+  const played = await resolveMatchPlayers(db,historical,profiles,true);
+  assert.deepEqual(played[0].teamA.map(player=>player.userId),['replaced']);
+  assert.deepEqual(played[0].teamB.map(player=>player.userId),['actual-b']);
+  assert.equal(hasCompleteMatchRosters(played,'singles'),true);
+  assert.equal(hasCompleteMatchRosters(played,'doubles'),false);
+  assert.equal(hasCompleteMatchRosters([{...played[0],teamB:played[0].teamA}],'singles'),false);
 });

@@ -66,6 +66,21 @@ test('revision preserves history, swaps players, regenerates and completes throu
   for(let i=0;i<7;i++) { const m=s.matches.find(m=>m.is_current!==false&&m.status==='scheduled'&&m.team_a_id&&m.team_b_id)!; assert.ok(m); s=apply(s,'attestScore',{match_id:m.id,score_a:11,score_b:0,reason:'Verified score'}); }
   assert.equal(s.event!.modular_state,'completed');
 });
+test('revision before play can add an existing-account replacement after fixture generation', () => {
+  const initial = setup(), d = initial.d; let s = initial.s;
+  const registered = randomUUID(), stranger = randomUUID();
+  s = apply(s, 'joinTournament', { definition_id: s.event!.definition_id, consent: true }, { id: registered, clientId: 'web' });
+  s = apply(s, 'closeRegistration'); s = apply(s, 'lockRoster', groupData(s));
+  const team = s.teams[0], old = entryPlayerIds(s, team.id);
+  const proposal = (userId: string) => ({ definition: d, reason: 'Replace a player', entries: [{ entry_id: team.id, entry_name: String(team.name), player_ids: [userId, old[1]] }] });
+  assert.doesNotThrow(() => previewRevision(s, owner, proposal(stranger)));
+  const valid = proposal(registered), preview = previewRevision(s, owner, valid);
+  const changed = apply(s, 'reviseTournament', { ...valid, preview_hash: preview.preview_hash });
+  assert.ok(entryPlayerIds(changed, team.id).includes(registered));
+  assert.ok(changed.matches.every(match => match.is_current === false));
+  const started = structuredClone(s); started.matches[0].started_at = context.now;
+  assert.throws(() => previewRevision(started, owner, valid), { code: 'STRUCTURE_LOCKED' });
+});
 test('revision rejects duplicates, unsafe capacity, broken routing, stale review and played history',()=>{
   const {s,d}=setup(), data={definition:d,reason:'Review'};
   const review=previewRevision(s,owner,data);

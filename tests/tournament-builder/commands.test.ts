@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { planCommand, type CommandActor, type CommandContext, type CommandSnapshot, type CommandPlan, type StorageRow } from '../../lib/tournament-builder/commands';
-import { previewCorrection } from '../../lib/tournament-builder/corrections';
+import { planCommand, planInternalRuntime, type CommandActor, type CommandContext, type CommandSnapshot, type CommandPlan, type StorageRow } from '../../lib/tournament-builder/commands';
+import { previewCorrection, previewWithdrawal } from '../../lib/tournament-builder/corrections';
 import { definitionHash, requestHash } from '../../lib/tournament-builder/requests';
 
 let counter = 100;
@@ -49,6 +49,15 @@ function ready(): CommandSnapshot {
   s = apply(s, planCommand(s, admin, 'closeRegistration', {}, context));
   return apply(s, planCommand(s, admin, 'lockRoster', { reviewed_roster_revision: s.event!.roster_revision }, context));
 }
+test('v1 runtime preserves disciplinary exclusion across later recalculation', () => {
+  const s=ready(), team=s.teams[0].id;
+  const excluded={...s,disciplinary_excluded_team_ids:[team]};
+  const plan=planInternalRuntime(excluded,admin,context);
+  const row=plan.effects.standings?.find(item=>item.team_id===team);
+  assert.equal(row?.eligible,false);
+  const ordinary=planInternalRuntime(s,admin,context).effects.standings?.find(item=>item.team_id===team);
+  assert.equal(ordinary?.eligible,true);
+});
 test('drafts remain partial; publication binds exact definition review and owner website authority', () => {
   const draft = apply(empty(), planCommand(empty(), owner, 'createDraft', { definition: { event: { name: 'Incomplete' } } }, context));
   assert.equal(draft.event!.modular_state, 'draft');
@@ -109,6 +118,52 @@ test('individual slots require join first, move one player atomically, and allow
   assert.equal(s.team_members.find(row => row.user_id === b.id && row.membership_status === 'active'), undefined);
   assert.throws(() => planCommand(s, b, 'selectEntrySlot', { slot_index: 1 }, context), { code: 'NOT_REGISTERED' });
 });
+test('individual join approves instantly and all self-withdrawal routes stop at registration closure', () => {
+  const d = definition(); d.registration.entry_type = 'fixed_doubles'; d.registration.mode = 'approval';
+  let s = published(d);
+  const joined = planCommand(s, a, 'joinTournament', { definition_id: s.event!.definition_id, consent: true, slot_index: 1, position: 1 }, context);
+  assert.equal(joined.result.entry_state, 'approved');
+  s = apply(s, joined);
+  assert.equal(s.tournament_players.find(player => player.user_id === a.id)?.status, 'approved');
+  const entry = s.teams[0].id;
+  const withdrawal = { entry_id: entry, reason: 'Cannot attend' };
+  const deadline = { ...context, now: d.registration.closes_at };
+  for (const ctx of [deadline, context]) {
+    const snapshot = ctx === context ? apply(s, planCommand(s, admin, 'closeRegistration', {}, context)) : s;
+    for (const [command, data] of [['cancelRegistration', {}], ['cancelEntry', { entry_id: entry }]] as const) {
+      assert.throws(() => planCommand(snapshot, a, command, data, ctx), { code: 'REGISTRATION_CLOSED' });
+    }
+    assert.throws(() => previewWithdrawal(snapshot, a, withdrawal, ctx.now), { code: 'REGISTRATION_CLOSED' });
+    assert.doesNotThrow(() => previewWithdrawal(snapshot, admin, withdrawal, ctx.now));
+  }
+  for (const state of ['ready', 'active']) {
+    const snapshot = structuredClone(s); snapshot.event!.modular_state = state;
+    assert.throws(() => previewWithdrawal(snapshot, a, withdrawal, context.now), { code: 'REGISTRATION_CLOSED' });
+  }
+});
+test('a joined player can move within the same doubles team without changing consent or membership', () => {
+  const d = definition(); d.registration.entry_type = 'fixed_doubles';
+  let s = published(d);
+  s = apply(s, planCommand(s, a, 'joinTournament', { definition_id: s.event!.definition_id, consent: true, slot_index: 1, position: 1 }, context));
+  const before = structuredClone(s.team_members[0]);
+  const move = planCommand(s, a, 'selectEntrySlot', { slot_index: 1, position: 2 }, context);
+  assert.deepEqual(move.effects.team_members, [{ id: before.id, player_slot: 2 }]);
+  s = apply(s, move);
+  assert.deepEqual(s.team_members[0], { ...before, player_slot: 2 });
+  assert.equal(s.team_members.filter(member => member.user_id === a.id && member.membership_status === 'active').length, 1);
+  assert.throws(() => planCommand(s, a, 'selectEntrySlot', { slot_index: 1, position: 2 }, context), { code: 'INVALID_STATE' });
+  s = apply(s, planCommand(s, a, 'selectEntrySlot', { slot_index: 1, position: 1 }, context));
+  assert.equal(s.team_members[0].player_slot, 1);
+  s = apply(s, planCommand(s, admin, 'placeRegisteredPlayer', { user_id: a.id, slot_index: 1, position: 2 }, context));
+  assert.equal(s.team_members[0].player_slot, 2);
+  s = apply(s, planCommand(s, a, 'selectEntrySlot', { slot_index: 1, position: 1 }, context));
+  s = apply(s, planCommand(s, b, 'joinTournament', { definition_id: s.event!.definition_id, consent: true, slot_index: 1, position: 2 }, context));
+  const partner = structuredClone(s.team_members.find(member => member.user_id === b.id));
+  assert.throws(() => planCommand(s, a, 'selectEntrySlot', { slot_index: 1, position: 2 }, context), { code: 'SLOT_FULL' });
+  assert.deepEqual(s.team_members.find(member => member.user_id === b.id), partner);
+  s = apply(s, planCommand(s, admin, 'closeRegistration', {}, context));
+  assert.throws(() => planCommand(s, a, 'selectEntrySlot', { slot_index: 1, position: 2 }, context), { code: 'INVALID_STATE' });
+});
 test('administrators can place only players who already joined an individual-slot tournament', () => {
   const d = definition(); d.registration.entry_type = 'fixed_doubles'; d.registration.partner_consent = false;
   let s = published(d);
@@ -142,7 +197,7 @@ test('roster locks create deterministic local fixtures once and event starts exp
   assert.equal(active.event!.modular_state, 'active');
   assert.throws(() => planCommand(active, admin, 'lockRoster', { reviewed_roster_revision: 0 }, context), { code: 'INVALID_STATE' });
 });
-test('confirmation follows actual submitting entry, rejects own side, and final acceptance completes event', () => {
+test('tournament participants or admins may validate a score, while outsiders cannot', () => {
   let s = ready(); s = apply(s, planCommand(s, owner, 'startTournament', {}, context));
   const matchId = s.matches[0].id;
   assert.throws(() => planCommand(s, b, 'submitScore', { match_id: matchId, score_a: 12, score_b: 8 }, context), { code: 'INVALID_SCORE' });
@@ -150,7 +205,14 @@ test('confirmation follows actual submitting entry, rejects own side, and final 
   s = apply(s, planCommand(s, b, 'submitScore', { match_id: matchId, score_a: 11, score_b: 5 }, context));
   const data = { match_id: matchId, result_revision: s.matches[0].result_revision };
   assert.equal(s.event!.modular_state, 'active');
-  assert.throws(() => planCommand(s, b, 'confirmScore', data, context), { code: 'FORBIDDEN' });
+  const third = { id: id(), clientId: 'web' };
+  const outsider = { id: id(), clientId: 'web' };
+  const withThird = { ...s, tournament_players: [...s.tournament_players, { id: id(), user_id: third.id, status: 'approved' }] };
+  assert.throws(() => planCommand(withThird, outsider, 'confirmScore', data, context), { code: 'FORBIDDEN' });
+  for (const actor of [a, b, third, admin]) {
+    const plan = planCommand(withThird, actor, 'confirmScore', data, context);
+    assert.equal(plan.effects.matches?.find(match => match.id === matchId)?.validated_by, actor.id);
+  }
   s = apply(s, planCommand(s, a, 'confirmScore', data, context));
   assert.equal(s.matches[0].id, idBefore); assert.equal(s.matches.length, 1);
   assert.equal(s.event!.modular_state, 'completed');

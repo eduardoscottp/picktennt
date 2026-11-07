@@ -7,7 +7,7 @@ const position = { slot_index: { type: 'integer', minimum: 1, maximum: 16 }, pos
 const commands = {
   player_join_tournament: { command: 'joinTournament', data: object({ definition_id: uuid, consent: { type: 'boolean', const: true }, ...position }), description: 'Join an available individual position using only your connected account. Read the published rules and obtain your explicit acceptance first. No names, partner approval or other player identity may be supplied.' },
   player_select_position: { command: 'selectEntrySlot', data: object(position), description: 'Move your own registered account into an available individual position before fixtures. Explain the move first. Never move another player.' },
-  player_cancel_registration: { command: 'cancelRegistration', data: object({}), description: 'Cancel only your own registration before fixtures after you explicitly request to leave.' },
+  player_cancel_registration: { command: 'cancelRegistration', data: object({}), description: 'Cancel your own registration only while registration is open, after you explicitly request to leave. Once closed, contact the tournament administrator.' },
 };
 export const PLAYER_TOOLS: Tool[] = [
   { name: 'player_get_tournament', description: 'Read the authorized published tournament, current individual positions and registration rules for your connected account.', inputSchema: object({ tournament_id: uuid }), annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } },

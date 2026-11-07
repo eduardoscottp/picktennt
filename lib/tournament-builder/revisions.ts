@@ -38,7 +38,10 @@ export function previewRevision(s: CommandSnapshot, actor: CommandActor, data: R
     const team = s.teams.find(t => t.id === id && ['approved', 'pending'].includes(String(t.entry_state)));
     if (!team) fail('NOT_FOUND', 'Choose a current entry.');
     if (e.remove !== undefined && typeof e.remove !== 'boolean') fail('INVALID_REQUEST', 'Removal must be true or false.');
-    if (e.remove === true) { entries.push({ entry_id: id, entry_name: String(team!.name), player_ids: [], remove: true }); continue; }
+    if (e.remove === true) {
+      if (actor.clientId === 'web' && s.matches.length) fail('STRUCTURE_LOCKED', 'Teams cannot be removed in the website after matches have been generated.');
+      entries.push({ entry_id: id, entry_name: String(team!.name), player_ids: [], remove: true }); continue;
+    }
     if (team!.entry_state !== 'approved') fail('INVALID_STATE', 'Approve a pending entry before changing its players.');
     if (!Array.isArray(e.player_ids) || !e.player_ids.every(p => typeof p === 'string' && UUID.test(p))) fail('INVALID_REQUEST', 'Choose existing Picktennt player profiles.');
     entries.push({ entry_id: id, entry_name: text(e.entry_name, 'a team name', 120), player_ids: (e.player_ids as string[]).map(p => p.toLowerCase()) });
@@ -53,7 +56,6 @@ export function previewRevision(s: CommandSnapshot, actor: CommandActor, data: R
     if (e.player_ids.length !== required && !(beforeFixtures && required === 2 && e.player_ids.length === 1)) fail('INCOMPLETE_ROSTER', `Each retained team must have ${required} registered player(s).`);
     for (const id of e.player_ids) {
       if (!UUID.test(id)) fail('ACCOUNT_REQUIRED', 'All players must have Picktennt accounts.');
-      if (beforeFixtures && !s.tournament_players.some(p => p.user_id === id && p.status === 'approved')) fail('NOT_REGISTERED', 'Only players who already joined can be placed in the revised roster.');
       if (players.has(id)) fail('DUPLICATE_ENTRY', 'A player cannot belong to two retained teams. Submit both sides of a swap together.');
       players.add(id);
     }

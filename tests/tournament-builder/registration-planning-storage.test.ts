@@ -14,6 +14,11 @@ test('SQL preserves the published registration plan and persists underfilled ass
     const event = randomUUID(), actor = { id: owner, clientId: 'web' };
     const context = { now: '2026-10-28T16:00:00Z', id: randomUUID, draw: (ids: readonly string[]) => [...ids] };
     const full: GraphDefinition = JSON.parse(readFileSync('../examples/four-groups-definition.json', 'utf8'));
+    const now = Date.now();
+    full.event.timezone = 'UTC';
+    full.registration.closes_at = new Date(now + 30 * 86400000).toISOString();
+    full.event.starts_at = new Date(now + 31 * 86400000).toISOString();
+    full.event.expected_end_at = new Date(now + 31 * 86400000 + 4 * 3600000).toISOString();
     full.registration.min_entries = 8;
     const d = { ...full, nodes: full.nodes.filter(n => ['registration@1', 'entries@1', 'round_robin@2'].includes(n.module)) };
     let current: CommandSnapshot = { event: null, definitions: [], teams: [], team_members: [], tournament_players: [], stages: [], rounds: [], matches: [], standings: [] };

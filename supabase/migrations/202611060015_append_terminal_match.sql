@@ -1,0 +1,100 @@
+BEGIN;
+CREATE OR REPLACE FUNCTION tournament_builder_private.validate_append_terminal_match(actor uuid,event uuid,request jsonb,effects jsonb) RETURNS void
+LANGUAGE plpgsql SET search_path=pg_catalog,public AS $$
+#variable_conflict use_variable
+DECLARE ev public.tournaments%ROWTYPE; entries public.tournament_stages%ROWTYPE; placement public.tournament_stages%ROWTYPE;
+ old_nodes jsonb; new_nodes jsonb; old_placement jsonb; new_placement jsonb; final_node jsonb; bronze_node jsonb; added jsonb; source jsonb; source_match public.matches%ROWTYPE;
+ source_ids uuid[]:=ARRAY[]::uuid[]; source_kinds text[]:=ARRAY[]::text[]; teams uuid[]:=ARRAY[]::uuid[]; candidate jsonb; expected jsonb; actual jsonb;
+ added_id text; mode text; other_node text; new_stage uuid; new_round uuid; new_match uuid; wave integer; round_no integer; required integer; i integer; expected_count integer:=1;
+BEGIN
+ SELECT * INTO ev FROM public.tournaments WHERE id=event;
+ IF ev.modular_state IS DISTINCT FROM 'active' OR ev.results_under_review IS DISTINCT FROM true THEN RAISE EXCEPTION 'INVALID_STATE'; END IF;
+ IF ev.created_by<>actor AND NOT EXISTS(SELECT 1 FROM public.tournament_admins WHERE tournament_id=event AND user_id=actor) THEN RAISE EXCEPTION 'FORBIDDEN'; END IF;
+ PERFORM tournament_builder_private.assert_keys(request,ARRAY['nodes','reason','preview_hash']);
+ IF jsonb_typeof(request->'nodes') IS DISTINCT FROM 'array' OR jsonb_array_length(request->'nodes')>64 OR jsonb_typeof(request->'reason') IS DISTINCT FROM 'string' OR length(btrim(request->>'reason')) NOT BETWEEN 1 AND 1000 OR coalesce(request->>'preview_hash','') !~ '^[a-f0-9]{64}$' THEN RAISE EXCEPTION 'INVALID_REQUEST'; END IF;
+ SELECT * INTO entries FROM public.tournament_stages s WHERE s.tournament_id=event AND s.definition_id=ev.definition_id AND s.module_id='entries';
+ IF NOT FOUND THEN RAISE EXCEPTION 'INVALID_STATE'; END IF;
+ SELECT coalesce(entries.output->'finalizedNodes',d.definition->'nodes') INTO old_nodes FROM public.tournament_definitions d WHERE d.id=ev.definition_id AND d.tournament_id=event AND d.definition->>'schema_version'='2.0';
+ new_nodes:=request->'nodes';
+ IF jsonb_typeof(old_nodes) IS DISTINCT FROM 'array' OR jsonb_array_length(new_nodes)<>jsonb_array_length(old_nodes)+1 OR (SELECT count(DISTINCT n->>'id') FROM jsonb_array_elements(new_nodes) n)<>jsonb_array_length(new_nodes) THEN RAISE EXCEPTION 'INVALID_DEFINITION'; END IF;
+ SELECT n INTO old_placement FROM jsonb_array_elements(old_nodes) n WHERE n->>'module'='placements@2';
+ IF old_placement IS NULL THEN RAISE EXCEPTION 'INVALID_DEFINITION'; END IF;
+ IF EXISTS(SELECT 1 FROM jsonb_array_elements(old_nodes) old WHERE old->>'id'<>old_placement->>'id' AND (SELECT count(*) FROM jsonb_array_elements(new_nodes) n WHERE n=old)<>1) THEN RAISE EXCEPTION 'UNSUPPORTED_FORMAT'; END IF;
+ SELECT n INTO new_placement FROM jsonb_array_elements(new_nodes) n WHERE n->>'id'=old_placement->>'id';
+ IF new_placement IS NULL OR jsonb_typeof(new_placement->'id') IS DISTINCT FROM 'string' OR jsonb_typeof(new_placement->'module') IS DISTINCT FROM 'string' OR jsonb_typeof(new_placement->'final') IS DISTINCT FROM 'string' OR (new_placement ? 'bronze' AND jsonb_typeof(new_placement->'bronze') IS DISTINCT FROM 'string') OR new_placement->>'module' IS DISTINCT FROM 'placements@2' THEN RAISE EXCEPTION 'INVALID_DEFINITION'; END IF;
+ PERFORM tournament_builder_private.assert_keys(new_placement,ARRAY['id','module','final','bronze']);
+ SELECT n INTO added FROM jsonb_array_elements(new_nodes) n WHERE NOT EXISTS(SELECT 1 FROM jsonb_array_elements(old_nodes) old WHERE old->>'id'=n->>'id');
+ IF added IS NULL OR jsonb_typeof(added->'id') IS DISTINCT FROM 'string' OR jsonb_typeof(added->'module') IS DISTINCT FROM 'string' OR added->>'module' IS DISTINCT FROM 'match@1' OR coalesce(added->>'id','') !~ '^[a-zA-Z0-9_-]{1,40}$' OR jsonb_typeof(added->'inputs') IS DISTINCT FROM 'array' OR jsonb_array_length(added->'inputs')<>2 THEN RAISE EXCEPTION 'UNSUPPORTED_FORMAT'; END IF;
+ PERFORM tournament_builder_private.assert_keys(added,ARRAY['id','module','inputs']);
+ added_id:=added->>'id';
+ IF EXISTS(SELECT 1 FROM public.tournament_stages WHERE tournament_id=event AND definition_id=ev.definition_id AND node_id=added_id) THEN RAISE EXCEPTION 'INVALID_STATE'; END IF;
+ IF new_placement->>'final'=added_id AND new_placement->>'bronze' IS NOT DISTINCT FROM old_placement->>'bronze' THEN mode:='final';
+ ELSIF new_placement->>'final'=old_placement->>'final' AND NOT (old_placement ? 'bronze') AND new_placement->>'bronze'=added_id THEN mode:='bronze';
+ ELSE RAISE EXCEPTION 'UNSUPPORTED_FORMAT'; END IF;
+ IF new_placement ? 'bronze' THEN
+  SELECT n INTO final_node FROM jsonb_array_elements(new_nodes) n WHERE n->>'id'=new_placement->>'final' AND n->>'module'='match@1';
+  SELECT n INTO bronze_node FROM jsonb_array_elements(new_nodes) n WHERE n->>'id'=new_placement->>'bronze' AND n->>'module'='match@1';
+  IF final_node IS NULL OR bronze_node IS NULL OR new_placement->>'final'=new_placement->>'bronze' OR jsonb_typeof(final_node->'inputs') IS DISTINCT FROM 'array' OR jsonb_array_length(final_node->'inputs')<>2 OR jsonb_typeof(bronze_node->'inputs') IS DISTINCT FROM 'array' OR jsonb_array_length(bronze_node->'inputs')<>2 OR EXISTS(SELECT 1 FROM jsonb_array_elements(final_node->'inputs') input WHERE input->>'kind' IS DISTINCT FROM 'winner' OR NOT EXISTS(SELECT 1 FROM jsonb_array_elements(bronze_node->'inputs') other WHERE other->>'kind'='loser' AND other->>'node_id'=input->>'node_id')) THEN RAISE EXCEPTION 'INVALID_DEFINITION'; END IF;
+ END IF;
+ SELECT * INTO placement FROM public.tournament_stages s WHERE s.tournament_id=event AND s.definition_id=ev.definition_id AND s.node_id=old_placement->>'id' AND s.module_id='placements';
+ IF NOT FOUND THEN RAISE EXCEPTION 'INVALID_STATE'; END IF;
+ IF placement.state IS DISTINCT FROM 'blocked' OR placement.blocked_code IS DISTINCT FROM 'RESULTS_UNDER_REVIEW' OR placement.output->>'state' IS DISTINCT FROM 'completed' OR placement.output->>'championEntryId' IS NULL THEN RAISE EXCEPTION 'INVALID_STATE'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM public.matches WHERE tournament_id=event AND is_current AND voided_at IS NULL) OR EXISTS(SELECT 1 FROM public.matches m WHERE m.tournament_id=event AND m.is_current AND m.voided_at IS NULL AND (m.status NOT IN ('validated','walkover') OR m.outcome_kind IS NULL)) THEN RAISE EXCEPTION 'INVALID_STATE'; END IF;
+ IF EXISTS(SELECT 1 FROM public.matches m LEFT JOIN public.tournament_stages s ON s.id=m.stage_id AND s.tournament_id=event AND s.definition_id=ev.definition_id WHERE m.tournament_id=event AND m.is_current AND m.voided_at IS NULL AND (s.id IS NULL OR m.logical_key IS NULL OR NOT EXISTS(SELECT 1 FROM jsonb_array_elements(old_nodes) n WHERE n->>'id'=s.node_id AND n->>'module'=s.module_id||'@'||s.module_version::text) OR (s.module_id='match' AND m.logical_key IS DISTINCT FROM s.node_id||':match') OR (s.module_id IN ('round_robin','cross_play') AND m.logical_key !~ ('^'||s.node_id||':r[1-9][0-9]*:m[1-9][0-9]*$')) OR s.module_id NOT IN ('match','round_robin','cross_play'))) OR (SELECT count(*) FROM public.matches m WHERE m.tournament_id=event AND m.is_current AND m.voided_at IS NULL)<>(SELECT count(DISTINCT logical_key) FROM public.matches m WHERE m.tournament_id=event AND m.is_current AND m.voided_at IS NULL) THEN RAISE EXCEPTION 'INVALID_STATE'; END IF;
+ required:=CASE ev.type WHEN 'singles' THEN 1 WHEN 'doubles' THEN 2 ELSE 0 END;
+ IF required=0 OR EXISTS(SELECT 1 FROM public.matches m WHERE m.tournament_id=event AND m.is_current AND m.voided_at IS NULL AND (m.started_at IS NOT NULL OR m.status IN ('in_progress','score_entered','disputed') OR m.outcome_kind IN ('played','retirement') OR m.score_a IS NOT NULL OR m.score_b IS NOT NULL) AND (m.player_a1_id IS NULL OR m.player_b1_id IS NULL OR num_nonnulls(m.player_a1_id,m.player_a2_id,m.player_b1_id,m.player_b2_id)<>required*2 OR (SELECT count(DISTINCT p) FROM unnest(ARRAY[m.player_a1_id,m.player_a2_id,m.player_b1_id,m.player_b2_id]) p WHERE p IS NOT NULL)<>required*2 OR (required=1 AND (m.player_a2_id IS NOT NULL OR m.player_b2_id IS NOT NULL)))) THEN RAISE EXCEPTION 'INVALID_STATE'; END IF;
+ FOR i IN 0..1 LOOP
+  source:=added->'inputs'->i;
+  PERFORM tournament_builder_private.assert_keys(source,ARRAY['kind','node_id']);
+  IF jsonb_typeof(source->'kind') IS DISTINCT FROM 'string' OR jsonb_typeof(source->'node_id') IS DISTINCT FROM 'string' OR coalesce(source->>'kind','') NOT IN ('winner','loser') OR NOT EXISTS(SELECT 1 FROM jsonb_array_elements(old_nodes) n WHERE n->>'id'=source->>'node_id' AND n->>'module'='match@1') THEN RAISE EXCEPTION 'UNSUPPORTED_FORMAT'; END IF;
+  IF EXISTS(SELECT 1 FROM jsonb_array_elements(old_nodes) n CROSS JOIN LATERAL jsonb_array_elements(coalesce(n->'inputs','[]')||coalesce(n->'side_a','[]')||coalesce(n->'side_b','[]')) input WHERE input->>'node_id'=source->>'node_id' AND input->>'kind'=source->>'kind') THEN RAISE EXCEPTION 'INVALID_STATE'; END IF;
+  SELECT m.* INTO source_match FROM public.matches m JOIN public.tournament_stages s ON s.id=m.stage_id AND s.tournament_id=event AND s.definition_id=ev.definition_id WHERE m.tournament_id=event AND m.is_current AND m.voided_at IS NULL AND s.node_id=source->>'node_id' AND m.logical_key=s.node_id||':match';
+  IF NOT FOUND OR source_match.status NOT IN ('validated','walkover') OR source_match.team_a_id IS NULL OR source_match.team_b_id IS NULL OR source_match.winner_team_id IS NULL OR source_match.winner_team_id NOT IN (source_match.team_a_id,source_match.team_b_id) OR (source->>'kind'='winner' AND source_match.bracket_next_winner_match_id IS NOT NULL) OR (source->>'kind'='loser' AND source_match.bracket_next_loser_match_id IS NOT NULL) THEN RAISE EXCEPTION 'INVALID_STATE'; END IF;
+  IF (SELECT count(*) FROM public.matches m JOIN public.tournament_stages s ON s.id=m.stage_id AND s.tournament_id=event AND s.definition_id=ev.definition_id WHERE m.tournament_id=event AND m.is_current AND m.voided_at IS NULL AND s.node_id=source->>'node_id')<>1 THEN RAISE EXCEPTION 'INVALID_STATE'; END IF;
+  source_ids:=array_append(source_ids,source_match.id); source_kinds:=array_append(source_kinds,source->>'kind');
+  teams:=array_append(teams,CASE WHEN source->>'kind'='winner' THEN source_match.winner_team_id WHEN source_match.winner_team_id=source_match.team_a_id THEN source_match.team_b_id ELSE source_match.team_a_id END);
+ END LOOP;
+ IF (source_ids[1]=source_ids[2] AND source_kinds[1]=source_kinds[2]) OR teams[1]=teams[2] OR EXISTS(SELECT 1 FROM unnest(teams) AS selected(team_id) WHERE NOT EXISTS(SELECT 1 FROM public.teams t WHERE t.id=selected.team_id AND t.tournament_id=event AND t.entry_state='approved') OR (SELECT count(DISTINCT tm.user_id) FROM public.team_members tm WHERE tm.tournament_id=event AND tm.team_id=selected.team_id AND tm.membership_status='active')<>required OR EXISTS(SELECT 1 FROM public.teams t WHERE t.id=selected.team_id AND t.tournament_id=event AND CASE WHEN jsonb_typeof(t.guest_players)='array' THEN jsonb_array_length(t.guest_players)>0 ELSE false END)) THEN RAISE EXCEPTION 'INVALID_STATE'; END IF;
+ other_node:=CASE WHEN mode='bronze' THEN new_placement->>'final' ELSE new_placement->>'bronze' END;
+ IF other_node IS NOT NULL AND ((SELECT count(*) FROM public.matches m JOIN public.tournament_stages s ON s.id=m.stage_id AND s.tournament_id=event AND s.definition_id=ev.definition_id WHERE m.tournament_id=event AND m.is_current AND m.voided_at IS NULL AND s.node_id=other_node)<>1 OR NOT EXISTS(SELECT 1 FROM public.matches m JOIN public.tournament_stages s ON s.id=m.stage_id AND s.tournament_id=event AND s.definition_id=ev.definition_id WHERE m.tournament_id=event AND m.is_current AND m.voided_at IS NULL AND s.node_id=other_node AND m.team_a_id IS NOT NULL AND m.team_b_id IS NOT NULL AND teams[1] NOT IN (m.team_a_id,m.team_b_id) AND teams[2] NOT IN (m.team_a_id,m.team_b_id))) THEN RAISE EXCEPTION 'INVALID_STATE'; END IF;
+ PERFORM tournament_builder_private.assert_keys(effects,ARRAY['stages','rounds','matches']);
+ IF jsonb_array_length(coalesce(effects->'stages','[]'))<>3 OR jsonb_array_length(coalesce(effects->'rounds','[]'))<>1 OR jsonb_array_length(coalesce(effects->'matches','[]'))<2 THEN RAISE EXCEPTION 'INVALID_EFFECTS'; END IF;
+ IF effects->'stages'->0 IS DISTINCT FROM jsonb_build_object('id',entries.id,'output',entries.output||jsonb_build_object('finalizedNodes',new_nodes)) THEN RAISE EXCEPTION 'INVALID_EFFECTS'; END IF;
+ candidate:=effects->'stages'->1; new_stage:=(candidate->>'id')::uuid;
+ IF new_stage IS NULL OR EXISTS(SELECT 1 FROM public.tournament_stages WHERE id=new_stage) OR candidate IS DISTINCT FROM jsonb_build_object('id',new_stage,'definition_id',ev.definition_id,'node_id',added_id,'module_id','match','module_version',1,'state','ready','input_revision',0,'output_revision',ev.revision+1,'output',jsonb_build_object('state','ready','entryIds',to_jsonb(teams),'inputRevision',0),'blocked_code',NULL) THEN RAISE EXCEPTION 'INVALID_EFFECTS'; END IF;
+ IF effects->'stages'->2 IS DISTINCT FROM jsonb_build_object('id',placement.id,'state','ready','output_revision',ev.revision+1,'output',jsonb_build_object('state','ready'),'blocked_code',NULL) THEN RAISE EXCEPTION 'INVALID_EFFECTS'; END IF;
+ SELECT coalesce(max(logical_wave),0)+1,coalesce(max(round_number),0)+1 INTO wave,round_no FROM public.rounds WHERE tournament_id=event;
+ candidate:=effects->'rounds'->0; new_round:=(candidate->>'id')::uuid;
+ IF new_round IS NULL OR EXISTS(SELECT 1 FROM public.rounds WHERE id=new_round) OR candidate IS DISTINCT FROM jsonb_build_object('id',new_round,'stage_id',new_stage,'logical_wave',wave,'round_number',round_no,'round_type',CASE mode WHEN 'final' THEN 'finals_gold' ELSE 'finals_bronze' END,'status','pending','schedule_generation',ev.roster_revision,'is_current',true) THEN RAISE EXCEPTION 'INVALID_EFFECTS'; END IF;
+ candidate:=effects->'matches'->0; new_match:=(candidate->>'id')::uuid;
+ IF new_match IS NULL OR EXISTS(SELECT 1 FROM public.matches WHERE id=new_match) OR candidate IS DISTINCT FROM jsonb_build_object('id',new_match,'round_id',new_round,'stage_id',new_stage,'logical_key',added_id||':match','court_number',1,'team_a_id',teams[1],'team_b_id',teams[2],'schedule_generation',ev.roster_revision,'is_current',true,'status','scheduled','revision',ev.revision+1,'result_revision',0,'submit_to_dupr',false) THEN RAISE EXCEPTION 'INVALID_EFFECTS'; END IF;
+ FOR i IN 1..2 LOOP
+  IF i=2 AND source_ids[2]=source_ids[1] THEN CONTINUE; END IF;
+  expected:=jsonb_build_object('id',source_ids[i]);
+  IF source_ids[1]=source_ids[i] THEN expected:=expected||CASE source_kinds[1] WHEN 'winner' THEN jsonb_build_object('bracket_next_winner_match_id',new_match,'bracket_winner_fills_side','a') ELSE jsonb_build_object('bracket_next_loser_match_id',new_match,'bracket_loser_fills_side','a') END; END IF;
+  IF source_ids[2]=source_ids[i] THEN expected:=expected||CASE source_kinds[2] WHEN 'winner' THEN jsonb_build_object('bracket_next_winner_match_id',new_match,'bracket_winner_fills_side','b') ELSE jsonb_build_object('bracket_next_loser_match_id',new_match,'bracket_loser_fills_side','b') END; END IF;
+  SELECT value INTO actual FROM jsonb_array_elements(effects->'matches') WHERE value->>'id'=source_ids[i]::text;
+  IF actual IS DISTINCT FROM expected OR (SELECT count(*) FROM jsonb_array_elements(effects->'matches') WHERE value->>'id'=source_ids[i]::text)<>1 THEN RAISE EXCEPTION 'INVALID_EFFECTS'; END IF;
+  expected_count:=expected_count+1;
+ END LOOP;
+ IF jsonb_array_length(effects->'matches')<>expected_count THEN RAISE EXCEPTION 'INVALID_EFFECTS'; END IF;
+END $$;
+REVOKE ALL ON FUNCTION tournament_builder_private.validate_append_terminal_match(uuid,uuid,jsonb,jsonb) FROM PUBLIC,anon,authenticated,service_role;
+DO $migration$
+DECLARE source text; anchor text;
+BEGIN
+ SELECT pg_get_functiondef('tournament_builder_private.authorize(uuid,text,uuid,text,jsonb,uuid)'::regprocedure) INTO source;
+ anchor:=$old$ARRAY['replayTerminalMatch','withdrawPlayer','forcePendingMatch'$old$;
+ IF (length(source)-length(replace(source,anchor,'')))/length(anchor)<>1 THEN RAISE EXCEPTION 'APPEND_TERMINAL_AUTH_SOURCE_MISMATCH'; END IF;
+ EXECUTE replace(source,anchor,$new$ARRAY['appendTerminalMatch','replayTerminalMatch','withdrawPlayer','forcePendingMatch'$new$);
+ SELECT pg_get_functiondef('public.tb_apply_command(uuid,text,uuid,text,text,uuid,bigint,jsonb,jsonb,jsonb,uuid)'::regprocedure) INTO source;
+ anchor:=$old$'createDraft','updateDraft','replayTerminalMatch','withdrawPlayer','forcePendingMatch'$old$;
+ IF (length(source)-length(replace(source,anchor,'')))/length(anchor)<>1 THEN RAISE EXCEPTION 'APPEND_TERMINAL_COMMAND_SOURCE_MISMATCH'; END IF;
+ source:=replace(source,anchor,$new$'createDraft','updateDraft','appendTerminalMatch','replayTerminalMatch','withdrawPlayer','forcePendingMatch'$new$);
+ anchor:=$old$IF p_command='replayTerminalMatch' THEN PERFORM tournament_builder_private.validate_replay_terminal_match(p_actor_id,p_tournament_id,p_request,p_effects); END IF;$old$;
+ IF (length(source)-length(replace(source,anchor,'')))/length(anchor)<>1 THEN RAISE EXCEPTION 'APPEND_TERMINAL_GUARD_SOURCE_MISMATCH'; END IF;
+ source:=replace(source,anchor,$new$IF p_command='appendTerminalMatch' THEN PERFORM tournament_builder_private.validate_append_terminal_match(p_actor_id,p_tournament_id,p_request,p_effects); END IF;
+ IF p_command='replayTerminalMatch' THEN PERFORM tournament_builder_private.validate_replay_terminal_match(p_actor_id,p_tournament_id,p_request,p_effects); END IF;$new$);
+ EXECUTE source;
+END $migration$;
+COMMIT;

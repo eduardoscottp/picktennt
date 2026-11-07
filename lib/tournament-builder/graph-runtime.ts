@@ -11,14 +11,19 @@ export function analyzeGraph(d: GraphDefinition, entries: readonly TournamentEnt
   if (invalid.length)
     throw new Error(invalid.map(i => i.message).join(' '));
   const out: GraphAnalysis = { state: 'waiting', fixtures: [], resolvedFixtures: [], standings: [], ties: [], qualifiers: [], graphStages: {} };
-  if (entries.length < d.registration.min_entries || entries.length > d.registration.max_entries || entries.some(e => e.playerIds.length !== (d.registration.entry_type === 'singles' ? 1 : 2)))
+  const expectedPlayers = d.registration.entry_type === 'singles' ? 1 : 2;
+  if (entries.length < d.registration.min_entries || entries.length > d.registration.max_entries || entries.some(e => options.allowIncompleteRoster ? e.playerIds.length > expectedPlayers : e.playerIds.length !== expectedPlayers))
     return { ...out, state: 'blocked', blockedCode: 'INVALID_CAPACITY' };
-  assertValidRoster(entries, d.event.courts);
+  assertValidRoster(entries, d.event.courts, options.allowIncompleteRoster);
   if (new Set(results.map(r => r.fixtureId)).size !== results.length)
     throw new Error('Results must reference unique current fixtures.');
   const eligible = options.eligibleEntryIds ?? entries.map(e => e.id);
   if (new Set(eligible).size !== eligible.length || eligible.some(id => !entries.some(e => e.id === id)))
     throw new Error('Eligible IDs must be unique roster entries.');
+  for (const [nodeId, override] of Object.entries(options.manualMatchEntries ?? {})) {
+    if (!d.nodes.some(node => node.id === nodeId && node.module === 'match@1') || !override || typeof override !== 'object' || Array.isArray(override) || Object.keys(override).some(key => key !== 'a' && key !== 'b') || Object.values(override).some(id => typeof id !== 'string' || !eligible.includes(id)) || (override.a && override.b && override.a === override.b))
+      throw new Error('Invalid manual match entries.');
+  }
   const seedIds = options.directDraw?.entryIds ?? entries.map(e => e.id);
   const assignments = options.seedAssignments;
   if (assignments && (Object.keys(assignments).some(key => !/^[1-9]\d*$/.test(key) || Number(key) > d.registration.max_entries) || Object.values(assignments).length !== entries.length || new Set(Object.values(assignments)).size !== entries.length || Object.values(assignments).some(id => !entries.some(e => e.id === id)))) throw new Error('Invalid group slot assignments.');
@@ -56,6 +61,7 @@ export function analyzeGraph(d: GraphDefinition, entries: readonly TournamentEnt
     }
     if (node.module === 'placements@2') {
       const final = out.graphStages[node.final], bronze = node.bronze ? out.graphStages[node.bronze] : undefined;
+      if (bronze && final.entryIds.some(id => bronze.entryIds.includes(id))) throw new Error('Placement matches cannot share a team.');
       const allPlayingBlocksComplete = d.nodes.filter(n => graphSources(n).length).every(n => completed.has(n.id));
       if (final.state === 'completed' && (!bronze || bronze.state === 'completed') && allPlayingBlocksComplete) {
         if (!final.winnerEntryId) {
@@ -74,16 +80,16 @@ export function analyzeGraph(d: GraphDefinition, entries: readonly TournamentEnt
               groups.push({ rank: 4, entryIds: [bronze.loserEntryId] });
           }
           // Group eliminated entries by distance from the final; unrelated pool ranks are never compared.
-          let frontier = [node.final], rank = 3;
           const seen = new Set(groups.flatMap(g => g.entryIds));
+          let frontier = [node.final], rank = Math.max(3, seen.size + 1);
           while (frontier.length) {
             const feeders = frontier.flatMap(id => { const n = d.nodes.find(n => n.id === id); return n?.module === 'match@1' ? n.inputs.flatMap(s => s.kind === 'winner' ? [s.node_id] : []) : []; });
-            const ids = feeders.flatMap(id => { const loser = out.graphStages[id]?.loserEntryId; return loser && !seen.has(loser) ? [loser] : []; });
+            const ids = [...new Set(feeders.flatMap(id => { const loser = out.graphStages[id]?.loserEntryId; return loser && !seen.has(loser) ? [loser] : []; }))];
             if (ids.length) {
               groups.push({ rank, entryIds: ids });
               ids.forEach(id => seen.add(id));
             }
-            rank += feeders.length;
+            rank += ids.length;
             frontier = feeders;
           }
           const rest = entries.filter(e => eligible.includes(e.id) && !seen.has(e.id)).map(e => e.id);
@@ -103,11 +109,15 @@ export function analyzeGraph(d: GraphDefinition, entries: readonly TournamentEnt
       continue;
     }
     const sources = graphSources(node).filter(source => !(node.module === 'round_robin@2' && source.kind === 'seed' && seedValue(source.seed) === null));
-    const values = sources.map(sourceValue), allAvailable = values.every(v => v !== undefined);
+    const override = node.module === 'match@1' ? options.manualMatchEntries?.[node.id] : undefined;
+    const manual = [override?.a, override?.b];
+    const values = sources.map((source, index) => manual[index] ?? sourceValue(source)), allAvailable = values.every(v => v !== undefined);
     const entryIds = values.filter((v): v is string => typeof v === 'string' && !!v);
     if (new Set(entryIds).size !== entryIds.length)
       throw new Error('Graph block resolves duplicate entries.');
-    potentialByNode.set(node.id, new Set(sources.flatMap(s => [...potential(s)])));
+    const possible = (index: number) => manual[index] ? new Set([manual[index]!]) : potential(sources[index]);
+    if (override && [...possible(0)].some(id => possible(1).has(id))) throw new Error('Manual match entries may resolve to the same team.');
+    potentialByNode.set(node.id, new Set(sources.flatMap((_, index) => [...possible(index)])));
     const tokenEntries = sources.map((_, i) => ({ id: String(i), playerIds: [String(i)] }));
     const generatedRoundRobin = node.module === 'round_robin@2' ? generateRoundRobin(tokenEntries, d.event.courts, node.id) : [];
     const roundRobinTemplate = generatedRoundRobin.map(f => [Number(f.a.kind === 'entry' ? f.a.entryId : 0), Number(f.b.kind === 'entry' ? f.b.entryId : 0)]);
@@ -115,16 +125,16 @@ export function analyzeGraph(d: GraphDefinition, entries: readonly TournamentEnt
     const crossTemplate = crossPairs.map(pair => [pair.a, pair.b]);
     const template = node.module === 'match@1' ? [[0, 1]] : node.module === 'cross_play@1' ? crossTemplate : roundRobinTemplate;
     const fixtures = node.module === 'match@1'
-      ? [{ id: `${node.id}:match`, stageId: node.id, round: 1, wave: 1, court: 1, a: slot(sources[0]), b: slot(sources[1]) }]
+      ? [{ id: `${node.id}:match`, stageId: node.id, round: 1, wave: 1, court: 1, a: manual[0] ? { kind: 'entry' as const, entryId: manual[0] } : slot(sources[0]), b: manual[1] ? { kind: 'entry' as const, entryId: manual[1] } : slot(sources[1]) }]
       : node.module === 'cross_play@1'
         ? crossPairs.map((pair, i) => ({ id: `${node.id}:r${pair.round}:m${crossPairs.slice(0, i + 1).filter(item => item.round === pair.round).length}`, stageId: node.id, round: pair.round, wave: 1, court: 1, a: slot(sources[pair.a]), b: slot(sources[pair.b]) }))
         : generatedRoundRobin.map(f => ({ ...f, a: slot(sources[Number(f.a.kind === 'entry' ? f.a.entryId : 0)]), b: slot(sources[Number(f.b.kind === 'entry' ? f.b.entryId : 0)]) }));
     // Keep possible participants fixed even after results resolve the ports.
     schedulingBlocks.push({
       id: node.id,
-      dependencies: [...new Set(sources.flatMap(s => s.kind === 'seed' ? [] : [s.node_id]))],
+      dependencies: [...new Set(sources.flatMap((s, index) => manual[index] || s.kind === 'seed' ? [] : [s.node_id]))],
       fixtures,
-      players: new Map(fixtures.map((f, i) => [f.id, [...new Set(template[i].flatMap(index => [...potential(sources[index])]).flatMap(id => entries.find(e => e.id === id)!.playerIds))]])),
+      players: new Map(fixtures.map((f, i) => [f.id, [...new Set(template[i].flatMap(index => [...possible(index)]).flatMap(id => [...entries.find(e => e.id === id)!.playerIds, ...(options.allowIncompleteRoster && !entries.find(e => e.id === id)!.playerIds.length ? [`\u0000team:${id}`] : [])]))]])),
     });
     out.fixtures.push(...fixtures);
     const localResults = results.filter(r => fixtures.some(f => f.id === r.fixtureId));

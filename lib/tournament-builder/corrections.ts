@@ -1,4 +1,5 @@
 import { entryPlayerIds } from './entry-roster';
+import { isEligibleEntry } from './disciplinary-eligibility';
 import { resolvedDefinition } from './resolved-definition';
 import type { CommandActor, CommandContext, CommandPlan, CommandSnapshot, StorageRow } from './commands';
 import { definitionHash, DomainError, UUID } from './requests';
@@ -7,7 +8,7 @@ import { isLegalScore, type OutcomeKind } from './policies';
 import { analyzeTournament } from './runtime';
 import { generateElimination } from './modules/elimination';
 import type { FixtureResult, RuntimeOptions } from './types';
-import { graphDependencies, type GraphDefinition } from './graph-types';
+import { graphDependencies, graphManualEntries, type GraphDefinition } from './graph-types';
 import { analyzeGraph } from './graph-runtime';
 import type { GraphRuntimeOptions } from './graph-types';
 
@@ -15,6 +16,9 @@ const record = (value: unknown): Record<string, unknown> => value !== null && ty
 const fail = (code: string, message: string): never => { throw new DomainError(code, message); };
 const current = (s: CommandSnapshot) => s.matches.filter(m => m.is_current !== false && !m.voided_at);
 const accepted = (m: StorageRow) => ['validated', 'walkover'].includes(String(m.status));
+const startedOrRecorded = (m: StorageRow) => Boolean(m.started_at) || accepted(m) || m.score_a != null || m.score_b != null || ['in_progress', 'score_entered', 'disputed'].includes(String(m.status));
+const matchDetails = (match: StorageRow) => ({ id: match.id, team_a_id: match.team_a_id ?? null, team_b_id: match.team_b_id ?? null, status: match.status ?? null, outcome_kind: match.outcome_kind ?? null, winner_team_id: match.winner_team_id ?? null, score_a: match.score_a ?? null, score_b: match.score_b ?? null, started_at: match.started_at ?? null, result_revision: match.result_revision ?? 0 });
+const mayHaveDuprHistory = (match: StorageRow) => match.outcome_kind === 'played' || (match.outcome_kind == null && match.status === 'validated' && match.score_a != null && match.score_b != null);
 function keys(data: Record<string, unknown>, allowed: readonly string[]) { if (Object.keys(data).some(key => !allowed.includes(key))) fail('INVALID_REQUEST', 'Unknown intervention field.'); }
 function ref(value: unknown): string { if (typeof value !== 'string' || !UUID.test(value)) return fail('INVALID_REQUEST', 'A resource UUID is required.'); return value; }
 function reason(value: unknown): string { if (typeof value !== 'string' || !value.trim() || value.length > 1000) return fail('INVALID_REQUEST', 'A short explicit reason is required.'); return value.trim(); }
@@ -22,7 +26,7 @@ function authorized(snapshot: CommandSnapshot, actor: CommandActor, ownEntryId?:
   if (!snapshot.event) fail('NOT_FOUND', 'Event not found.');
   if (actor.clientId !== 'web' && !actor.permissions?.includes('admin:manage')) fail('FORBIDDEN', 'Interventions require the website.');
   const admin = snapshot.event!.created_by === actor.id || actor.role === 'admin';
-  const own = ownEntryId && ['registration_open', 'registration_closed'].includes(String(snapshot.event!.modular_state)) && snapshot.team_members.some(m => m.team_id === ownEntryId && m.user_id === actor.id && m.membership_status !== 'cancelled');
+  const own = ownEntryId && snapshot.team_members.some(m => m.team_id === ownEntryId && m.user_id === actor.id && m.membership_status !== 'cancelled');
   if (!admin && !own) fail('FORBIDDEN', 'Administrator permission required after roster lock.');
   if (['draft', 'cancelled'].includes(String(snapshot.event!.modular_state))) fail('INVALID_STATE', 'Intervention is unavailable in the current state.');
 }
@@ -80,7 +84,7 @@ function graphCorrectionImpact(s: CommandSnapshot, d: GraphDefinition, source: S
   const matches = current(s).filter(m => !possible.has(m.id)).map(m => m.id === source.id ? { ...m, ...outcome, result_revision: Number(s.event!.revision) + 1 } : m);
   const stageInputs: GraphRuntimeOptions['stageInputs'] = Object.fromEntries(s.stages.map(stage => [String(stage.node_id), { inputRevision: Math.max(0, ...matches.filter(m => m.stage_id === stage.id).map(m => Number(m.result_revision ?? 0))), rankingDraws: record(stage.output).rankingDraws as RuntimeOptions['rankingDraws'] }]));
   const results: FixtureResult[] = matches.filter(m => m.outcome_kind).map(m => ({ fixtureId: String(m.logical_key), accepted: accepted(m), outcome: m.outcome_kind as OutcomeKind, winnerEntryId: m.winner_team_id as string | null, scoreA: m.score_a as number | null, scoreB: m.score_b as number | null }));
-  const analysis = analyzeGraph(d, ids.map(id => ({ id, playerIds: entryPlayerIds(s, id) })), results, { seedAssignments: rosterOutput.seedAssignments as GraphRuntimeOptions['seedAssignments'], stageInputs, eligibleEntryIds: s.teams.filter(t => t.entry_state === 'approved').map(t => t.id), excludedByNode: rosterOutput.excludedByNode as Record<string, string[]> | undefined });
+  const analysis = analyzeGraph(d, ids.map(id => ({ id, playerIds: entryPlayerIds(s, id) })), results, { allowIncompleteRoster: true, seedAssignments: rosterOutput.seedAssignments as GraphRuntimeOptions['seedAssignments'], stageInputs, eligibleEntryIds: s.teams.filter(t => isEligibleEntry(s,t)).map(t => t.id), excludedByNode: rosterOutput.excludedByNode as Record<string, string[]> | undefined, manualMatchEntries: graphManualEntries(s.stages, d) });
   const changed = new Set<string>();
   for (const node of d.nodes.filter(n => graphDependencies(n).includes(sourceNode))) {
     const affected = analysis.resolvedFixtures.filter(f => f.fixture.stageId === node.id).some(f => {
@@ -102,13 +106,15 @@ function candidate(s: CommandSnapshot, source: StorageRow, outcome: CorrectedOut
   const rrStage = s.stages.find(stage => stage.module_id === 'round_robin'), rankStage = s.stages.find(stage => stage.module_id === 'standings');
   const matches = current(s).filter(m => m.stage_id === rrStage?.id).map(m => m.id === source.id ? { ...m, ...outcome, result_revision: Number(s.event!.revision) + 1 } : m);
   const results: FixtureResult[] = matches.filter(m => m.outcome_kind).map(m => ({ fixtureId: String(m.logical_key), accepted: accepted(m), outcome: m.outcome_kind as OutcomeKind, scoreA: m.score_a as number | null, scoreB: m.score_b as number | null, winnerEntryId: m.winner_team_id as string | null }));
-  const options: RuntimeOptions = { rosterRevision: Number(s.event!.roster_revision), inputRevision: Math.max(0, ...matches.map(m => Number(m.result_revision ?? 0))), rankingDraws: record(rankStage?.output).rankingDraws as RuntimeOptions['rankingDraws'], roundRobinExclusions: rosterOutput.roundRobinExclusions as string[] | undefined, eligibleEntryIds: s.teams.filter(t => t.entry_state === 'approved').map(t => t.id) };
+  const options: RuntimeOptions = { allowIncompleteRoster: true, rosterRevision: Number(s.event!.roster_revision), inputRevision: Math.max(0, ...matches.map(m => Number(m.result_revision ?? 0))), rankingDraws: record(rankStage?.output).rankingDraws as RuntimeOptions['rankingDraws'], roundRobinExclusions: rosterOutput.roundRobinExclusions as string[] | undefined, eligibleEntryIds: s.teams.filter(t => isEligibleEntry(s,t)).map(t => t.id) };
   return { analysis: analyzeTournament(d, roster, results, options), roster, options };
 }
 export interface CorrectionPreview {
   preview_hash: string; event_revision: number; source_match_id: string; source_result_revision: number;
   outcome: CorrectedOutcome; affected_match_ids: string[]; started_dependent_ids: string[];
   next_qualifier_ids?: string[]; qualification_pending?: boolean; requires_reopen: boolean;
+  source_before: StorageRow; affected_matches: StorageRow[]; dupr_history_unknown: boolean;
+  available_resolutions: string[]; ordinary_archives_dependents: boolean;
 }
 export function previewCorrection(snapshot: CommandSnapshot, actor: CommandActor, data: Record<string, unknown>): CorrectionPreview {
   keys(data, ['match_id', 'score_a', 'score_b', 'outcome_kind', 'winner_entry_id']); authorized(snapshot, actor);
@@ -117,7 +123,10 @@ export function previewCorrection(snapshot: CommandSnapshot, actor: CommandActor
   const outcome = normalize(snapshot, source, data), d = definition(snapshot);
   let initial: string[] = [], nextQualifiers: string[] | undefined, qualificationPending = false;
   const stage = snapshot.stages.find(s => s.id === source.stage_id);
-  if (d.schema_version === '2.0') initial = graphCorrectionImpact(snapshot, d, source, outcome);
+  if (d.schema_version === '2.0') {
+    try { initial = graphCorrectionImpact(snapshot, d, source, outcome); }
+    catch (error) { if (error instanceof Error && /Placement matches cannot share a team/.test(error.message)) return fail('INVALID_STATE', 'This correction conflicts with a forced placement match; review both routes first.'); throw error; }
+  }
   else if (stage?.module_id === 'round_robin' && d.nodes.some(n => n.module === 'qualify@1')) {
     const { analysis, roster, options } = candidate(snapshot, source, outcome);
     const q = d.nodes.find(n => n.module === 'qualify@1')!;
@@ -129,7 +138,7 @@ export function previewCorrection(snapshot: CommandSnapshot, actor: CommandActor
       const seeds = [...ranked.slice(0, q.config.count), ...(previous ?? []).filter(id => !ranked.slice(0, q.config.count).includes(id))].slice(0, q.config.count);
       if (!qualificationPending && seeds.length === q.config.count) nextQualifiers = seeds;
       if (seeds.length === q.config.count) {
-        const predicted = generateElimination(seeds.map(id => roster.find(e => e.id === id)!), d.event.courts, { ...elimination.config, stageId: elimination.id });
+        const predicted = generateElimination(seeds.map(id => roster.find(e => e.id === id)!), d.event.courts, { ...elimination.config, stageId: elimination.id, allowIncompleteRoster: true });
         for (const fixture of predicted.filter(f => f.round === 1)) {
           const old = current(snapshot).find(m => m.logical_key === fixture.id); if (!old) continue;
           const changed = ([['a', fixture.a], ['b', fixture.b]] as const).some(([side, slot]) => slot.kind === 'entry' && (analysis.ties.some(group => group.includes(slot.entryId)) || old[`team_${side}_id`] !== (options.eligibleEntryIds!.includes(slot.entryId) ? slot.entryId : null)));
@@ -139,8 +148,9 @@ export function previewCorrection(snapshot: CommandSnapshot, actor: CommandActor
     }
   } else if (source.winner_team_id !== outcome.winner_team_id || source.outcome_kind === 'no_contest' || outcome.outcome_kind === 'no_contest') initial = [source.bracket_next_winner_match_id, source.bracket_next_loser_match_id].filter(Boolean).map(String);
   const affected = descendants(snapshot, initial);
-  const payload = { event_revision: Number(snapshot.event!.revision), source_match_id: source.id, source_result_revision: Number(source.result_revision ?? 0), outcome, affected_match_ids: affected, started_dependent_ids: affected.filter(id => { const m = snapshot.matches.find(row => row.id === id)!; return Boolean(m.started_at) || accepted(m); }), ...(nextQualifiers ? { next_qualifier_ids: nextQualifiers } : {}), ...(qualificationPending ? { qualification_pending: true } : {}), requires_reopen: snapshot.event!.modular_state === 'completed' };
-  return { ...payload, preview_hash: definitionHash(payload) };
+  const payload = { event_revision: Number(snapshot.event!.revision), source_match_id: source.id, source_result_revision: Number(source.result_revision ?? 0), outcome, affected_match_ids: affected, started_dependent_ids: affected.filter(id => startedOrRecorded(snapshot.matches.find(row => row.id === id)!)), ...(nextQualifiers ? { next_qualifier_ids: nextQualifiers } : {}), ...(qualificationPending ? { qualification_pending: true } : {}), requires_reopen: snapshot.event!.modular_state === 'completed' };
+  const affectedMatches = affected.map(id => snapshot.matches.find(match => match.id === id)!).map(matchDetails);
+  return { ...payload, preview_hash: definitionHash(payload), source_before: matchDetails(source), affected_matches: affectedMatches, dupr_history_unknown: [source, ...affectedMatches].some(mayHaveDuprHistory), available_resolutions: [...(payload.started_dependent_ids.length ? [] : ['ordinary']), 'void_and_replay'], ordinary_archives_dependents: qualificationPending };
 }
 export function planCorrection(snapshot: CommandSnapshot, actor: CommandActor, data: Record<string, unknown>, context: CommandContext): CommandPlan {
   keys(data, ['match_id', 'score_a', 'score_b', 'outcome_kind', 'winner_entry_id', 'preview_hash', 'reason', 'resolution']);
@@ -161,43 +171,49 @@ export function planCorrection(snapshot: CommandSnapshot, actor: CommandActor, d
   return { effects: { matches, stages }, result: { source_match_id: preview.source_match_id, affected_match_ids: preview.affected_match_ids, replayed_match_ids: archive } };
 }
 export type WithdrawalTiming = 'before_lock' | 'locked_before_play' | 'incomplete_round_robin' | 'completed_rr_before_playoff' | 'playoffs_started' | 'direct_elimination';
-export interface WithdrawalPreview { preview_hash: string; event_revision: number; entry_id: string; reason: string; timing: WithdrawalTiming; affected_match_ids: string[]; preserved_match_ids: string[]; next_qualifier_ids?: string[]; empty_qualifier_slots?: boolean }
-export function previewWithdrawal(snapshot: CommandSnapshot, actor: CommandActor, data: Record<string, unknown>): WithdrawalPreview {
+export interface WithdrawalPreview { preview_hash: string; event_revision: number; entry_id: string; reason: string; timing: WithdrawalTiming; affected_match_ids: string[]; preserved_match_ids: string[]; next_qualifier_ids?: string[]; empty_qualifier_slots?: boolean; affected_matches: StorageRow[]; preserved_matches: StorageRow[]; dupr_history_unknown: boolean; round_robin_results_excluded: boolean }
+export function previewWithdrawal(snapshot: CommandSnapshot, actor: CommandActor, data: Record<string, unknown>, now = new Date().toISOString()): WithdrawalPreview {
   keys(data, ['entry_id', 'reason']); const entryId = ref(data.entry_id), why = reason(data.reason); authorized(snapshot, actor, entryId);
+  const admin = snapshot.event!.created_by === actor.id || actor.role === 'admin';
+  if (!admin && (snapshot.event!.modular_state !== 'registration_open' || Date.parse(definition(snapshot).registration.closes_at) <= Date.parse(now))) fail('REGISTRATION_CLOSED', 'Registration is closed. Contact the tournament administrator to withdraw.');
   if (snapshot.event!.modular_state === 'completed') fail('INVALID_STATE', 'Owner must reopen completed results first.');
   const team = snapshot.teams.find(t => t.id === entryId);
   if (!team || !['approved', 'pending'].includes(String(team.entry_state))) fail('INVALID_STATE', 'Entry is not eligible for a new withdrawal.');
   const d = definition(snapshot);
+  if (d.schema_version === '2.0' && Object.values(graphManualEntries(snapshot.stages, d) ?? {}).some(value => value?.a === entryId || value?.b === entryId)) fail('INVALID_STATE', 'Review the team’s forced match assignment before withdrawing it.');
   const active = current(snapshot), rr = snapshot.stages.find(s => ['round_robin', 'cross_play'].includes(String(s.module_id)) && (d.schema_version !== '2.0' || active.some(m => m.stage_id === s.id && [m.team_a_id, m.team_b_id].includes(entryId)))), elimination = snapshot.stages.find(s => s.module_id === 'elimination');
   const rrMatches = active.filter(m => m.stage_id === rr?.id);
   const rrComplete = rrMatches.length > 0 && rrMatches.every(accepted);
-  const playoffStarted = d.schema_version === '2.0' && rr ? graphDependents(snapshot, d, String(rr.node_id)).some(id => { const m = active.find(m => m.id === id)!; return m.started_at || accepted(m); }) : active.some(m => m.stage_id === elimination?.id && (m.started_at || accepted(m)));
+  const playoffStarted = d.schema_version === '2.0' && rr ? graphDependents(snapshot, d, String(rr.node_id)).some(id => startedOrRecorded(active.find(m => m.id === id)!)) : active.some(m => m.stage_id === elimination?.id && startedOrRecorded(m));
   const beforeLock = ['registration_open', 'registration_closed'].includes(String(snapshot.event!.modular_state));
-  const timing: WithdrawalTiming = beforeLock ? 'before_lock' : !active.some(m => m.started_at || accepted(m)) ? 'locked_before_play' : playoffStarted ? 'playoffs_started' : rr && !rrComplete ? 'incomplete_round_robin' : rrComplete ? 'completed_rr_before_playoff' : 'direct_elimination';
+  const timing: WithdrawalTiming = beforeLock ? 'before_lock' : !active.some(startedOrRecorded) ? 'locked_before_play' : playoffStarted ? 'playoffs_started' : rr && !rrComplete ? 'incomplete_round_robin' : rrComplete ? 'completed_rr_before_playoff' : 'direct_elimination';
+  if (actor.clientId === 'web' && snapshot.matches.length && ['before_lock', 'locked_before_play'].includes(timing)) fail('STRUCTURE_LOCKED', 'A team cannot be removed on the website after games have been generated.');
   const involving = active.filter(m => [m.team_a_id, m.team_b_id].includes(entryId));
   const affected = timing === 'locked_before_play' ? active.map(m => m.id).sort() : descendants(snapshot, involving.filter(m => !accepted(m) || timing === 'incomplete_round_robin').map(m => m.id));
-  const payload: Omit<WithdrawalPreview, 'preview_hash'> = { event_revision: Number(snapshot.event!.revision), entry_id: entryId, reason: why, timing, affected_match_ids: affected, preserved_match_ids: involving.filter(m => accepted(m) && timing !== 'incomplete_round_robin').map(m => m.id).sort() };
+  const payload: Omit<WithdrawalPreview, 'preview_hash' | 'affected_matches' | 'preserved_matches' | 'dupr_history_unknown' | 'round_robin_results_excluded'> = { event_revision: Number(snapshot.event!.revision), entry_id: entryId, reason: why, timing, affected_match_ids: affected, preserved_match_ids: involving.filter(m => accepted(m) && timing !== 'incomplete_round_robin').map(m => m.id).sort() };
   if (timing === 'completed_rr_before_playoff' && elimination) {
     const q = snapshot.stages.find(s => s.module_id === 'qualify'), ranking = snapshot.stages.find(s => s.module_id === 'standings');
     if (q && ranking) {
       const previous = record(q.output).entryIds as string[];
       const rows = record(ranking.output).rows as { entryId: string }[];
-      const eligible = rows.filter(row => row.entryId !== entryId && snapshot.teams.some(t => t.id === row.entryId && t.entry_state === 'approved')).map(row => row.entryId).slice(0, previous.length);
+      const eligible = rows.filter(row => row.entryId !== entryId && snapshot.teams.some(t => t.id === row.entryId && isEligibleEntry(snapshot,t))).map(row => row.entryId).slice(0, previous.length);
       payload.empty_qualifier_slots = eligible.length < previous.length;
       payload.next_qualifier_ids = [...eligible, ...previous.filter(id => !eligible.includes(id))].slice(0, previous.length);
     }
   }
-  return { ...payload, preview_hash: definitionHash(payload) };
+  const affectedMatches = affected.map(id => snapshot.matches.find(match => match.id === id)!).map(matchDetails);
+  const preservedMatches = payload.preserved_match_ids.map(id => snapshot.matches.find(match => match.id === id)!).map(matchDetails);
+  return { ...payload, preview_hash: definitionHash(payload), affected_matches: affectedMatches, preserved_matches: preservedMatches, dupr_history_unknown: [...affectedMatches, ...preservedMatches].some(mayHaveDuprHistory), round_robin_results_excluded: timing === 'incomplete_round_robin' };
 }
 export function planWithdrawal(snapshot: CommandSnapshot, actor: CommandActor, data: Record<string, unknown>, context: CommandContext): CommandPlan {
   keys(data, ['entry_id', 'reason', 'preview_hash']);
-  const preview = previewWithdrawal(snapshot, actor, { entry_id: data.entry_id, reason: data.reason });
+  const preview = previewWithdrawal(snapshot, actor, { entry_id: data.entry_id, reason: data.reason }, context.now);
   if (preview.preview_hash !== data.preview_hash) fail('STALE_PREVIEW', 'Recompute withdrawal impact for the current revision.');
   const now = new Date(context.now).toISOString(), revision = Number(snapshot.event!.revision) + 1;
   const before = ['before_lock', 'locked_before_play'].includes(preview.timing);
   const team = snapshot.teams.find(t => t.id === preview.entry_id)!;
   const effects: CommandPlan['effects'] = { teams: [{ id: team.id, entry_state: before ? 'cancelled' : 'withdrawn', eligibility_version: Number(team.eligibility_version ?? 0) + 1, withdrawn_at: now, withdrawal_reason: preview.reason }], team_members: [], tournament_players: [], matches: [], stages: [] };
-  for (const member of snapshot.team_members.filter(m => m.team_id === team.id)) {
+  for (const member of snapshot.team_members.filter(m => m.team_id === team.id && ['active', 'pending'].includes(String(m.membership_status)))) {
     effects.team_members!.push({ id: member.id, membership_status: before ? 'cancelled' : 'withdrawn' });
     const player = snapshot.tournament_players.find(p => p.user_id === member.user_id);
     if (player) effects.tournament_players!.push({ id: player.id, status: 'rejected', exit_reason: 'withdrew', nullified_from_standings: preview.timing === 'incomplete_round_robin' });
@@ -228,7 +244,7 @@ export function planWithdrawal(snapshot: CommandSnapshot, actor: CommandActor, d
       if (accepted(match)) { if (Object.keys(excluded).length) effects.matches!.push({ id: match.id, ...excluded }); continue; }
       if (match.status === 'in_progress') {
         const opponent = match.team_a_id === team.id ? match.team_b_id : match.team_a_id;
-        const winner = snapshot.teams.some(t => t.id === opponent && t.entry_state === 'approved') ? opponent : null;
+        const winner = snapshot.teams.some(t => t.id === opponent && isEligibleEntry(snapshot,t)) ? opponent : null;
         effects.matches!.push({ id: match.id, ...excluded, status: 'validated', outcome_kind: winner ? 'retirement' : 'no_contest', winner_team_id: winner, score_a: null, score_b: null, ended_at: now, validated_by: actor.id, revision, result_revision: revision });
       } else if (preview.timing === 'incomplete_round_robin' && match.stage_id === rr?.id) effects.matches!.push({ id: match.id, ...excluded, status: 'validated', outcome_kind: 'no_contest', winner_team_id: null, score_a: null, score_b: null, revision, result_revision: revision, validated_by: actor.id });
     }

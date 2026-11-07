@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { planCommand, type CommandActor, type CommandContext, type CommandPlan, type CommandSnapshot } from '../../lib/tournament-builder/commands';
-import { previewCorrection, previewWithdrawal } from '../../lib/tournament-builder/corrections';
+import { planWithdrawal, previewCorrection, previewWithdrawal } from '../../lib/tournament-builder/corrections';
 import { definitionHash } from '../../lib/tournament-builder/requests';
+import { publicMcpResult } from '../../lib/tournament-builder/mcp-output';
 
 let seq = 8000, clock = Date.parse('2026-10-28T16:00:00Z');
 const id = () => `00000000-0000-4000-8000-${String(seq++).padStart(12, '0')}`;
@@ -51,6 +52,28 @@ function commit(s: CommandSnapshot, data: ReturnType<typeof corrected>, resoluti
   const preview = previewCorrection(s, admin, data);
   return apply(s, planCommand(s, admin, 'commitCorrection', { ...data, preview_hash: preview.preview_hash, reason: 'Reviewed score correction.', resolution }, ctx()));
 }
+test('incomplete current roster blocks new played games but not a walkover or unchanged recorded score', () => {
+  let s = setup(4); const pending = s.matches.find(match => match.team_a_id && match.team_b_id)!;
+  const member = s.team_members.find(item => item.team_id === pending.team_a_id)!;
+  member.membership_status = 'withdrawn';
+  assert.throws(() => planCommand(s, admin, 'startMatch', { match_id: pending.id }, ctx()), { code: 'INCOMPLETE_ROSTER' });
+  assert.throws(() => planCommand(s, admin, 'submitScore', { match_id: pending.id, score_a: 11, score_b: 5 }, ctx()), { code: 'INCOMPLETE_ROSTER' });
+  assert.throws(() => planCommand(s, admin, 'attestScore', { match_id: pending.id, outcome_kind: 'played', score_a: 11, score_b: 5, reason: 'Reviewed' }, ctx()), { code: 'INCOMPLETE_ROSTER' });
+  assert.doesNotThrow(() => planCommand(s, admin, 'attestScore', { match_id: pending.id, outcome_kind: 'walkover', winner_entry_id: pending.team_b_id, reason: 'Absent' }, ctx()));
+  member.membership_status = 'active';
+  s = finish(s, pending.id);
+  const old = s.matches.find(match => match.id === pending.id)!;
+  old.status = 'score_entered'; old.outcome_kind = 'played';
+  old.player_a1_id = s.team_members.find(item => item.team_id === old.team_a_id)!.user_id;
+  old.player_b1_id = s.team_members.find(item => item.team_id === old.team_b_id)!.user_id;
+  s.team_members.find(item => item.user_id === old.player_a1_id)!.membership_status = 'withdrawn';
+  assert.doesNotThrow(() => planCommand(s, admin, 'confirmScore', { match_id: old.id, result_revision: old.result_revision }, ctx()));
+  const unknownHistory = structuredClone(s);
+  unknownHistory.matches.find(match => match.id === old.id)!.player_a1_id = null;
+  assert.throws(() => planCommand(unknownHistory, admin, 'confirmScore', { match_id: old.id, result_revision: old.result_revision }, ctx()), { code: 'INCOMPLETE_ROSTER' });
+  assert.doesNotThrow(() => planCommand(s, admin, 'attestScore', { match_id: old.id, outcome_kind: 'played', score_a: old.score_a, score_b: old.score_b, reason: 'Validate saved score' }, ctx()));
+  assert.throws(() => planCommand(s, admin, 'attestScore', { match_id: old.id, outcome_kind: 'played', score_a: old.score_b, score_b: old.score_a, reason: 'Change score' }, ctx()), { code: 'INCOMPLETE_ROSTER' });
+});
 test('ordinary correction updates only changed unstarted dependencies and binds an immutable preview', () => {
   let s = setup(4); const semis = s.matches.filter(m => String(m.logical_key).includes(':r1:'));
   s = finish(s, semis[0].id); s = finish(s, semis[1].id);
@@ -59,6 +82,18 @@ test('ordinary correction updates only changed unstarted dependencies and binds 
   const before = JSON.stringify(s), data = corrected(source), preview = previewCorrection(s, admin, data);
   assert.equal(JSON.stringify(s), before); assert.deepEqual(preview.affected_match_ids, [final.id]);
   assert.deepEqual(preview.started_dependent_ids, []);
+  assert.equal(preview.source_before.score_a, source.score_a);
+  assert.equal(preview.source_before.score_b, source.score_b);
+  assert.equal(preview.affected_matches[0].id, final.id);
+  assert.equal(preview.dupr_history_unknown, true);
+  const legacy = structuredClone(s);
+  legacy.matches.find(match => match.id === source.id)!.outcome_kind = null;
+  assert.equal(previewCorrection(legacy, admin, data).dupr_history_unknown, true);
+  assert.deepEqual(preview.available_resolutions, ['ordinary', 'void_and_replay']);
+  const publicPreview = publicMcpResult('admin_preview_correction', { ...preview, source_before: { ...preview.source_before, email: 'private@example.test' } }) as typeof preview;
+  assert.equal(publicPreview.source_before.score_a, source.score_a);
+  assert.equal(publicPreview.affected_matches[0].id, final.id);
+  assert.equal('email' in publicPreview.source_before, false);
   assert.throws(() => planCommand({ ...s, event: { ...s.event!, revision: Number(s.event!.revision) + 1 } }, admin, 'commitCorrection', { ...data, preview_hash: preview.preview_hash, reason: 'Reviewed.', resolution: 'ordinary' }, ctx()), { code: 'STALE_PREVIEW' });
   s = commit(s, data);
   assert.deepEqual(s.matches.find(m => m.id === untouched.id), untouched);
@@ -69,9 +104,13 @@ test('started dependents block ordinary correction; explicit replay archives onl
   let s = setup(4); const semis = s.matches.filter(m => String(m.logical_key).includes(':r1:'));
   s = finish(s, semis[0].id); s = finish(s, semis[1].id);
   const source = s.matches.find(m => m.id === semis[0].id)!, final = s.matches.find(m => String(m.logical_key).includes(':r2:'))!;
+  const provisional=structuredClone(s), provisionalFinal=provisional.matches.find(m=>m.id===final.id)!;
+  Object.assign(provisionalFinal,{status:'score_entered',score_a:11,score_b:5,started_at:null});
+  assert.deepEqual(previewCorrection(provisional,admin,corrected(source)).started_dependent_ids,[final.id]);
   clock += 30 * 60_000; s = apply(s, planCommand(s, admin, 'startMatch', { match_id: final.id }, ctx()));
   const preview = previewCorrection(s, admin, corrected(source));
   assert.deepEqual(preview.started_dependent_ids, [final.id]);
+  assert.deepEqual(preview.available_resolutions, ['void_and_replay']);
   assert.throws(() => planCommand(s, admin, 'commitCorrection', { ...corrected(source), preview_hash: preview.preview_hash, reason: 'Reviewed.', resolution: 'ordinary' }, ctx()), { code: 'DOWNSTREAM_STARTED' });
   const replayPlan = planCommand(s, admin, 'commitCorrection', { ...corrected(source), preview_hash: preview.preview_hash, reason: 'Reviewed.', resolution: 'void_and_replay' }, ctx());
   const patches = replayPlan.effects.matches!;
@@ -94,6 +133,12 @@ test('incomplete RR withdrawal retains accepted facts, retires a live match and 
   clock += 30 * 60_000; s = apply(s, planCommand(s, admin, 'startMatch', { match_id: games[1].id }, ctx()));
   const data = { entry_id: team.id, reason: 'withdrew' }, preview = previewWithdrawal(s, admin, data);
   assert.equal(preview.timing, 'incomplete_round_robin');
+  assert.equal(preview.round_robin_results_excluded, true);
+  assert.equal(preview.dupr_history_unknown, true);
+  assert.equal(preview.affected_matches.find(match => match.id === prior.id)?.score_a, prior.score_a);
+  const publicPreview = publicMcpResult('admin_preview_withdrawal', preview) as typeof preview;
+  assert.equal(publicPreview.round_robin_results_excluded, true);
+  assert.equal(publicPreview.affected_matches.find(match => match.id === prior.id)?.winner_team_id, prior.winner_team_id);
   s = apply(s, planCommand(s, admin, 'withdrawEntry', { ...data, preview_hash: preview.preview_hash }, ctx()));
   const old = s.matches.find(m => m.id === prior.id)!;
   assert.equal(old.score_a, prior.score_a); assert.equal(old.winner_team_id, prior.winner_team_id); assert.ok(old.excluded_at);
@@ -102,6 +147,19 @@ test('incomplete RR withdrawal retains accepted facts, retires a live match and 
   const rows = (s.stages.find(stage => stage.module_id === 'standings')!.output as { rows: { entryId: string; wins: number; pointsFor: number }[] }).rows;
   assert.equal(rows.length, 2); assert.ok(rows.every(row => row.wins === 0 && row.pointsFor === 0));
   assert.equal(s.team_members.find(m => m.team_id === team.id)!.membership_status, 'withdrawn');
+});
+test('withdrawing a team leaves a replaced player and their current entry untouched', () => {
+ const s=setup(4), team=s.teams[0], other=s.teams[1], current=s.team_members.find(m=>m.team_id===other.id)!;
+ const previous={id:id(),team_id:team.id,user_id:current.user_id,membership_status:'cancelled'}; s.team_members.push(previous);
+ const actor:CommandActor={id:admin.id,clientId:'test-mcp',role:'admin',permissions:['admin:manage']};
+ const data={entry_id:team.id,reason:'Withdraw team'}, preview=previewWithdrawal(s,actor,data);
+ const plan=planWithdrawal(s,actor,{...data,preview_hash:preview.preview_hash},ctx());
+ assert.ok(!plan.effects.team_members!.some(m=>m.id===previous.id));
+ assert.ok(!plan.effects.tournament_players!.some(p=>p.user_id===current.user_id));
+ const after=apply(s,plan);
+ assert.equal(after.team_members.find(m=>m.id===previous.id)?.membership_status,'cancelled');
+ assert.equal(after.team_members.find(m=>m.id===current.id)?.membership_status,'active');
+ assert.equal(after.tournament_players.find(p=>p.user_id===current.user_id)?.status,'approved');
 });
 test('completed RR withdrawal backfills only before any playoff starts', () => {
   let s = setup(5, 'combined'); const rr = s.matches.filter(m => String(m.logical_key).startsWith('rr:'));
@@ -120,11 +178,14 @@ test('completed RR withdrawal backfills only before any playoff starts', () => {
   assert.equal(pinned.matches.find(m => m.id === unaffected.id)!.status, 'in_progress');
   assert.ok(pinned.matches.some(m => m.outcome_kind === 'walkover'));
 });
-test('withdrawal before first play archives the generation and requires an explicit legal relock', () => {
+test('web cannot remove a team after generation; reviewed MCP withdrawal can replan before first play', () => {
   let s = setup(4, 'direct', false); const original = s.matches.map(m => m.id), entryId = s.teams[0].id;
-  const data = { entry_id: entryId, reason: 'withdrew' }, p = previewWithdrawal(s, admin, data);
+  const data = { entry_id: entryId, reason: 'withdrew' };
+  assert.throws(() => previewWithdrawal(s, admin, data), { code: 'STRUCTURE_LOCKED' });
+  const connector = { ...admin, clientId: 'connector', permissions: ['admin:manage'] };
+  const p = previewWithdrawal(s, connector, data);
   assert.equal(p.timing, 'locked_before_play');
-  s = apply(s, planCommand(s, admin, 'withdrawEntry', { ...data, preview_hash: p.preview_hash }, ctx()));
+  s = apply(s, planCommand(s, connector, 'withdrawEntry', { ...data, preview_hash: p.preview_hash }, ctx()));
   assert.equal(s.event!.modular_state, 'registration_closed');
   assert.ok(original.every(matchId => s.matches.find(m => m.id === matchId)!.is_current === false));
   assert.throws(() => planCommand(s, admin, 'lockRoster', { reviewed_roster_revision: s.event!.roster_revision }, ctx()), { code: 'INVALID_CAPACITY' });
@@ -179,7 +240,7 @@ test('insufficient replacements retain an empty qualifier slot and create an aud
 test('own cancellation before lock frees capacity and does not require admin impersonation', () => {
   let s = setup(4, 'rr', false, false); const team = s.teams[0], member = s.team_members.find(m => m.team_id === team.id)!;
   const actor = { id: String(member.user_id), clientId: 'web' }, data = { entry_id: team.id, reason: 'withdrew' };
-  const p = previewWithdrawal(s, actor, data); assert.equal(p.timing, 'before_lock');
+  const p = previewWithdrawal(s, actor, data, ctx().now); assert.equal(p.timing, 'before_lock');
   s = apply(s, planCommand(s, actor, 'withdrawEntry', { ...data, preview_hash: p.preview_hash }, ctx()));
   assert.equal(s.teams.find(t => t.id === team.id)!.entry_state, 'cancelled');
   s = apply(s, planCommand(s, { id: id(), clientId: 'web' }, 'requestEntry', { consent: true, definition_id: s.event!.definition_id }, ctx()));

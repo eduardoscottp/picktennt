@@ -5,6 +5,9 @@ import { DomainError, UUID } from '@/lib/tournament-builder/requests';
 import type { CommandActor } from '@/lib/tournament-builder/commands';
 import { previewRevision } from '@/lib/tournament-builder/revisions';
 import { previewSchedule } from '@/lib/tournament-builder/schedule-preview';
+import { previewPlayerReplacement } from '@/lib/tournament-builder/player-replacement';
+import { previewBulkOperation } from '@/lib/tournament-builder/bulk-adjudication';
+import { previewPlayerWithdrawal } from '@/lib/tournament-builder/player-withdrawal';
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -19,8 +22,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const preview = kind === 'correction' ? previewCorrection(snapshot, verifiedActor, body as Record<string, unknown>) :
       kind === 'withdrawal' ? previewWithdrawal(snapshot, verifiedActor, body as Record<string, unknown>) :
       kind === 'revision' ? previewRevision(snapshot, verifiedActor, body as Record<string, unknown>) :
+      kind === 'player-replacement' ? previewPlayerReplacement(snapshot, verifiedActor, body as Record<string, unknown>) :
+      kind === 'bulk-adjudication' ? previewBulkOperation(snapshot, verifiedActor, body as Record<string, unknown>) :
+      kind === 'player-withdrawal' ? previewPlayerWithdrawal(snapshot, verifiedActor, body as Record<string, unknown>) :
       kind === 'schedule' ? previewSchedule(snapshot, verifiedActor, body as Record<string, unknown>) : null;
-    if (!preview) throw new DomainError('INVALID_REQUEST', 'Choose a correction, withdrawal, revision or schedule preview.');
+    if (!preview) throw new DomainError('INVALID_REQUEST', 'Choose a correction, withdrawal, replacement, revision or schedule preview.');
     return Response.json(preview, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) { return errorResponse(error); }
 }

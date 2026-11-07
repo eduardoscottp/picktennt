@@ -5,11 +5,12 @@ import { MobileHeader } from "@/components/layout/navbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { EditProfileForm } from "@/components/auth/edit-profile-form";
 import { DuprIdCard } from "@/components/auth/dupr-id-card";
 import { AccountActions } from "@/components/auth/account-actions";
 import { getInitials, duprRatingColor, statusLabel, tournamentTypeLabel, formatDate } from "@/lib/utils";
-import { Trophy, TrendingUp, Target, Calendar } from "lucide-react";
+import { Trophy, TrendingUp, Target, Calendar, Link2 } from "lucide-react";
 import type { Profile, Tournament, Match } from "@/types/database";
 
 export default async function ProfilePage() {
@@ -117,6 +118,34 @@ export default async function ProfilePage() {
 
         {/* DUPR ID — always-visible quick edit */}
         <DuprIdCard profileId={user.id} currentDuprId={profile?.dupr_id ?? null} firstName={profile?.first_name} lastName={profile?.last_name} />
+
+        <Card>
+          <CardHeader><CardTitle className="text-base flex items-center gap-2"><Link2 className="h-4 w-4 text-brand-500" />AI connections</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-gray-500">Review or revoke your connected AI assistants.</p>
+            <Button asChild variant="outline" className="w-full"><Link href="/oauth/connections">Manage AI connections</Link></Button>
+            <details className="border-t border-gray-100 pt-3">
+              <summary className="cursor-pointer text-sm font-semibold text-brand-600">How to connect an AI assistant</summary>
+              <div className="mt-3 space-y-4 text-sm text-gray-600">
+                <p>Start in Claude or ChatGPT. When asked for the server URL, enter <code className="break-all rounded bg-gray-50 px-1">https://app.picktennt.com/api/mcp</code>.</p>
+                <div><h3 className="font-semibold text-gray-900">Claude</h3><p>In Customize → Connectors, choose Add → Add custom connector. Name it Picktennt, enter the server URL, and follow the sign-in prompts. If asked for an OAuth client, select automatic registration. Workspace accounts may require an administrator to add the connector first.</p><a className="text-brand-600 underline" href="https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp" target="_blank" rel="noopener noreferrer">Claude setup guide</a></div>
+                <div className="space-y-3">
+                  <h3 className="font-semibold text-gray-900">Connect ChatGPT</h3>
+                  <p>Set up the connection once in ChatGPT on the web. A prompt alone cannot create or authorize it.</p>
+                  <ol className="space-y-3">
+                    <li className="flex gap-3"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-100 font-bold text-brand-700">1</span><div><strong className="text-gray-900">Open the connection form</strong><p>In ChatGPT, open <strong>Plugins</strong> → <strong>+</strong> → <strong>Add custom MCP server</strong>.</p></div></li>
+                    <li className="flex gap-3"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-100 font-bold text-brand-700">2</span><div className="min-w-0"><strong className="text-gray-900">Enter the details</strong><p>Name: <strong>Picktennt</strong><br />Server URL:</p><code className="my-1 block select-all break-all rounded-lg bg-gray-100 p-2 text-xs text-gray-800">https://app.picktennt.com/api/mcp</code><p>Choose <strong>OAuth</strong>. If advanced settings are shown, use <strong>Dynamic Client Registration (DCR)</strong>.</p></div></li>
+                    <li className="flex gap-3"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-100 font-bold text-brand-700">3</span><div><strong className="text-gray-900">Create and connect</strong><p>Review ChatGPT’s notice, create the plugin, and follow its connection prompts. Sign in to the Picktennt account you want to use and review the requested access before approving it. Install the plugin if prompted.</p></div></li>
+                    <li className="flex gap-3"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-100 font-bold text-brand-700">4</span><div><strong className="text-gray-900">Start a conversation</strong><p>Once connected, select Picktennt in ChatGPT and try:</p><p className="mt-1 rounded-lg bg-gray-50 p-3 italic">“Help me create a tournament in Picktennt. Ask me for the details and prepare a draft for my review.”</p></div></li>
+                  </ol>
+                  <p>Availability depends on your ChatGPT account and workspace settings. You can review or revoke access using <strong>Manage AI connections</strong> above.</p>
+                  <a className="text-brand-600 underline" href="https://developers.openai.com/api/docs/guides/custom-mcp-server" target="_blank" rel="noopener noreferrer">ChatGPT setup guide</a>
+                </div>
+                <p>Sign in to the Picktennt account you want to use and review the requested permissions before approving. You can revoke an existing connection above.</p>
+              </div>
+            </details>
+          </CardContent>
+        </Card>
 
         {/* Stats */}
         <div className="grid grid-cols-4 gap-2">

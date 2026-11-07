@@ -37,6 +37,54 @@ export function graphDefinition(): GraphDefinition {
   return d;
 }
 const roster = Array.from({ length: 16 }, (_, i) => ({ id: `e${i + 1}`, playerIds: [`p${i + 1}a`, `p${i + 1}b`] }));
+test('placement ranks remain contiguous with eight teams, bronze and a final rematch', () => {
+  for (const mode of ['normal', 'bronze', 'rematch'] as const) {
+    const d = graphDefinition(); d.registration.min_entries = d.registration.max_entries = 8;
+    const quarters = Array.from({ length: 4 }, (_, index) => ({ id: `q${index + 1}`, module: 'match@1' as const, inputs: [seed(index * 2 + 1), seed(index * 2 + 2)] }));
+    d.nodes = [
+      { id: 'registration', module: 'registration@1' }, { id: 'entries', module: 'entries@1', from: 'registration' }, ...quarters,
+      { id: 's1', module: 'match@1', inputs: [winner('q1'), winner('q2')] }, { id: 's2', module: 'match@1', inputs: [winner('q3'), winner('q4')] },
+      { id: 'final', module: 'match@1', inputs: [winner('s1'), winner('s2')] },
+      ...(mode === 'bronze' ? [{ id: 'bronze', module: 'match@1' as const, inputs: [{ kind: 'loser' as const, node_id: 's1' }, { kind: 'loser' as const, node_id: 's2' }] }] : []),
+      ...(mode === 'rematch' ? [{ id: 'rematch', module: 'match@1' as const, inputs: [winner('final'), { kind: 'loser' as const, node_id: 'final' }] }] : []),
+      { id: 'placements', module: 'placements@2', final: mode === 'rematch' ? 'rematch' : 'final', ...(mode === 'bronze' ? { bronze: 'bronze' } : {}) },
+    ];
+    const results: FixtureResult[] = [];
+    for (let step = 0; step < 5; step++) {
+      const analysis = analyzeGraph(d, roster.slice(0, 8), results);
+      if (analysis.state === 'completed') {
+        assert.deepEqual(analysis.placements!.groups!.map(group => [group.rank, group.entryIds.length]), mode === 'bronze' ? [[1, 1], [2, 1], [3, 1], [4, 1], [5, 4]] : [[1, 1], [2, 1], [3, 2], [5, 4]]);
+        assert.equal(new Set(analysis.placements!.groups!.flatMap(group => group.entryIds)).size, 8);
+        break;
+      }
+      const ready = analysis.resolvedFixtures.filter(match => match.state === 'ready');
+      assert.ok(ready.length, `${mode} must have a playable match`);
+      for (const match of ready) results.push({ fixtureId: match.fixture.id, accepted: true, outcome: 'played', winnerEntryId: match.entryA, scoreA: 11, scoreB: 0 });
+      assert.notEqual(step, 4, `${mode} must complete`);
+    }
+  }
+});
+test('manual match entries persist across upstream results and enforce roster eligibility', () => {
+  const d = graphDefinition();
+  d.registration.min_entries = d.registration.max_entries = 4;
+  d.nodes = [
+    { id: 'registration', module: 'registration@1' }, { id: 'entries', module: 'entries@1', from: 'registration' },
+    { id: 'left', module: 'match@1', inputs: [seed(1), seed(2)] },
+    { id: 'right', module: 'match@1', inputs: [seed(3), seed(4)] },
+    { id: 'final', module: 'match@1', inputs: [winner('left'), winner('right')] },
+    { id: 'placements', module: 'placements@2', final: 'final' },
+  ];
+  const teams = roster.slice(0, 4), options = { manualMatchEntries: { final: { a: 'e2', b: 'e3' } } };
+  const before = analyzeGraph(d, teams, [], options).resolvedFixtures.find(f => f.fixture.stageId === 'final')!;
+  assert.equal(before.entryA, 'e2'); assert.equal(before.entryB, 'e3'); assert.equal(before.state, 'ready');
+  const results: FixtureResult[] = [{ fixtureId: 'left:match', accepted: true, outcome: 'played', winnerEntryId: 'e1', scoreA: 11, scoreB: 1 }, { fixtureId: 'right:match', accepted: true, outcome: 'played', winnerEntryId: 'e4', scoreA: 1, scoreB: 11 }];
+  const after = analyzeGraph(d, teams, results, options).resolvedFixtures.find(f => f.fixture.stageId === 'final')!;
+  assert.equal(after.entryA, 'e2'); assert.equal(after.entryB, 'e3'); assert.equal(after.result, undefined);
+  assert.throws(() => analyzeGraph(d, teams, [], { manualMatchEntries: { final: { a: 'missing' } } }), /Invalid manual/);
+  assert.throws(() => analyzeGraph(d, teams, [], { ...options, eligibleEntryIds: ['e1', 'e3', 'e4'] }), /Invalid manual/);
+  assert.throws(() => analyzeGraph(d, teams, [], { manualMatchEntries: { final: { a: 'e2', b: 'e2' } } }), /Invalid manual/);
+  assert.throws(() => analyzeGraph(d, teams, [], { manualMatchEntries: { final: { a: 'e3' } } }), /same team/);
+});
 test('an absent completed pool rank requests an audited walkover after withdrawal', () => {
   const d = graphDefinition();
   d.registration.min_entries = 4;

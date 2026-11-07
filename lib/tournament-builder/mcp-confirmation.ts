@@ -13,9 +13,20 @@ export function confirmationQuestion(name: string, value: unknown, args: Record<
   }
   if (name === 'owner_preview_action') return confirmationQuestion(String(args.action), source, args);
   if (name === 'admin_preview_revision' || name === 'admin_revise_tournament') return `Apply these tournament changes, close registration and replace the affected schedule while preserving prior history?`;
+  if (name === 'admin_preview_player_replacement' && (count(source.unknown_history_match_ids) || count(source.blocked_future_match_ids))) return undefined;
+  if (name === 'admin_preview_player_replacement' || name === 'admin_replace_player') return `Replace this player on the same team, keeping past results and using the replacement in future games?`;
+  if (name === 'admin_preview_player_withdrawal' && (count(source.live_match_ids) || count(source.unknown_history_match_ids) || count(source.inconsistent_pending_match_ids))) return undefined;
+  if (name === 'admin_preview_player_withdrawal' || name === 'admin_withdraw_player') return 'Withdraw this player, keep the team and historical results, and leave the position vacant?';
+  if (name === 'admin_preview_force_pending_match' || name === 'admin_force_pending_match') return 'Replace the teams in this pending match and disconnect the reviewed feeder routes while preserving completed results?';
+  if (name === 'admin_preview_replay_terminal_match' || name === 'admin_replay_terminal_match') return 'Invalidate this match, keep its prior players and score in the history, and create the reviewed replay?';
+  if (name === 'admin_preview_append_terminal_match' || name === 'admin_append_terminal_match') return 'Add the reviewed placement match, preserve all completed games and recalculate final placements after it is played?';
   if (name === 'admin_preview_schedule' || name === 'admin_lock_roster') return `Close player positions and generate the reviewed schedule${count(source.fixtures) ? ` of ${count(source.fixtures)} games` : ''}?`;
-  if (name === 'admin_preview_correction' || name === 'admin_commit_correction') return `Correct this result and review ${count(source.affected_match_ids)} affected games, including any required replays?`;
-  if (name === 'admin_preview_withdrawal' || name === 'admin_withdraw_entry') return `Withdraw this entry and update its affected games and qualification while preserving completed results?`;
+  if (name === 'admin_preview_correction') return source.requires_reopen === true ? 'The owner must reopen completed results before this correction. Review the affected games first?' : 'After reviewing the affected games, which available resolution should be used?';
+  if (name === 'admin_commit_correction') return record(args.data).resolution === 'void_and_replay' ? 'Correct this result and invalidate the reviewed dependent games for replay?' : 'Apply the reviewed correction and its stated effects on dependent games?';
+  if (name === 'admin_preview_bulk_adjudication') return `Apply administrative results to ${count(source.selected_matches)} selected games${count(source.archived_matches) ? ` and archive ${count(source.archived_matches)} dependent games for regeneration` : ''}?${source.dupr_history_unknown === true ? ' Previously submitted DUPR results may require separate review.' : ''}`;
+  if (name === 'admin_commit_bulk_adjudication') return 'Apply the reviewed administrative results and any specified schedule regeneration?';
+  if (name === 'admin_preview_withdrawal' && source.round_robin_results_excluded === true) return 'Withdraw this entry and exclude its round-robin results from the standings while keeping the match history?';
+  if (name === 'admin_preview_withdrawal' || name === 'admin_withdraw_entry') return 'Withdraw this entry and apply the reviewed effects on games, standings and qualification?';
   const questions: Record<string, string> = {
     publishTournament: 'Publish this tournament with the reviewed rules and open individual registration?',
     cancelTournament: 'Cancel this tournament and stop its unfinished games while preserving its history?',
@@ -27,6 +38,7 @@ export function confirmationQuestion(name: string, value: unknown, args: Record<
     admin_start_tournament: 'Start this tournament using the reviewed schedule?',
     admin_resolve_tie: 'Apply the reviewed draw to decide the tied qualification and seed positions?',
     admin_remove_registered_player: record(args.data).release_only === true ? 'Free this player’s position while keeping them registered in the tournament?' : 'Remove this player from the tournament and free their position while keeping their teammate registered?',
+    admin_fill_position: 'Enroll the selected Picktennt account in the selected open tournament position?',
   };
   return questions[name];
 }

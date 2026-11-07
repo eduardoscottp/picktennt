@@ -57,11 +57,33 @@ export async function storageDatabase(deferIndividualRoster = false) {
   if (existsSync(administrators)) await db.exec(readFileSync(administrators, 'utf8'));
   const revisions = resolve('supabase/migrations/202610290001_tournament_revisions.sql');
   if (existsSync(revisions)) await db.exec(readFileSync(revisions, 'utf8'));
+  const duprSelection = resolve('supabase/migrations/202610290004_tournament_dupr_selection.sql');
+  if (existsSync(duprSelection)) await db.exec(readFileSync(duprSelection, 'utf8'));
   const individualSlots = resolve('supabase/migrations/202611010001_individual_registration_slots.sql');
   if (existsSync(individualSlots)) await db.exec(readFileSync(individualSlots, 'utf8'));
   const individualRevisions = resolve('supabase/migrations/202611010002_doubles_revision_individual_slots.sql');
   if (existsSync(individualRevisions)) await db.exec(readFileSync(individualRevisions, 'utf8'));
   if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611020001_individual_roster_management.sql'), 'utf8'));
+  if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611030001_registration_close_guard.sql'), 'utf8'));
+  if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611030002_modular_roster_avatars.sql'), 'utf8'));
+  if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611030003_revision_registered_replacements.sql'), 'utf8'));
+  if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611030004_administrative_scores.sql'), 'utf8'));
+  if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611030005_bulk_adjudication.sql'), 'utf8'));
+  if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611060001_tournament_score_validation.sql'), 'utf8'));
+  if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611060002_tournament_match_roster_snapshot.sql'), 'utf8'));
+  if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611060003_preserve_empty_teams.sql'), 'utf8'));
+  if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611060004_revision_existing_accounts.sql'), 'utf8'));
+  if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611060005_player_replacement.sql'), 'utf8'));
+  if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611060006_match_player_display_names.sql'), 'utf8'));
+  if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611060007_admin_fill_position.sql'), 'utf8'));
+  if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611060008_force_pending_match.sql'), 'utf8'));
+  if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611060009_complete_match_rosters.sql'), 'utf8'));
+  if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611060010_withdraw_preserve_former_members.sql'), 'utf8'));
+  if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611060011_admin_player_move.sql'), 'utf8'));
+  if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611060012_player_withdrawal.sql'), 'utf8'));
+  if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611060013_unplayed_walkover_rosters.sql'), 'utf8'));
+  if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611060014_replay_terminal_match.sql'), 'utf8'));
+  if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611060015_append_terminal_match.sql'), 'utf8'));
   return db;
 }
 export async function role<T>(db: PGlite, name: 'anon'|'authenticated'|'service_role', actor: string, fn: () => Promise<T>) {

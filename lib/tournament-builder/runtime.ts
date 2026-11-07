@@ -20,8 +20,9 @@ export function analyzeTournament(definition: TournamentDefinition, entries: rea
   }
   const block = (blockedCode: TournamentAnalysis['blockedCode']) => checked({ ...analysis, state: 'blocked', blockedCode });
   const d = definition;
-  if (entries.length < d.registration.min_entries || entries.length > d.registration.max_entries || entries.some(e => e.playerIds.length !== (d.registration.entry_type === 'singles' ? 1 : 2))) return block('INVALID_CAPACITY');
-  assertValidRoster(entries, d.event.courts);
+  const expectedPlayers = d.registration.entry_type === 'singles' ? 1 : 2;
+  if (entries.length < d.registration.min_entries || entries.length > d.registration.max_entries || entries.some(e => options.allowIncompleteRoster ? e.playerIds.length > expectedPlayers : e.playerIds.length !== expectedPlayers)) return block('INVALID_CAPACITY');
+  assertValidRoster(entries, d.event.courts, options.allowIncompleteRoster);
   const eligible = options.eligibleEntryIds ?? entries.map(e => e.id);
   if (new Set(eligible).size !== eligible.length || eligible.some(id => !entries.some(e => e.id === id))) throw new Error('Eligible IDs must be unique roster entries.');
   const rr = d.nodes.find(node => node.module === 'round_robin@1');
@@ -29,7 +30,7 @@ export function analyzeTournament(definition: TournamentDefinition, entries: rea
   const eliminating = d.nodes.find(node => node.module === 'elimination@1');
   let rankedEligible: string[] = [];
   if (rr) {
-    const rrFixtures = generateRoundRobin(entries, d.event.courts, rr.id);
+    const rrFixtures = generateRoundRobin(entries, d.event.courts, rr.id, options.allowIncompleteRoster);
     analysis.fixtures.push(...rrFixtures);
     const ids = new Set(rrFixtures.map(f => f.id));
     const current = resolveBracket(rrFixtures, results.filter(r => ids.has(r.fixtureId)), undefined, d.policies.match);
@@ -68,7 +69,7 @@ export function analyzeTournament(definition: TournamentDefinition, entries: rea
     }
     if (![2, 4, 8, 16].includes(bracketEntries.length) || (eliminating.config.bronze && bracketEntries.length === 2)) return block('INVALID_CAPACITY');
     const offset = Math.max(0, ...analysis.fixtures.map(f => f.wave));
-    const fixtures = generateElimination(bracketEntries, d.event.courts, { ...eliminating.config, stageId: eliminating.id }).map(f => ({ ...f, wave: f.wave + offset }));
+    const fixtures = generateElimination(bracketEntries, d.event.courts, { ...eliminating.config, stageId: eliminating.id, allowIncompleteRoster: options.allowIncompleteRoster }).map(f => ({ ...f, wave: f.wave + offset }));
     analysis.fixtures.push(...fixtures);
     const ids = new Set(fixtures.map(f => f.id));
     analysis.bracket = resolveBracket(fixtures, results.filter(r => ids.has(r.fixtureId)), eligible, d.policies.match);

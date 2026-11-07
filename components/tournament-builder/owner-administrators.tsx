@@ -3,6 +3,7 @@ import { useId, useState } from "react";
 import type { StorageRow } from "@/lib/tournament-builder/commands";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PlayerSearch } from "./player-search";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 type Action = "addAdministrator" | "removeAdministrator";
 type Target = { id: string; display_name: string };
@@ -12,7 +13,6 @@ export function OwnerAdministrators({ tournamentId, revision, ownerId, admins, d
   run: (command: string, data: Record<string, unknown>) => Promise<void>;
 }) {
   const id = useId();
-  const [username, setUsername] = useState("");
   const [target, setTarget] = useState<Target | null>(null);
   const [action, setAction] = useState<Action>("addAdministrator");
   const [reason, setReason] = useState("");
@@ -20,22 +20,9 @@ export function OwnerAdministrators({ tournamentId, revision, ownerId, admins, d
   const [error, setError] = useState("");
   const [review, setReview] = useState<{ fingerprint: string; result: Preview } | null>(null);
   const [confirmed, setConfirmed] = useState(false);
-  const normalized = username.trim().replace(/^@/, "").toLowerCase();
   const fingerprint = JSON.stringify({ revision, action, user_id: target?.id, reason: reason.trim() });
   const current = review?.fingerprint === fingerprint && review.result.event_revision === revision ? review.result : null;
   function resetReview() { setReview(null); setConfirmed(false); setError(""); }
-  async function lookup() {
-    if (disabled || busy || !/^[a-z0-9_]{3,32}$/.test(normalized)) return;
-    setBusy(true); resetReview(); setTarget(null);
-    try {
-      const response = await fetch("/api/tournament-builder/players/lookup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: normalized }) });
-      const result = await response.json();
-      if (!response.ok || typeof result.id !== "string" || !UUID.test(result.id) || typeof result.display_name !== "string") throw new Error(result.message ?? "Could not find that Picktennt account.");
-      if (result.id === ownerId || admins?.some(admin => admin.user_id === result.id)) throw new Error("This account already administers the tournament.");
-      setAction("addAdministrator"); setTarget({ id: result.id, display_name: result.display_name });
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Account lookup is unavailable."); }
-    finally { setBusy(false); }
-  }
   async function preview() {
     if (!target || !UUID.test(target.id) || !reason.trim() || reason.length > 1000 || disabled || busy) return;
     setBusy(true); resetReview();
@@ -52,8 +39,7 @@ export function OwnerAdministrators({ tournamentId, revision, ownerId, admins, d
     <p className="text-sm text-gray-600">Only the owner can grant or remove administrator access. This does not transfer ownership or register a player.</p>
     {!admins ? <p className="text-sm text-amber-800">Refresh the tournament to load its current administrators.</p> : <fieldset disabled={disabled || busy} className="space-y-4 disabled:opacity-60">
       <ul className="space-y-2">{[...admins].sort((a, b) => Number(a.succession_order) - Number(b.succession_order)).map(admin => <li key={admin.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3"><div><strong className="text-sm">{typeof admin.display_name === "string" ? admin.display_name : "Picktennt account"}</strong><p className="text-xs text-gray-500">{admin.user_id === ownerId ? "Owner · protected" : "Tournament administrator"}</p></div>{admin.user_id !== ownerId && typeof admin.user_id === "string" && <Button size="sm" variant="outline" onClick={() => { resetReview(); setAction("removeAdministrator"); setTarget({ id: String(admin.user_id), display_name: typeof admin.display_name === "string" ? admin.display_name : "Picktennt account" }); }}>Choose removal for {typeof admin.display_name === "string" ? admin.display_name : "account"}</Button>}</li>)}</ul>
-      <Input id={`${id}-username`} label="New administrator’s Picktennt username" value={username} maxLength={33} onChange={event => { setUsername(event.target.value); setTarget(null); resetReview(); }} />
-      <Button variant="outline" disabled={disabled || busy || !/^[a-z0-9_]{3,32}$/.test(normalized)} loading={busy} onClick={() => void lookup()}>Find administrator account</Button>
+      <PlayerSearch tournamentId={tournamentId} onQueryChange={() => { setTarget(null); resetReview(); }} onSelect={player => { resetReview(); setTarget(null); if (!UUID.test(player.id) || player.id === ownerId || admins.some(admin => admin.user_id === player.id)) { setError("This account already administers the tournament or is invalid."); return; } setAction("addAdministrator"); setTarget({ id: player.id, display_name: player.display_name }); }} />
       {target && <p className="text-sm font-medium">{action === "addAdministrator" ? "Grant access to" : "Remove access from"}: {target.display_name}</p>}
       <Input id={`${id}-reason`} label="Reason for administrator change" value={reason} maxLength={1000} onChange={event => { setReason(event.target.value); resetReview(); }} />
       <Button variant="outline" disabled={disabled || busy || !target || !reason.trim()} onClick={() => void preview()}>Review administrator change</Button>

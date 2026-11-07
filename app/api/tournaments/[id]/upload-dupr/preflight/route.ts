@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import { collectMatchUserIds, fetchProfiles, resolveMatchPlayers } from "@/lib/dupr/tournament-helpers";
+import { collectMatchUserIds, fetchProfiles, hasAmbiguousHistoricalRosters, hasCompleteMatchRosters, resolveMatchPlayers } from "@/lib/dupr/tournament-helpers";
 import type { Match, Profile } from "@/types/database";
 
 export async function GET(_request: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -17,7 +17,7 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
     .eq("user_id", user.id)
     .single();
   const { data: event, error: eventError } = await supabase.from("tournaments")
-    .select("created_by,engine_version,modular_state,results_under_review,revision").eq("id", id).maybeSingle();
+    .select("created_by,engine_version,modular_state,results_under_review,revision,type").eq("id", id).maybeSingle();
   if (eventError) return NextResponse.json({ error: "Could not load tournament" }, { status: 503 });
   const modular = event?.engine_version === "modular_v1";
   if (!adminRow && !(modular && event.created_by === user.id)) return NextResponse.json({ error: "Not a tournament admin" }, { status: 403 });
@@ -41,6 +41,7 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
   const { data: matchesRaw, error: matchesError } = await matchQuery;
   if (matchesError) return NextResponse.json({ error: "Could not load eligible matches" }, { status: 503 });
   const matches = (matchesRaw ?? []) as Match[];
+  if (modular && await hasAmbiguousHistoricalRosters(admin, matches, event.type)) return NextResponse.json({ error: "Historical match players are ambiguous. Review the roster before DUPR submission." }, { status: 409 });
 
   const userIds = await collectMatchUserIds(admin, matches, modular);
 
@@ -69,6 +70,7 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
 
   // Build match preview for confirmation dialog
   const resolved = await resolveMatchPlayers(admin, matches, profiles, modular);
+  if (modular && !hasCompleteMatchRosters(resolved, event.type)) return NextResponse.json({ error: "Match players are incomplete or ambiguous. Review the historical roster before DUPR submission." }, { status: 409 });
   const preview = resolved.map((r) => ({
     matchId: r.matchId,
     teamALabel: r.teamA

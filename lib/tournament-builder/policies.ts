@@ -1,6 +1,6 @@
 import type { RankingKey } from './definition';
 
-export type OutcomeKind = 'played' | 'walkover' | 'retirement' | 'no_contest';
+export type OutcomeKind = 'played' | 'administrative_score' | 'walkover' | 'retirement' | 'no_contest';
 export interface StandingResult {
   a: string;
   b: string;
@@ -40,7 +40,7 @@ export function computeStandings(
     const a = byId.get(result.a), b = byId.get(result.b);
     if (!a || !b) continue;
     let winner = result.winner;
-    if (result.outcome === 'played') {
+    if (result.outcome === 'played' || result.outcome === 'administrative_score') {
       if (result.scoreA == null || result.scoreB == null || result.scoreA === result.scoreB) {
         throw new Error('Accepted played result must have unequal scores');
       }

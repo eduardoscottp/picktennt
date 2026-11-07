@@ -2,8 +2,8 @@ import { scheduleFairly } from '../fair-scheduling';
 import { assertValidRoster, type Fixture, type TournamentEntry } from '../types';
 
 /** Circle scheduling; odd-count byes never become fixtures. Waves are estimates, not start permission. */
-export function generateRoundRobin(entries: readonly TournamentEntry[], courts: number, stageId = 'rr'): Fixture[] {
-  assertValidRoster(entries, courts);
+export function generateRoundRobin(entries: readonly TournamentEntry[], courts: number, stageId = 'rr', allowIncomplete = false): Fixture[] {
+  assertValidRoster(entries, courts, allowIncomplete);
   const ring: (string | null)[] = entries.map(entry => entry.id);
   if (ring.length % 2) ring.push(null);
   const fixtures: Fixture[] = [];
@@ -17,6 +17,6 @@ export function generateRoundRobin(entries: readonly TournamentEntry[], courts: 
     }
     ring.splice(1, 0, ring.pop()!);
   }
-  scheduleFairly([{ id: stageId, dependencies: [], fixtures, players: new Map(fixtures.map(f => [f.id, [f.a, f.b].flatMap(slot => slot.kind === 'entry' ? entries.find(entry => entry.id === slot.entryId)!.playerIds : [])])) }], courts);
+  scheduleFairly([{ id: stageId, dependencies: [], fixtures, players: new Map(fixtures.map(f => [f.id, [f.a, f.b].flatMap(slot => slot.kind === 'entry' ? [...entries.find(entry => entry.id === slot.entryId)!.playerIds, ...(allowIncomplete && !entries.find(entry => entry.id === slot.entryId)!.playerIds.length ? [`\u0000team:${slot.entryId}`] : [])] : [])])) }], courts);
   return fixtures;
 }

@@ -11,6 +11,8 @@ const messages: Record<string, string> = {
   FORBIDDEN: 'This resource is unavailable or you do not have access.',
   STALE_REVISION: 'The tournament changed. Read it again before submitting.',
   STALE_PREVIEW: 'Generate and confirm a fresh impact preview.',
+  DOWNSTREAM_STARTED: 'A dependent game has started or has a result. Review the impact with explicit downstream regeneration before proceeding.',
+  DEPENDENCY_CHANGED: 'A selected or intervening game has different participants after the proposed changes. Review it separately; no results were changed.',
   IDEMPOTENCY_CONFLICT: 'Use the original operation ID only with its original request.',
   CONFIRMATION_REQUIRED: 'Show the current impact and obtain explicit organizer confirmation.',
   INVALID_STATE: 'This action is unavailable in the current tournament state.',

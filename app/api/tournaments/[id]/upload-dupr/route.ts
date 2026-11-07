@@ -4,6 +4,8 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import {
   collectMatchUserIds,
   fetchProfiles,
+  hasAmbiguousHistoricalRosters,
+  hasCompleteMatchRosters,
   resolveMatchPlayers,
 } from "@/lib/dupr/tournament-helpers";
 import {
@@ -81,6 +83,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
   if (matches.length === 0) {
     return NextResponse.json({ error: "No validated matches to upload" }, { status: 409 });
   }
+  if (modular && await hasAmbiguousHistoricalRosters(admin, matches, tournament.type)) return NextResponse.json({ error: "Historical match players are ambiguous. Review the roster before DUPR submission." }, { status: 409 });
 
   const userIds = await collectMatchUserIds(admin, matches, modular);
 
@@ -132,6 +135,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
 
   // All gated. Submit each match.
   const resolved = await resolveMatchPlayers(admin, matches, profiles, modular);
+  if (modular && !hasCompleteMatchRosters(resolved, tournament.type)) return NextResponse.json({ error: "Match players are incomplete or ambiguous. Review the historical roster before DUPR submission." }, { status: 409 });
 
   type MatchDescriptor = {
     matchId: string;

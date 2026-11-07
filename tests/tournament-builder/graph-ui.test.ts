@@ -3,9 +3,10 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { AppRouterContext } from "next/dist/shared/lib/app-router-context.shared-runtime";
 import { GraphReview } from "../../components/tournament-builder/graph-review";
 import { TournamentBuilder } from "../../components/tournament-builder/builder";
-import { matchTitle, unresolvedSideLabel } from "../../components/tournament-builder/match-presentation";
+import { matchTitle, reachedStage, unresolvedSideLabel } from "../../components/tournament-builder/match-presentation";
 import type { CommandSnapshot } from "../../lib/tournament-builder/commands";
 import type { DefinitionPreview } from "../../lib/tournament-builder/preview";
 
@@ -67,6 +68,17 @@ test("match titles and unresolved sides use the actual graph inputs", () => {
   assert.equal(matchTitle(bronze, data), "Third-place match · B3");
   assert.equal(unresolvedSideLabel(bronze, "b", data), "Loser of SF2");
 });
+test("standings derive graph playoff stages from actual placement routes", () => {
+  const data = snapshot();
+  data.matches[0] = { ...data.matches[0], team_a_id: "a", team_b_id: "b" };
+  assert.equal(reachedStage("a", data), "Semifinal");
+  data.matches.push({ id: "final", logical_key: "F:m1", team_a_id: "a", status: "scheduled" });
+  data.matches.push({ id: "bronze", logical_key: "B3:m1", team_a_id: "b", status: "scheduled" });
+  assert.equal(reachedStage("a", data), "Final");
+  assert.equal(reachedStage("b", data), "Third place");
+  data.matches[1].voided_at = "2026-01-01";
+  assert.equal(reachedStage("a", data), "Semifinal");
+});
 test("later round-robin match sides describe their exact incoming group ranks", () => {
   const data = snapshot();
   const nextDefinition = { ...definition, nodes: [...definition.nodes, { id: "C", module: "round_robin@2", inputs: [rank("A", 1), rank("B", 1), rank("A", 2)] }] };
@@ -88,7 +100,8 @@ test("standings remain separate by group and RR2 unresolved ties have administra
   assert.match(html, /Record a fair draw/);
 });
 test("overview identifies progress nodes and compares duration to the event window", () => {
-  const html = renderToStaticMarkup(createElement(TournamentBuilder, { actorId: "owner", initialSnapshot: snapshot(), initialPreview: preview, view: "overview" }));
+  const router = { back() {}, forward() {}, refresh() {}, push() {}, replace() {}, prefetch() {}, bfcacheId: "test" };
+  const html = renderToStaticMarkup(createElement(AppRouterContext.Provider, { value: router }, createElement(TournamentBuilder, { actorId: "owner", initialSnapshot: snapshot(), initialPreview: preview, view: "overview" })));
   assert.match(html, /Match SF1/); assert.match(html, /Estimated duration: 65 min/); assert.match(html, /Event window:/);
 });
 test("graph match cards follow scheduling waves while group rounds keep their local numbers", () => {
@@ -96,6 +109,6 @@ test("graph match cards follow scheduling waves while group rounds keep their lo
   data.rounds = [{ id: "ra", round_number: 1, logical_wave: 2 }, { id: "rb", round_number: 4, logical_wave: 1 }];
   data.matches = [{ id: "a2", stage_id: "stage-a", logical_key: "A:r2:m1", round_id: "ra", status: "scheduled" }, { id: "b1", stage_id: "stage-b", logical_key: "B:r1:m1", round_id: "rb", status: "scheduled" }];
   const html = renderToStaticMarkup(createElement(TournamentBuilder, { actorId: "owner", initialSnapshot: data, initialPreview: preview, view: "matches" }));
-  assert.ok(html.indexOf("Group B · Round 1") < html.indexOf("Group A · Round 2"));
-  assert.doesNotMatch(html, /Group B · Round 4/);
+  assert.ok(html.indexOf("Round 1 - Court — - Round robin · Group B") < html.indexOf("Round 2 - Court — - Round robin · Group A"));
+  assert.doesNotMatch(html, /Round 4 - Court — - Round robin · Group B/);
 });

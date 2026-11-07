@@ -15,6 +15,28 @@ export interface MatchPlayerResolution {
   updatedAt: string;
 }
 
+export function hasCompleteMatchRosters(matches: MatchPlayerResolution[], type: string): boolean {
+  const expected = type === "singles" ? 1 : type === "doubles" ? 2 : 0;
+  return expected > 0 && matches.every(match => {
+    const players = [...match.teamA, ...match.teamB].map(player => player.userId);
+    return match.teamA.length === expected && match.teamB.length === expected && new Set(players).size === expected * 2;
+  });
+}
+
+export async function hasAmbiguousHistoricalRosters(admin: SupabaseClient, matches: Match[], type: string): Promise<boolean> {
+  const expected = type === "singles" ? 1 : type === "doubles" ? 2 : 0;
+  if (!expected) return true;
+  const teams = new Set<string>();
+  for (const match of matches) {
+    if (match.team_a_id && !match.player_a1_id && !match.player_a2_id) teams.add(match.team_a_id);
+    if (match.team_b_id && !match.player_b1_id && !match.player_b2_id) teams.add(match.team_b_id);
+  }
+  if (!teams.size) return false;
+  const { data, error } = await admin.from("team_members").select("team_id,user_id").in("team_id", [...teams]);
+  if (error) throw new Error("Could not verify match roster history.");
+  return [...teams].some(team => new Set((data ?? []).filter(member => member.team_id === team).map(member => member.user_id)).size > expected);
+}
+
 /** Collect distinct user IDs from a list of matches, resolving teams via team_members. */
 export async function collectMatchUserIds(
   admin: SupabaseClient,
@@ -28,8 +50,8 @@ export async function collectMatchUserIds(
     for (const id of [m.player_a1_id, m.player_a2_id, m.player_b1_id, m.player_b2_id]) {
       if (id) directIds.add(id);
     }
-    if (m.team_a_id) teamIds.add(m.team_a_id);
-    if (m.team_b_id) teamIds.add(m.team_b_id);
+    if (m.team_a_id && (!currentRosterOnly || (!m.player_a1_id && !m.player_a2_id))) teamIds.add(m.team_a_id);
+    if (m.team_b_id && (!currentRosterOnly || (!m.player_b1_id && !m.player_b2_id))) teamIds.add(m.team_b_id);
   }
 
   if (teamIds.size > 0) {
@@ -97,8 +119,8 @@ export async function resolveMatchPlayers(
     const aIds: string[] = [];
     const bIds: string[] = [];
 
-    if (m.team_a_id) aIds.push(...(teamMembers.get(m.team_a_id) ?? []));
-    if (m.team_b_id) bIds.push(...(teamMembers.get(m.team_b_id) ?? []));
+    if (m.team_a_id && (!currentRosterOnly || (!m.player_a1_id && !m.player_a2_id))) aIds.push(...(teamMembers.get(m.team_a_id) ?? []));
+    if (m.team_b_id && (!currentRosterOnly || (!m.player_b1_id && !m.player_b2_id))) bIds.push(...(teamMembers.get(m.team_b_id) ?? []));
     for (const id of [m.player_a1_id, m.player_a2_id]) if (id) aIds.push(id);
     for (const id of [m.player_b1_id, m.player_b2_id]) if (id) bIds.push(id);
 

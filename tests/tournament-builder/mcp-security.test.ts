@@ -21,7 +21,7 @@ function setup() {
     operation: async () => ({ operation_id: id, tournament_id: id, revision: 2, status: 'draft', data: { definition_id: id, api_key: canary }, actor_id: canary }),
     reviewLink: async () => ({ tournament_id: id, review_url: `${config.issuer}/tournaments/${id}/builder` }),
     admin: {
-      snapshot: async () => ({ event: { id, revision: 2, roster_revision: 1, modular_state: 'registration_open', name: 'Saturday', join_code: canary, engine_version: canary }, caller_role: 'admin', definitions: [{ id, definition: { event: { name: 'Saturday' } }, hash: canary }], teams: [{ id, name: 'Team', entry_state: 'approved', registered_by: canary }], team_members: [{ id, team_id: id, user_id: id, display_name: 'Player', email: canary }], matches: [{ id, score_a: 11, score_b: 4, status: 'validated', dupr_submission_id: canary }], admins: [{ id, user_id: id, display_name: 'Organizer', granted_by: canary }], stages: [], rounds: [], standings: [], tournament_players: [{ id, user_id: id, email: canary }], connection_grants: canary }),
+      snapshot: async () => ({ event: { id, revision: 2, roster_revision: 1, modular_state: 'registration_open', name: 'Saturday', join_code: canary, engine_version: canary }, caller_role: 'admin', definitions: [{ id, definition: { event: { name: 'Saturday' } }, hash: canary }], teams: [{ id, name: 'Team', entry_state: 'approved', registered_by: canary }], team_members: [{ id, team_id: id, user_id: id, display_name: 'Player', email: canary }], matches: [{ id, player_a1_id: id, score_a: 11, score_b: 4, status: 'validated', dupr_submission_id: canary }], admins: [{ id, user_id: id, display_name: 'Organizer', granted_by: canary }], stages: [], rounds: [], standings: [], tournament_players: [{ id, user_id: id, email: canary }], connection_grants: canary }),
       findPlayer: async () => ({ id, username: 'player', display_name: 'Player', email: canary, password: canary }),
       previewCorrection: async () => ({}), previewWithdrawal: async () => ({}),
     },
@@ -46,7 +46,52 @@ test('MCP projects storage, player, draft and receipt fields instead of leaking 
   assert.equal(result.tournament_id, id);
   assert.equal(result.entries[0].players[0].display_name, 'Player');
   assert.equal(result.matches[0].score_a, 11);
+  assert.equal(result.matches[0].player_a1_id, id);
   for (const key of ['event', 'definitions', 'teams', 'team_members', 'tournament_players', 'admins']) assert.equal(key in result, false, key);
+});
+
+test('entry match candidate listing is scoped, paginated at one revision, and exposes no private fields', async () => {
+  const { deps, call } = setup();
+  const opponent = randomUUID(), other = randomUUID();
+  deps.admin!.snapshot = async () => ({
+    event: { id, revision: 8 }, teams: [{ id }],
+    matches: [
+      ...Array.from({ length: 65 }, (_, index) => ({ id: randomUUID(), team_a_id: index % 2 ? opponent : id, team_b_id: index % 2 ? id : opponent, score_a: 11, status: 'validated', private_field: canary })),
+      { id: randomUUID(), team_a_id: id, team_b_id: opponent, is_current: false },
+      { id: randomUUID(), team_a_id: other, team_b_id: opponent },
+    ],
+  });
+  const args = { tournament_id: id, entry_id: id };
+  const response = await call('admin_list_entry_matches', args);
+  assert.equal(response.isError, undefined);
+  assert.doesNotMatch(JSON.stringify(response), new RegExp(canary));
+  const first = JSON.parse(response.content[0].text);
+  assert.equal(first.event_revision, 8);
+  assert.equal(first.impact_preview, false);
+  assert.equal(first.bulk_action_available, false);
+  assert.equal(first.matches.length, 64);
+  assert.deepEqual(first.match_page, { offset: 0, total: 65, next_offset: 64 });
+  const next = JSON.parse((await call('admin_list_entry_matches', { ...args, match_offset: 64, expected_revision: 8 })).content[0].text);
+  assert.equal(next.matches.length, 1);
+  assert.equal(next.match_page.next_offset, null);
+  assert.equal((await call('admin_list_entry_matches', { ...args, match_offset: 64 })).isError, true);
+  assert.equal((await call('admin_list_entry_matches', { ...args, match_offset: 64, expected_revision: 7 })).isError, true);
+  assert.equal((await call('admin_list_entry_matches', { ...args, entry_id: other })).isError, true);
+  const unprivileged = { ...deps, admin: undefined };
+  await assert.rejects(callTournamentTool('admin_list_entry_matches', args, unprivileged));
+});
+
+test('bulk simulation output is explicitly incomplete and excludes private result data', async () => {
+  const { deps, call } = setup();
+  deps.admin!.previewBulkAdjudication = async () => ({ event_revision: 8, entry_id: id, mode: 'score', complete_impact_preview: false, bulk_action_available: false, selected_matches: [{ match_id: id, before: { status: 'validated', secret: canary }, after: { score_a: 11, score_b: 0, secret: canary } }], projected_source_standings: [], potentially_affected_match_ids: [id], secret: canary });
+  const response = await call('admin_simulate_bulk_adjudication', { tournament_id: id, data: { entry_id: id, match_ids: [id], mode: 'score', winner_score: 11, loser_score: 0 } });
+  assert.equal(response.isError, undefined);
+  assert.doesNotMatch(JSON.stringify(response), new RegExp(canary));
+  const data = JSON.parse(response.content[0].text);
+  assert.equal(data.complete_impact_preview, false);
+  assert.equal(data.bulk_action_available, false);
+  assert.equal(data.selected_matches[0].after.score_a, 11);
+  assert.equal((await call('admin_simulate_bulk_adjudication', { tournament_id: id, data: { entry_id: id, match_ids: [id, id], mode: 'walkover' } })).isError, true);
 });
 
 test('MCP masks backend errors and makes forbidden and missing resources indistinguishable', async () => {

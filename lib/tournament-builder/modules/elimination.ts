@@ -2,8 +2,8 @@ import { isLegalScore } from '../policies';
 import { assertValidRoster, type BracketResolution, type Fixture, type FixtureResult, type FixtureSlot, type ResolvedFixture, type TournamentEntry } from '../types';
 
 /** Entries are already in ranked order or the persisted draw order. This function never shuffles. */
-export function generateElimination(entries: readonly TournamentEntry[], courts: number, options: { seeding: 'draw' | 'ranked'; bronze: boolean; stageId?: string }): Fixture[] {
-  assertValidRoster(entries, courts);
+export function generateElimination(entries: readonly TournamentEntry[], courts: number, options: { seeding: 'draw' | 'ranked'; bronze: boolean; stageId?: string; allowIncompleteRoster?: boolean }): Fixture[] {
+  assertValidRoster(entries, courts, options.allowIncompleteRoster);
   if (![2, 4, 8, 16].includes(entries.length) || (options.bronze && entries.length === 2)) throw new Error('Unsupported bracket size or two-entry bronze.');
   const stageId = options.stageId ?? 'elimination';
   let seeds = [1, 2];
@@ -65,7 +65,7 @@ export function resolveBracket(fixtures: readonly Fixture[], results: readonly F
         if (winner !== null) throw new Error('No-contest cannot have a winner.');
       } else {
         if (!winner || (winner !== entryA && winner !== entryB)) throw new Error('Winner must be a participating entry.');
-        if (result.outcome === 'played') {
+        if (result.outcome === 'played' || result.outcome === 'administrative_score') {
           if (!entryA || !entryB || !isLegalScore(result.scoreA!, result.scoreB!, scorePolicy)) throw new Error('Accepted played score is illegal.');
           if (winner !== (result.scoreA! > result.scoreB! ? entryA : entryB)) throw new Error('Winner disagrees with accepted score.');
         }

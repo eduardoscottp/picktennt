@@ -1,12 +1,12 @@
 import type { OutcomeKind, StandingRow } from './policies';
 
 export interface TournamentEntry { id: string; playerIds: readonly string[] }
-export function assertValidRoster(entries: readonly TournamentEntry[], courts: number): void {
+export function assertValidRoster(entries: readonly TournamentEntry[], courts: number, allowIncomplete = false): void {
   if (!Number.isInteger(courts) || courts < 1 || courts > 8) throw new Error('Courts must be an integer from 1 to 8.');
   if (entries.length < 2 || entries.length > 16) throw new Error('Roster must contain 2–16 entries.');
   const ids = new Set<string>(), players = new Set<string>();
   for (const entry of entries) {
-    if (!entry.id || ids.has(entry.id) || entry.playerIds.length < 1 || entry.playerIds.length > 2) throw new Error('Entries require unique IDs and one or two players.');
+    if (!entry.id || ids.has(entry.id) || (!allowIncomplete && entry.playerIds.length < 1) || entry.playerIds.length > 2) throw new Error('Entries require unique IDs and one or two players.');
     ids.add(entry.id);
     for (const player of entry.playerIds) {
       if (!player || players.has(player)) throw new Error('Each player must belong to exactly one entry.');
@@ -29,6 +29,8 @@ export interface PlacementGroup { rank: number; entryIds: string[] }
 export interface PlacementResult { state: StageState; groups?: PlacementGroup[]; championEntryId?: string; ineligibleEntryIds?: string[]; unplacedEntryIds?: string[]; blockedCode?: 'UNRESOLVED_TIE' | 'NO_ELIGIBLE_CHAMPION' }
 /** Draw revisions must be checked against the current input, never recycled after changed results/roster. */
 export interface RuntimeOptions {
+  /** Only for an already generated roster while an administrator resolves a vacant position. */
+  allowIncompleteRoster?: boolean;
   inputRevision?: number; rosterRevision?: number;
   rankingDraws?: readonly { inputRevision: number; entryIds: readonly string[] }[];
   directDraw?: { rosterRevision: number; entryIds: readonly string[] };

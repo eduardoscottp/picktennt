@@ -8,12 +8,13 @@ import { executeCommand, getSnapshot, previewTournament, type RpcClient } from '
 import { planCommand } from '../../lib/tournament-builder/commands';
 import { previewRevision } from '../../lib/tournament-builder/revisions';
 import { previewSchedule } from '../../lib/tournament-builder/schedule-preview';
+import { previewCorrection } from '../../lib/tournament-builder/corrections';
 let db: PGlite;
 before(async()=>{db=await storageDatabase();});
 after(async()=>{await db?.close();});
 const host={id:owner,clientId:'web'};
 const rpc: RpcClient = { async rpc(name,args) { try { const keys=Object.keys(args); const result=await role(db,'service_role',owner,()=>db.query<{value:unknown}>(`SELECT public.${name}(${keys.map((key,i)=>`${key} => $${i+1}`).join(',')}) value`,Object.values(args).map(v=>v&&typeof v==='object'?JSON.stringify(v):v)));return {data:result.rows[0].value,error:null}; } catch(error) {return {data:null,error:{message:String(error)}};} } };
-async function fixture() {
+async function fixture(withMatches=true) {
  const definition=JSON.parse(readFileSync('tests/tournament-builder/fixtures/tournament-definition.json','utf8'));
  definition.event.starts_at='2030-11-07T09:00:00-05:00';definition.event.expected_end_at='2030-11-07T12:30:00-05:00';
  definition.registration={...definition.registration,entry_type:'singles',partner_consent:false,mode:'approval',min_entries:2,max_entries:4,closes_at:'2030-11-06T18:00:00-05:00'};
@@ -24,7 +25,7 @@ async function fixture() {
  const preview=await previewTournament(rpc,host,event);await run('publishTournament',{reviewed_definition_hash:preview.definitionHash,acknowledged_warning_codes:preview.warningCodes??[]});
  let s=await getSnapshot(rpc,host,event);
  for(const [i,id] of [player,stranger].entries()) await run('addRegisteredEntry',{definition_id:s.event!.definition_id,player_ids:[id],entry_name:`Entry ${i}`,reason:'Existing account'});
- await run('closeRegistration');s=await getSnapshot(rpc,host,event);await run('lockRoster',{reviewed_roster_revision:s.event!.roster_revision});
+ await run('closeRegistration');s=await getSnapshot(rpc,host,event);if(withMatches) await run('lockRoster',{reviewed_roster_revision:s.event!.roster_revision});
  return {event,definition,run};
 }
 async function proposal(f:Awaited<ReturnType<typeof fixture>>, entries:unknown[]=[]){
@@ -57,14 +58,34 @@ test('real commands preserve history, publish a new definition and reuse members
  assert.equal(current.length,schedule.fixtures.length);assert.ok(current.every(m=>!oldMatches.includes(m.id)&&s.stages.some(stage=>stage.id===m.stage_id)));
  assert.ok(regenerated.matches.filter(m=>oldMatches.includes(m.id)).every(m=>m.is_current===false));
 });
+test('v1 SQL snapshots and score corrections use only the new stages after revision',async()=>{
+ const f=await fixture(); const before=await getSnapshot(rpc,host,f.event), oldStages=before.stages.map(stage=>stage.id);
+ const p=await proposal(f); await command(db,p.input);
+ let s=await getSnapshot(rpc,host,f.event); const currentDefinition=s.event!.definition_id;
+ assert.notEqual(currentDefinition,before.event!.definition_id);
+ assert.ok(s.stages.every(stage=>stage.definition_id===currentDefinition&&!oldStages.includes(stage.id)));
+ assert.equal((await db.query('SELECT id FROM tournament_stages WHERE id=ANY($1::uuid[])',[oldStages])).rows.length,oldStages.length);
+ await f.run('lockRoster',{reviewed_roster_revision:s.event!.roster_revision}); await f.run('startTournament');
+ s=await getSnapshot(rpc,host,f.event); const match=s.matches.find(row=>row.is_current!==false&&row.team_a_id&&row.team_b_id)!;
+ await f.run('attestScore',{match_id:match.id,outcome_kind:'played',score_a:11,score_b:5,reason:'Verified'});
+ s=await getSnapshot(rpc,host,f.event);
+ const review=previewCorrection(s,host,{match_id:match.id,outcome_kind:'played',score_a:5,score_b:11});
+ assert.equal(review.source_match_id,match.id); assert.ok(s.stages.every(stage=>stage.definition_id===currentDefinition));
+});
 test('removal cancels memberships without fabricating consent and forgery rolls back',async()=>{
- const f=await fixture();const s=await getSnapshot(rpc,host,f.event);const t=s.teams[0];
+ const f=await fixture(false);const s=await getSnapshot(rpc,host,f.event);const t=s.teams[0];
  const p=await proposal(f,[{entry_id:t.id,entry_name:String(t.name),player_ids:[],remove:true}]);await command(db,p.input);
  const after=await getSnapshot(rpc,host,f.event);assert.equal(after.teams.find(v=>v.id===t.id)!.entry_state,'cancelled');assert.ok(after.team_members.filter(v=>v.team_id===t.id).every(v=>v.membership_status==='cancelled'));
  const clean=await proposal(f);const forged=structuredClone(clean.plan.effects);(forged.teams as Record<string,unknown>[])[0].entry_state='cancelled';
  await assert.rejects(command(db,{...clean.input,effects:forged}),/INVALID_EFFECTS/);
- const unknown=await proposal(f,[{entry_id:after.teams.find(v=>v.entry_state==='approved')!.id,entry_name:'Missing',player_ids:[randomUUID()]}]);
- await assert.rejects(command(db,unknown.input),/ACCOUNT_REQUIRED/);
+ const missing=randomUUID(), entries=[{entry_id:after.teams.find(v=>v.entry_state==='approved')!.id,entry_name:'Missing',player_ids:[missing]}];
+ const nonexistent=await proposal(f,entries);
+ await assert.rejects(command(db,nonexistent.input),/ACCOUNT_REQUIRED/);
+ const fake=structuredClone(after);fake.tournament_players.push({id:randomUUID(),user_id:missing,status:'approved'});
+ const data={definition:{...f.definition,event:{...f.definition.event,name:'Revised event'}},entries,reason:'Reviewed change'};
+ const request={...data,preview_hash:previewRevision(fake,host,data).preview_hash};
+ const plan=planCommand(fake,host,'reviseTournament',request,{id:randomUUID,now:new Date().toISOString()});
+ await assert.rejects(command(db,{event:f.event,command:'reviseTournament',revision:Number(after.event!.revision),request,effects:plan.effects}),/ACCOUNT_REQUIRED/);
  assert.deepEqual(await getSnapshot(rpc,host,f.event),after);
 });
 test('SQL rejects revisions after any historical play and limits descriptive changes',async()=>{
@@ -93,7 +114,7 @@ test('SQL rejects missing membership status and forged player projection status 
 });
 
 test('SQL accepts a removal with only its entry ID and remove flag',async()=>{
- const f=await fixture();const s=await getSnapshot(rpc,host,f.event);const removed=s.teams[0];
+ const f=await fixture(false);const s=await getSnapshot(rpc,host,f.event);const removed=s.teams[0];
  const p=await proposal(f,[{entry_id:removed.id,remove:true}]);
  const forged=structuredClone(p.plan.effects);const removedPlayer=s.team_members.find(m=>m.team_id===removed.id)!.user_id;
  (forged.tournament_players as Record<string,unknown>[]).find(v=>v.user_id===removedPlayer)!.status='approved';
@@ -102,4 +123,15 @@ test('SQL accepts a removal with only its entry ID and remove flag',async()=>{
  await assert.rejects(command(db,{...p.input,effects:forged}),/INVALID_EFFECTS/);
  await command(db,p.input);
  const result=await getSnapshot(rpc,host,f.event);assert.equal(result.teams.find(t=>t.id===removed.id)!.entry_state,'cancelled');
+});
+test('web cannot remove a team after matches are generated',async()=>{
+ const f=await fixture(), s=await getSnapshot(rpc,host,f.event), team=s.teams[0];
+ const data={definition:f.definition,entries:[{entry_id:team.id,remove:true}],reason:'Remove team'};
+ assert.throws(()=>previewRevision(s,host,data),{code:'STRUCTURE_LOCKED'});
+ const connector={id:owner,clientId:'connector',permissions:['admin:manage']};
+ const review=previewRevision(s,connector,data);
+ const request={...data,preview_hash:review.preview_hash};
+ const plan=planCommand(s,connector,'reviseTournament',request,{id:randomUUID,now:new Date().toISOString()});
+ await assert.rejects(command(db,{event:f.event,command:'reviseTournament',revision:Number(s.event!.revision),request,effects:plan.effects}),/STRUCTURE_LOCKED/);
+ assert.deepEqual(await getSnapshot(rpc,host,f.event),s);
 });

@@ -44,11 +44,19 @@ export type GraphDefinition = Omit<LegacyTournamentDefinition, 'schema_version' 
 };
 export interface GraphRuntimeOptions extends RuntimeOptions {
   seedAssignments?: Record<string, string>;
+  manualMatchEntries?: Record<string, { a?: string; b?: string }>;
   stageInputs?: Record<string, {
     inputRevision: number;
     rankingDraws?: RuntimeOptions['rankingDraws'];
   }>;
   excludedByNode?: Record<string, string[]>;
+}
+export function graphManualEntries(stages: readonly Record<string, unknown>[], definition: GraphDefinition): GraphRuntimeOptions['manualMatchEntries'] {
+  return Object.fromEntries(definition.nodes.filter(node => node.module === 'match@1').flatMap(node => {
+    const output = stages.find(stage => stage.node_id === node.id)?.output;
+    const manual = output && typeof output === 'object' && !Array.isArray(output) ? (output as Record<string, unknown>).manualMatchEntries : undefined;
+    return manual === undefined ? [] : [[node.id, manual]];
+  })) as GraphRuntimeOptions['manualMatchEntries'];
 }
 export interface GraphStageOutput {
   state: StageState;

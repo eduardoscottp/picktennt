@@ -5,7 +5,7 @@ export function guestPlayers(team: StorageRow | undefined): GuestPlayer[] {
 }
 /** Tournament-only guest IDs never represent authentication accounts or signed consent. */
 export function entryPlayerIds(snapshot: Pick<CommandSnapshot, 'teams' | 'team_members'>, teamId: string): string[] {
- // Withdrawn entrants remain part of the locked competition history; cancelled
- // pre-play memberships were replaced or removed and must not enter a new draw.
- return [...snapshot.team_members.filter(m=>m.team_id===teamId && m.membership_status!=='cancelled').map(m=>String(m.user_id)), ...guestPlayers(snapshot.teams.find(t=>t.id===teamId)).map(g=>g.id)];
+ // A withdrawn team retains its historical roster; an active team uses its current members.
+ const team = snapshot.teams.find(t=>t.id===teamId);
+ return [...snapshot.team_members.filter(m=>m.team_id===teamId && (m.membership_status==='active' || (team?.entry_state!=='approved' && m.membership_status==='pending') || (team?.entry_state==='withdrawn' && m.membership_status==='withdrawn'))).map(m=>String(m.user_id)), ...guestPlayers(team).map(g=>g.id)];
 }

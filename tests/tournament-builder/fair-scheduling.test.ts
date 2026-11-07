@@ -4,6 +4,7 @@ import test from 'node:test';
 import { analyzeGraph } from '../../lib/tournament-builder/graph-runtime';
 import type { GraphDefinition } from '../../lib/tournament-builder/graph-types';
 import { generateRoundRobin } from '../../lib/tournament-builder/modules/round-robin';
+import { generateElimination } from '../../lib/tournament-builder/modules/elimination';
 import { scheduleFairly, summarizeScheduleFairness } from '../../lib/tournament-builder/fair-scheduling';
 import type { FixtureResult } from '../../lib/tournament-builder/types';
 import { planCommand, type CommandPlan, type CommandSnapshot } from '../../lib/tournament-builder/commands';
@@ -30,6 +31,24 @@ test('independent pools share early court time instead of finishing the first po
     const waves = fixtures.filter(f => f.stageId === stage).map(f => f.wave);
     assert.ok(Math.min(...waves) <= 2);
     assert.ok(Math.max(...waves) >= 5);
+  }
+});
+test('generated round robin and graph fixtures assign valid, unique courts per wave', () => {
+  for (const fixtures of [generateRoundRobin(roster(8), 2), analyzeGraph(definition(), roster(8), []).fixtures]) {
+    const occupied = new Set<string>();
+    for (const fixture of fixtures) {
+      assert.ok(Number.isInteger(fixture.court) && fixture.court >= 1 && fixture.court <= 2);
+      const slot = `${fixture.wave}:${fixture.court}`;
+      assert.equal(occupied.has(slot), false, `court assigned twice in wave: ${slot}`);
+      occupied.add(slot);
+    }
+  }
+});
+test('elimination fixtures assign unique valid courts including the bronze match', () => {
+  for (const courts of [1, 2, 4]) {
+    const fixtures = generateElimination(roster(8), courts, { seeding: 'ranked', bronze: true });
+    assert.equal(new Set(fixtures.map(fixture => `${fixture.wave}:${fixture.court}`)).size, fixtures.length);
+    assert.ok(fixtures.every(fixture => fixture.court >= 1 && fixture.court <= courts));
   }
 });
 

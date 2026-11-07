@@ -6,6 +6,9 @@ import type { PGlite } from '@electric-sql/pglite';
 import { storageDatabase, role, command, owner } from './helpers/storage-db';
 import { planCommand, type CommandSnapshot } from '../../lib/tournament-builder/commands';
 import { previewDefinition } from '../../lib/tournament-builder/preview';
+import { previewBulkOperation } from '../../lib/tournament-builder/bulk-adjudication';
+import { previewRevision } from '../../lib/tournament-builder/revisions';
+import { previewCorrection } from '../../lib/tournament-builder/corrections';
 
 let db: PGlite;
 before(async () => { db = await storageDatabase(); });
@@ -26,6 +29,11 @@ async function apply(event: string, name: string, data: Record<string, unknown>,
 test('actual SQL persists and completes a 16-doubles graph through all 27 results, fencing stale writes', async () => {
   const event = randomUUID();
   const definition = JSON.parse(readFileSync('../examples/four-groups-definition.json', 'utf8'));
+  const now = Date.now();
+  definition.event.timezone = 'UTC';
+  definition.registration.closes_at = new Date(now + 30 * 86400000).toISOString();
+  definition.event.starts_at = new Date(now + 31 * 86400000).toISOString();
+  definition.event.expected_end_at = new Date(now + 31 * 86400000 + 4 * 3600000).toISOString();
   let current = await apply(event, 'createDraft', { definition }, empty());
   assert.equal(current.definitions[0].schema_version, 2);
   assert.equal((current.definitions[0].definition as { schema_version: string }).schema_version, '2.0');
@@ -52,21 +60,80 @@ test('actual SQL persists and completes a 16-doubles graph through all 27 result
   assert.deepEqual((await db.query('SELECT count(*) n FROM tournament_operations WHERE tournament_id=$1', [event])).rows[0], operationCount);
   assert.equal(Number((await db.query<{ n: number }>('SELECT count(*) n FROM tournament_operations WHERE operation_id=$1', [operation])).rows[0].n), 0);
 
+  const oldDefinition = current.event!.definition_id, oldStages = current.stages.map(stage => stage.id);
+  const revisionData = { definition, entries: [], reason: 'Review graph before generating' };
+  const revisionReview = previewRevision(current, actor, revisionData);
+  current = await apply(event, 'reviseTournament', { ...revisionData, preview_hash: revisionReview.preview_hash });
+  assert.notEqual(current.event!.definition_id, oldDefinition);
+  assert.ok(current.stages.every(stage => stage.definition_id === current.event!.definition_id && !oldStages.includes(stage.id)));
+  assert.equal((await db.query('SELECT id FROM tournament_stages WHERE id=ANY($1::uuid[])', [oldStages])).rows.length, oldStages.length);
+
   current = await apply(event, 'lockRoster', { reviewed_roster_revision: current.event!.roster_revision });
   current = await apply(event, 'startTournament', {});
   assert.equal(current.matches.length, 27);
   assert.equal(new Set(current.rounds.map(round => Number(round.round_number))).size, current.rounds.length, 'Legacy SQL requires globally unique round numbers');
-  let played = 0;
+  const poolA = current.stages.find(stage => stage.node_id === 'A')!;
+  const poolMatches = current.matches.filter(match => match.stage_id === poolA.id);
+  const poolTeams = current.teams.filter(team => poolMatches.some(match => [match.team_a_id, match.team_b_id].includes(team.id)));
+  const entry = poolTeams.sort((a, b) => Number(b.seed) - Number(a.seed))[0];
+  const selected = poolMatches.filter(match => [match.team_a_id, match.team_b_id].includes(entry.id)).slice(0, 2);
+  const first = selected[0];
+  current = await apply(event, 'attestScore', { match_id: first.id, outcome_kind: 'played', score_a: first.team_a_id === entry.id ? 2 : 11, score_b: first.team_b_id === entry.id ? 2 : 11, reason: 'Existing verified result.' });
+  const saved = current.matches.find(match => match.id === first.id)!;
+  assert.equal(previewCorrection(current, actor, { match_id: saved.id, outcome_kind: 'played', score_a: saved.score_b, score_b: saved.score_a }).source_match_id, saved.id);
+  const proposal = { entry_id: entry.id, match_ids: selected.map(match => match.id), mode: 'score', winner_score: 11, loser_score: 0, reason: 'Administrative score review', overwrite_existing: true, regenerate_downstream: false };
+  const reviewed = previewBulkOperation(current, actor, proposal);
+  const data = { ...proposal, preview_hash: reviewed.preview_hash };
+  const plan = planCommand(current, actor, 'bulkAdjudicate', data, context);
+  const bulkOperation = randomUUID(), revision = Number(current.event!.revision);
+  const bad = structuredClone(plan.effects);
+  bad.matches!.find(match => match.id === first.id)!.winner_team_id = entry.id;
+  await assert.rejects(command(db, { event, operation: bulkOperation, command: 'bulkAdjudicate', revision, request: data, effects: bad, result: plan.result }), /INVALID_EFFECTS/);
+  assert.equal(Number((await snapshot(event)).event!.revision), revision);
+  const receipt = await command(db, { event, operation: bulkOperation, command: 'bulkAdjudicate', revision, request: data, effects: plan.effects, result: plan.result });
+  assert.deepEqual(await command(db, { event, operation: bulkOperation, command: 'bulkAdjudicate', revision, request: data, effects: plan.effects, result: plan.result }), receipt);
+  current = await snapshot(event);
+  assert.ok(selected.every(match => current.matches.find(saved => saved.id === match.id)?.outcome_kind === 'administrative_score'));
+  assert.ok(selected.every(match => current.matches.find(saved => saved.id === match.id)?.submit_to_dupr === false));
+  const history = await db.query<{ before_facts: CommandSnapshot; after_facts: CommandSnapshot; reason: string }>('SELECT before_facts,after_facts,reason FROM tournament_operations WHERE operation_id=$1', [bulkOperation]);
+  assert.equal(history.rows[0].reason, proposal.reason);
+  assert.equal(history.rows[0].before_facts.matches.find(match => match.id === first.id)?.outcome_kind, 'played');
+  assert.equal(history.rows[0].after_facts.matches.find(match => match.id === first.id)?.outcome_kind, 'administrative_score');
+  const regeneration = { entry_id: entry.id, match_ids: [first.id], mode: 'walkover', reason: 'Reviewed withdrawal and dependent schedule', overwrite_existing: true, regenerate_downstream: true };
+  const regenPreview = previewBulkOperation(current, actor, regeneration);
+  assert.ok(regenPreview.archived_matches.length > 0);
+  const regenData = { ...regeneration, preview_hash: regenPreview.preview_hash };
+  const regenPlan = planCommand(current, actor, 'bulkAdjudicate', regenData, context);
+  const forged = structuredClone(regenPlan.effects);
+  const unrelated = poolMatches.find(match => !selected.some(choice => choice.id === match.id))!;
+  forged.matches!.push({ id: unrelated.id, is_current: false, voided_at: context.now });
+  await assert.rejects(command(db, { event, command: 'bulkAdjudicate', revision: Number(current.event!.revision), request: regenData, effects: forged, result: regenPlan.result }), /INVALID_EFFECTS/);
+  current = await apply(event, 'bulkAdjudicate', regenData);
+  assert.ok(regenPreview.archived_matches.every(match => current.matches.find(saved => saved.id === match.match_id)?.is_current === false));
+  assert.ok(regenPreview.changed_fixtures.filter(match => match.new_fixture).every(match => current.matches.find(saved => saved.id === match.match_id)?.is_current !== false));
+  let played = 2;
   while (current.event!.modular_state !== 'completed') {
     assert.ok(played < 27, 'Graph must complete within its 27 matches');
     const match = current.matches.find(match => match.status === 'scheduled' && match.team_a_id && match.team_b_id);
     assert.ok(match, 'Stored graph must expose an eligible next match');
+    if (match.logical_key === 'F:match') {
+      const leaders = current.teams.filter(team => poolMatches.some(game => [game.team_a_id,game.team_b_id].includes(team.id))).sort((a,b)=>Number(a.seed)-Number(b.seed));
+      const selectedEntry = leaders[0].id, low = leaders.at(-1)!.id;
+      assert.ok([match.team_a_id,match.team_b_id].includes(selectedEntry));
+      const source = current.matches.find(game=>game.stage_id===poolA.id&&[game.team_a_id,game.team_b_id].includes(selectedEntry)&&[game.team_a_id,game.team_b_id].includes(low))!;
+      const combined = { entry_id:selectedEntry,match_ids:[source.id,match.id],mode:'score',winner_score:11,loser_score:9,reason:'Reviewed dependent games',overwrite_existing:true,regenerate_downstream:false };
+      const impact = previewBulkOperation(current,actor,combined);
+      current = await apply(event,'bulkAdjudicate',{...combined,preview_hash:impact.preview_hash});
+      assert.equal(current.matches.find(game=>game.id===match.id)?.outcome_kind,'administrative_score');
+      played++;
+      continue;
+    }
     const a = Number(current.teams.find(team => team.id === match.team_a_id)!.seed), b = Number(current.teams.find(team => team.id === match.team_b_id)!.seed);
     current = await apply(event, 'attestScore', { match_id: match.id, outcome_kind: 'played', score_a: a < b ? 11 : 2, score_b: a < b ? 2 : 11, reason: 'Organizer observed this completed game.' });
     played++;
   }
   assert.equal(played, 27);
-  assert.equal(current.matches.filter(match => match.status === 'validated').length, 27);
+  assert.equal(current.matches.filter(match => match.is_current !== false && ['validated', 'walkover'].includes(String(match.status))).length, 27);
   const pools = current.stages.filter(stage => stage.module_id === 'round_robin');
   assert.deepEqual(pools.map(stage => stage.node_id).sort(), ['A', 'B', 'C', 'D']);
   for (const pool of pools) {
@@ -78,6 +145,6 @@ test('actual SQL persists and completes a 16-doubles graph through all 27 result
   assert.equal(placements.state, 'completed');
   const groups = (placements.output as { groups: { rank: number; entryIds: string[] }[] }).groups;
   assert.equal(new Set(groups.flatMap(group => group.entryIds)).size, 16);
-  assert.equal(groups.find(group => group.rank === 1)!.entryIds[0], current.teams.find(team => team.seed === 1)!.id);
+  assert.equal(groups.find(group => group.rank === 1)!.entryIds[0], current.matches.find(match => match.logical_key === 'F:match' && match.is_current !== false)!.winner_team_id);
   assert.equal((current.definitions.find(row => row.id === definitionId)!.definition as { schema_version: string }).schema_version, '2.0');
 });
