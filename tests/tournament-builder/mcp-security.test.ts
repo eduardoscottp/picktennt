@@ -304,3 +304,12 @@ test('MCP withholds free text containing email addresses or infrastructure provi
     assert.equal(JSON.stringify(response).includes(value), false);
   }
 });
+
+
+test('administrator lookup exposes only the allowed identity for enrollment', async () => {
+  const { call } = setup();
+  const response = await call('admin_find_player', { tournament_id: id, username: 'Player' });
+  assert.equal(response.isError, undefined);
+  assert.deepEqual(JSON.parse(response.content[0].text), { id, username: 'player', display_name: 'Player' });
+  assert.doesNotMatch(JSON.stringify(response), /email|password|PRIVATE_SECURITY_CANARY/);
+});
