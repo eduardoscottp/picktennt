@@ -99,7 +99,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
   const profiles = await fetchProfiles(admin, Array.from(userIds));
 
   // VALIDATION GATE 1 — every player has dupr_id in our profile.
-  const missing: Pick<Profile, "id" | "first_name" | "last_name" | "email">[] = [];
+  const missing: Pick<Profile, "id" | "first_name" | "last_name">[] = [];
   for (const uid of userIds) {
     const p = profiles.get(uid);
     if (!p) {
@@ -107,7 +107,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
       continue;
     }
     if (!p.dupr_id || p.dupr_id.trim() === "") {
-      missing.push({ id: p.id, first_name: p.first_name, last_name: p.last_name, email: p.email });
+      missing.push({ id: p.id, first_name: p.first_name, last_name: p.last_name });
     }
   }
   if (missing.length > 0) {
@@ -150,9 +150,9 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     rawMessage: string | null;
   };
 
-  function labelTeam(side: { profile: { first_name: string | null; last_name: string | null; email: string } }[]) {
+  function labelTeam(side: { profile: { first_name: string | null; last_name: string | null } }[]) {
     return side
-      .map((p) => `${p.profile.first_name ?? ""} ${p.profile.last_name ?? ""}`.trim() || p.profile.email)
+      .map((p) => `${p.profile.first_name ?? ""} ${p.profile.last_name ?? ""}`.trim() || "Player")
       .join(" / ");
   }
 

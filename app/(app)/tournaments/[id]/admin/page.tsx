@@ -40,21 +40,21 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
   // Pending players
   const { data: pendingPlayers } = await supabase
     .from("tournament_players")
-    .select("*, profile:player_profiles(*)")
+    .select("*, profile:player_profiles(id,first_name,last_name,username,dupr_id)")
     .eq("tournament_id", id)
     .eq("status", "pending");
 
   // Approved players
   const { data: approvedPlayers } = await supabase
     .from("tournament_players")
-    .select("*, nullified_from_standings, profile:player_profiles(*)")
+    .select("*, nullified_from_standings, profile:player_profiles(id,first_name,last_name,username,dupr_id)")
     .eq("tournament_id", id)
     .eq("status", "approved");
 
   // Admins
   const { data: admins } = await supabase
     .from("tournament_admins")
-    .select("*, profile:player_profiles!tournament_admins_user_id_fkey(*)")
+    .select("*, profile:player_profiles!tournament_admins_user_id_fkey(id,first_name,last_name,username,dupr_id)")
     .eq("tournament_id", id)
     .order("succession_order");
 
@@ -282,7 +282,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
                       <div className="font-medium text-sm text-gray-900">
                         {profile.first_name} {profile.last_name}
                       </div>
-                      <div className="text-xs text-gray-400">{profile.email}</div>
+
                     </div>
                     <AdminPlayerActions
                       tournamentPlayerId={p.id}
@@ -326,7 +326,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
                         <div className="font-medium text-sm text-gray-900">
                           {profile.first_name} {profile.last_name}
                         </div>
-                        <div className="text-xs text-gray-400">{profile.email}</div>
+
                       </div>
                       <AdminPlayerActions
                         tournamentPlayerId={p.id}
@@ -402,7 +402,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
                           <div className="font-medium text-sm text-gray-900">
                             {profile.first_name} {profile.last_name}
                           </div>
-                          <div className="text-xs text-gray-400">{profile.email}</div>
+
                         </div>
                         <AdminPlayerActions
                           tournamentPlayerId={p.id}

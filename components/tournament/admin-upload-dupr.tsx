@@ -17,15 +17,12 @@ interface MissingPlayer {
   id: string;
   first_name: string | null;
   last_name: string | null;
-  email: string;
 }
 
 interface DuprCandidate {
   id: number;
   duprId: string;
   fullName: string;
-  shortAddress: string | null;
-  ratings?: { singles?: number | null; doubles?: number | null } | null;
 }
 
 interface PreviewMatch {
@@ -145,7 +142,7 @@ export function AdminUploadDupr({ tournamentId }: { tournamentId: string }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      toast(`DUPR ID ${duprId} saved for ${lookupPlayer.first_name ?? lookupPlayer.email}`, "success");
+      toast(`DUPR ID ${duprId} saved for ${lookupPlayer.first_name ?? "Player"}`, "success");
       setLookupPlayer(null);
       await loadPreflight();
     } catch (err: any) {
@@ -226,7 +223,6 @@ export function AdminUploadDupr({ tournamentId }: { tournamentId: string }) {
                         <span className="text-xs font-medium text-red-700">
                           {(p.first_name ?? "") + " " + (p.last_name ?? "")}
                         </span>
-                        <span className="text-xs text-red-500"> · {p.email}</span>
                       </div>
                       <button
                         onClick={() => openLookup(p)}
@@ -351,9 +347,6 @@ export function AdminUploadDupr({ tournamentId }: { tournamentId: string }) {
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-semibold text-gray-900">{c.fullName}</div>
-                        {c.shortAddress && (
-                          <div className="text-xs text-gray-500 mt-0.5">{c.shortAddress}</div>
-                        )}
                         <div className="text-xs text-gray-400 mt-0.5 font-mono">
                           DUPR ID: {c.duprId}
                         </div>

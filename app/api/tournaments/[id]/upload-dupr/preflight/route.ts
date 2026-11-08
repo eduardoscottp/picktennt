@@ -56,7 +56,7 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
 
   const profiles = await fetchProfiles(admin, Array.from(userIds));
 
-  const missing: Pick<Profile, "id" | "first_name" | "last_name" | "email">[] = [];
+  const missing: Pick<Profile, "id" | "first_name" | "last_name">[] = [];
   for (const uid of userIds) {
     const p = profiles.get(uid);
     if (!p) {
@@ -64,7 +64,7 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
       continue;
     }
     if (!p.dupr_id || p.dupr_id.trim() === "") {
-      missing.push({ id: p.id, first_name: p.first_name, last_name: p.last_name, email: p.email });
+      missing.push({ id: p.id, first_name: p.first_name, last_name: p.last_name });
     }
   }
 
@@ -74,10 +74,10 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
   const preview = resolved.map((r) => ({
     matchId: r.matchId,
     teamALabel: r.teamA
-      .map((p) => `${p.profile.first_name ?? ""} ${p.profile.last_name ?? ""}`.trim() || p.profile.email)
+      .map((p) => `${p.profile.first_name ?? ""} ${p.profile.last_name ?? ""}`.trim() || "Player")
       .join(" / ") || "(unknown)",
     teamBLabel: r.teamB
-      .map((p) => `${p.profile.first_name ?? ""} ${p.profile.last_name ?? ""}`.trim() || p.profile.email)
+      .map((p) => `${p.profile.first_name ?? ""} ${p.profile.last_name ?? ""}`.trim() || "Player")
       .join(" / ") || "(unknown)",
     scoreA: r.scoreA,
     scoreB: r.scoreB,

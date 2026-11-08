@@ -285,3 +285,22 @@ test('match pagination bounds rounds and scalar output fields cannot forward nes
   assert.doesNotMatch(JSON.stringify(page), new RegExp(canary));
   assert.doesNotThrow(() => assertPublicMcpOutput(page));
 });
+
+
+test('MCP excludes account registration, device and lifetime activity details from tournament participants', () => {
+  const privateProfile = { email: 'secret@example.org', joined_at: '2026-01-01', joined_via: 'google', admission_source: 'invite', has_watch: true, games_played: 12345 };
+  const result = publicMcpResult('admin_get_tournament', { event: { id }, definitions: [], teams: [{ id }], team_members: [{ team_id: id, user_id: id, display_name: 'Player', membership_status: 'active', ...privateProfile }], tournament_players: [{ user_id: id, status: 'approved', ...privateProfile }], admins: [], stages: [], matches: [], rounds: [], standings: [] });
+  const text = JSON.stringify(result);
+  for (const field of Object.keys(privateProfile)) assert.equal(text.includes(field), false, field);
+  assert.match(text, /Player/);
+});
+
+test('MCP withholds free text containing email addresses or infrastructure providers', async () => {
+  const { deps, call } = setup();
+  for (const value of ['player@example.org', 'SuPaBaSe', 'VERCEL']) {
+    deps.getDraft = async () => ({ tournament_id: id, definition: { event: { name: value } } });
+    const response = await call('get_draft');
+    assert.equal(response.isError, true, value);
+    assert.equal(JSON.stringify(response).includes(value), false);
+  }
+});

@@ -3,6 +3,7 @@
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { playerSearchFilter } from "@/lib/tournament-builder/player-search";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -45,8 +46,8 @@ interface ProfileResult {
   id: string;
   first_name: string | null;
   last_name: string | null;
-  email: string;
-  avatar_url: string | null;
+  username: string | null;
+  dupr_id: string | null;
 }
 
 export function DoublesTeamGrid({
@@ -84,7 +85,9 @@ export function DoublesTeamGrid({
   async function search(q: string) {
     setSearchQuery(q);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!q.trim()) { setSearchResults([]); return; }
+    const term = q.trim();
+    if (term.length < 3 || term.length > 80 || !/^[\p{L}\p{N}._ -]+$/u.test(term)) { setSearchResults([]); return; }
+    const filter = ["first_name", "last_name", "username", "dupr_id"].map(field => `${field}.ilike.%${term}%`).join(",");
 
     debounceRef.current = setTimeout(async () => {
       setSearching(true);
@@ -95,8 +98,8 @@ export function DoublesTeamGrid({
           : ["00000000-0000-0000-0000-000000000000"];
         const { data } = await supabase
           .from("profiles")
-          .select("id, first_name, last_name, email, avatar_url")
-          .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,email.ilike.%${q}%`)
+          .select("id, first_name, last_name, username, dupr_id")
+          .or(filter)
           .not("id", "in", `(${exclude.join(",")})`)
           .limit(8);
         setSearchResults((data ?? []) as ProfileResult[]);
@@ -136,7 +139,7 @@ export function DoublesTeamGrid({
         .insert({ team_id: activeSlot.teamId, user_id: profile.id });
       if (tmErr) throw tmErr;
 
-      const name = [profile.first_name, profile.last_name].filter(Boolean).join(" ") || profile.email;
+      const name = [profile.first_name, profile.last_name].filter(Boolean).join(" ") || profile.username || "Player";
       toast(`${name} added to team!`, "success");
       closeSearch();
       router.refresh();
@@ -275,7 +278,7 @@ export function DoublesTeamGrid({
                 autoFocus
                 value={searchQuery}
                 onChange={(e) => search(e.target.value)}
-                placeholder="Search by name or email…"
+                placeholder="Search by name, username or DUPR ID…"
                 className="w-full h-10 rounded-xl border border-gray-200 bg-white pl-10 pr-4 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
             </div>
@@ -287,14 +290,13 @@ export function DoublesTeamGrid({
                 {searchResults.map((p) => (
                   <div key={p.id} className="flex items-center gap-3 py-1.5 px-1 rounded-xl hover:bg-gray-50">
                     <Avatar className="h-8 w-8 flex-shrink-0">
-                      <AvatarImage src={p.avatar_url ?? ""} />
+
                       <AvatarFallback className="text-xs">{getInitials(p.first_name, p.last_name)}</AvatarFallback>
                     </Avatar>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium text-gray-900 truncate">
                         {p.first_name} {p.last_name}
                       </div>
-                      <div className="text-xs text-gray-400 truncate">{p.email}</div>
                     </div>
                     <Button
                       size="sm"

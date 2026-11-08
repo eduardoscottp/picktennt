@@ -47,7 +47,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
 
   try {
     const results = await searchDuprPlayers(name, 10);
-    return NextResponse.json({ ok: true, query: name, results });
+    return NextResponse.json({ ok: true, query: name, results: results.map(({ id, duprId, fullName }) => ({ id, duprId, fullName })) });
   } catch (err) {
     const e = err as DuprError;
     return NextResponse.json(

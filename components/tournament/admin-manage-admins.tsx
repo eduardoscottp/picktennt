@@ -3,6 +3,7 @@
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { playerSearchFilter } from "@/lib/tournament-builder/player-search";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -21,8 +22,8 @@ interface ProfileResult {
   id: string;
   first_name: string | null;
   last_name: string | null;
-  email: string;
-  avatar_url: string | null;
+  username: string | null;
+  dupr_id: string | null;
 }
 
 export function AdminManageAdmins({ tournamentId, admins, currentUserId }: Props) {
@@ -42,7 +43,9 @@ export function AdminManageAdmins({ tournamentId, admins, currentUserId }: Props
   async function search(q: string) {
     setQuery(q);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!q.trim()) { setResults([]); return; }
+    const term = q.trim();
+    if (term.length < 3 || term.length > 80 || !/^[\p{L}\p{N}._ -]+$/u.test(term)) { setResults([]); return; }
+    const filter = ["first_name", "last_name", "username", "dupr_id"].map(field => `${field}.ilike.%${term}%`).join(",");
 
     debounceRef.current = setTimeout(async () => {
       setSearching(true);
@@ -50,8 +53,8 @@ export function AdminManageAdmins({ tournamentId, admins, currentUserId }: Props
         const supabase = createClient();
         const { data } = await supabase
           .from("profiles")
-          .select("id, first_name, last_name, email, avatar_url")
-          .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,email.ilike.%${q}%`)
+          .select("id, first_name, last_name, username, dupr_id")
+          .or(filter)
           .not("id", "in", `(${existingAdminIds.join(",") || "00000000-0000-0000-0000-000000000000"})`)
           .limit(8);
         setResults((data ?? []) as ProfileResult[]);
@@ -71,7 +74,7 @@ export function AdminManageAdmins({ tournamentId, admins, currentUserId }: Props
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      toast(`${profile.first_name ?? profile.email} added as admin!`, "success");
+      toast(`${profile.first_name ?? profile.username ?? "Player"} added as admin!`, "success");
       setResults((r) => r.filter((p) => p.id !== profile.id));
       setQuery("");
       router.refresh();
@@ -145,7 +148,6 @@ export function AdminManageAdmins({ tournamentId, admins, currentUserId }: Props
                     {profile?.first_name} {profile?.last_name}
                     {isPrimary && <span className="ml-2 text-xs text-brand-500">Primary</span>}
                   </div>
-                  <div className="text-xs text-gray-400 truncate">{profile?.email}</div>
                 </div>
                 <button
                   onClick={() => togglePlaying(a.id, !a.is_playing)}
@@ -180,7 +182,7 @@ export function AdminManageAdmins({ tournamentId, admins, currentUserId }: Props
             <input
               value={query}
               onChange={(e) => search(e.target.value)}
-              placeholder="Search by name or email…"
+              placeholder="Search by name, username or DUPR ID…"
               className="w-full h-11 rounded-xl border border-gray-200 bg-white pl-10 pr-10 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
             />
             {query && (
@@ -211,14 +213,13 @@ export function AdminManageAdmins({ tournamentId, admins, currentUserId }: Props
               {results.map((p) => (
                 <div key={p.id} className="flex items-center gap-3 py-2 px-1 rounded-xl hover:bg-gray-50">
                   <Avatar className="h-8 w-8 flex-shrink-0">
-                    <AvatarImage src={p.avatar_url ?? ""} />
+
                     <AvatarFallback className="text-xs">{getInitials(p.first_name, p.last_name)}</AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-gray-900 truncate">
                       {p.first_name} {p.last_name}
                     </div>
-                    <div className="text-xs text-gray-400 truncate">{p.email}</div>
                   </div>
                   <Button size="sm" loading={adding === p.id} onClick={() => addAdmin(p)}>
                     Add

@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { playerSearchFilter, requirePlayerSearchAdmin } from '../../lib/tournament-builder/player-search';
 
-test('player search accepts names, email and DUPR IDs without filter injection', () => {
+test('player search accepts names and DUPR IDs without exposing email', () => {
   assert.match(playerSearchFilter('Ana Ruiz'), /and\(first_name\.ilike\.%Ana%,last_name\.ilike\.%Ruiz%\)/);
-  assert.match(playerSearchFilter('ana@example.com'), /email\.ilike\.%ana@example\.com%/);
+  assert.doesNotMatch(playerSearchFilter('Ana'), /email/);
+  assert.throws(() => playerSearchFilter('ana@example.com'));
   assert.match(playerSearchFilter('DUPR123'), /dupr_id\.ilike\.%DUPR123%/);
   for (const input of ['ab', 'ana,role.eq.admin', 'ana%','ana*', 'x'.repeat(81)]) assert.throws(() => playerSearchFilter(input));
 });
