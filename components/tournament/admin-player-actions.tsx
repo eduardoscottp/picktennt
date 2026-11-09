@@ -13,6 +13,7 @@ interface Props {
   tournamentId: string;
   playerName: string;
   status: "pending" | "approved";
+  allowRemoval?: boolean;
   /** Removal context — only needed when status === "approved" */
   removalPath?: "A" | "B" | "C";
   anyTournamentScores?: boolean;
@@ -25,6 +26,7 @@ export function AdminPlayerActions({
   tournamentId,
   playerName,
   status,
+  allowRemoval = true,
   removalPath = "A",
   anyTournamentScores = false,
   gamesPlayed = 0,
@@ -89,6 +91,7 @@ export function AdminPlayerActions({
     );
   }
 
+  if (!allowRemoval) return null;
   return (
     <RemovePlayerDialog
       tournamentPlayerId={tournamentPlayerId}

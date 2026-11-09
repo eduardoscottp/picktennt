@@ -78,7 +78,7 @@ export default async function MatchesPage({ params }: { params: Promise<{ id: st
   }
 
   function TeamDisplay({ match, side }: { match: any; side: "a" | "b" }) {
-    if (isMixed) {
+    if (isMixed || (side === "a" ? match.player_a1_id || match.player_a2_id : match.player_b1_id || match.player_b2_id)) {
       const p1 = side === "a" ? match.player_a1 : match.player_b1;
       const p2 = side === "a" ? match.player_a2 : match.player_b2;
       return (

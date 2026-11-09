@@ -43,7 +43,7 @@ const fields: Record<string, readonly string[]> = {
   resolveTie: ['stage_id', 'entry_ids', 'input_revision'], reopenResults: ['reason', 'confirmed_owner_action', 'reviewed_action_hash'], cancelTournament: ['reason', 'confirmed_owner_action', 'reviewed_action_hash'],
   commitCorrection: ['match_id', 'score_a', 'score_b', 'outcome_kind', 'winner_entry_id', 'preview_hash', 'reason', 'resolution'],
   bulkAdjudicate: ['entry_id', 'match_ids', 'mode', 'winner_score', 'loser_score', 'reason', 'regenerate_downstream', 'overwrite_existing', 'preview_hash'],
-  withdrawEntry: ['entry_id', 'reason', 'preview_hash'], changeCourt: ['match_id', 'court_number'],
+  withdrawEntry: ['entry_id', 'reason', 'preview_hash', 'policy', 'confirmed_forfeit'], changeCourt: ['match_id', 'court_number'],
 };
 const record = (value: unknown): Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const runtimeCapability = Symbol('runtime planner');
@@ -293,9 +293,11 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
     }
     if (rankingStage && rrStage) {
       const round = work.rounds.find(r => r.stage_id === rrStage.id && r.is_current !== false)!;
-      analysis.standings.forEach((row, i) => {
-        const tie = analysis.ties.find(g => g.includes(row.entryId));
-        const rank = tie ? analysis.standings.findIndex(r => tie.includes(r.entryId)) + 1 : i + 1;
+      const ranked = analysis.standings.filter(row => runtimeOptions.eligibleEntryIds!.includes(row.entryId));
+      analysis.standings.forEach(row => {
+        const eligible = runtimeOptions.eligibleEntryIds!.includes(row.entryId);
+        const tie = eligible ? analysis.ties.find(g => g.includes(row.entryId)) : undefined;
+        const rank = !eligible ? null : tie ? ranked.findIndex(r => tie.includes(r.entryId)) + 1 : ranked.indexOf(row) + 1;
         const existing = work.standings.find(s => s.stage_id === rankingStage.id && s.team_id === row.entryId);
         put('standings', { id: existing?.id ?? context.id(), stage_id: rankingStage.id, round_id: round.id, team_id: row.entryId, wins: row.wins, losses: row.losses, points_for: row.pointsFor, points_against: row.pointsAgainst, rank, input_revision: inputRevision, eligible: runtimeOptions.eligibleEntryIds!.includes(row.entryId), tie_group: tie ? tie.join(',') : null });
       });
@@ -366,7 +368,7 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
     if (intervention.effects.event) event(intervention.effects.event);
     for (const table of ['teams', 'team_members', 'tournament_players', 'stages', 'rounds', 'matches', 'standings'] as const) for (const patch of intervention.effects[table] ?? []) put(table, patch);
     result = intervention.result;
-    if (command !== 'changeCourt' && command !== 'bulkAdjudicate' && work.event?.modular_state === 'active') syncRuntime();
+    if (command !== 'changeCourt' && command !== 'bulkAdjudicate' && !(command === 'withdrawEntry' && data.policy === 'all_matches_0_11') && work.event?.modular_state === 'active') syncRuntime();
   } else if (command === 'cancelTournament') {
     if (!work.event) fail('NOT_FOUND', 'Event not found.');
     needOwner(); state('draft', 'registration_open', 'registration_closed', 'ready', 'active'); text(data.reason, 'reason', 1000);

@@ -66,7 +66,9 @@ export function resolveBracket(fixtures: readonly Fixture[], results: readonly F
       } else {
         if (!winner || (winner !== entryA && winner !== entryB)) throw new Error('Winner must be a participating entry.');
         if (result.outcome === 'played' || result.outcome === 'administrative_score') {
-          if (!entryA || !entryB || !isLegalScore(result.scoreA!, result.scoreB!, scorePolicy)) throw new Error('Accepted played score is illegal.');
+          const fixedForfeit = result.outcome === 'administrative_score' && ((result.scoreA === 11 && result.scoreB === 0) || (result.scoreA === 0 && result.scoreB === 11));
+          const valid = fixedForfeit || isLegalScore(result.scoreA!, result.scoreB!, scorePolicy);
+          if (!entryA || !entryB || !valid) throw new Error('Accepted played score is illegal.');
           if (winner !== (result.scoreA! > result.scoreB! ? entryA : entryB)) throw new Error('Winner disagrees with accepted score.');
         }
       }

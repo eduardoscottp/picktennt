@@ -1,5 +1,6 @@
 "use client";
 
+import { recordLegacyAdminScore } from "@/lib/tournament/legacy-score-actions";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -23,7 +24,7 @@ function playerName(p: any): string {
 }
 
 function sideLabel(match: Props["match"], side: "a" | "b", isMixed: boolean): string {
-  if (isMixed) {
+  if (isMixed || (side === "a" ? match.player_a1_id || match.player_a2_id : match.player_b1_id || match.player_b2_id)) {
     const p1 = side === "a" ? match.player_a1 : match.player_b1;
     const p2 = side === "a" ? match.player_a2 : match.player_b2;
     return [playerName(p1), playerName(p2)].filter(Boolean).join(" & ") || (side === "a" ? "Side A" : "Side B");
@@ -76,14 +77,12 @@ export function ScoreEntryButton({ match, userId, isAdmin, isMixed }: Props) {
       const update: Record<string, any> = {
         score_a: sa, score_b: sb, entered_by: userId,
       };
-      if (isAdmin) {
-        update.status = "validated";
-        update.validated_by = userId;
-      } else {
+      if (isAdmin) await recordLegacyAdminScore(match.id, sa, sb);
+      else {
         update.status = "score_entered";
+        const { error } = await supabase.from("matches").update(update).eq("id", match.id);
+        if (error) throw error;
       }
-      const { error } = await supabase.from("matches").update(update).eq("id", match.id);
-      if (error) throw error;
 
       // First score entered → auto-promote tournament out of registration.
       await supabase
@@ -92,10 +91,7 @@ export function ScoreEntryButton({ match, userId, isAdmin, isMixed }: Props) {
         .eq("id", match.tournament_id)
         .in("status", ["draft", "registration"]);
 
-      // Auto-advance bracket when admin validates a bracket match
-      if (isAdmin && update.status === "validated") {
-        await advanceBracket(supabase, sa, sb);
-      }
+      // The database advances validated legacy results atomically.
 
       toast(isAdmin ? "Score saved and validated." : "Score submitted! Waiting for validation.", "success");
       setOpen(false);
@@ -107,43 +103,15 @@ export function ScoreEntryButton({ match, userId, isAdmin, isMixed }: Props) {
     }
   }
 
-  async function advanceBracket(supabase: any, sa: number, sb: number) {
-    const winnerTeamId = sa > sb ? match.team_a_id : match.team_b_id;
-    const loserTeamId  = sa > sb ? match.team_b_id : match.team_a_id;
-    const winnerP1 = sa > sb ? match.player_a1_id : match.player_b1_id;
-    const loserP1  = sa > sb ? match.player_b1_id : match.player_a1_id;
-
-    if (match.bracket_next_winner_match_id && match.bracket_winner_fills_side) {
-      const side = match.bracket_winner_fills_side;
-      const field = isMixed
-        ? (side === "a" ? "player_a1_id" : "player_b1_id")
-        : (side === "a" ? "team_a_id" : "team_b_id");
-      const value = isMixed ? winnerP1 : winnerTeamId;
-      await supabase.from("matches").update({ [field]: value })
-        .eq("id", match.bracket_next_winner_match_id);
-    }
-
-    if (match.bracket_next_loser_match_id && match.bracket_loser_fills_side) {
-      const side = match.bracket_loser_fills_side;
-      const field = isMixed
-        ? (side === "a" ? "player_a1_id" : "player_b1_id")
-        : (side === "a" ? "team_a_id" : "team_b_id");
-      const value = isMixed ? loserP1 : loserTeamId;
-      await supabase.from("matches").update({ [field]: value })
-        .eq("id", match.bracket_next_loser_match_id);
-    }
-  }
-
   async function validate() {
     setLoading(true);
     try {
-      const supabase = createClient();
-      const { error } = await supabase
-        .from("matches")
-        .update({ status: "validated", validated_by: userId })
-        .eq("id", match.id);
-      if (error) throw error;
-      await advanceBracket(supabase, match.score_a ?? 0, match.score_b ?? 0);
+      if (isAdmin) await recordLegacyAdminScore(match.id);
+      else {
+        const supabase = createClient();
+        const { error } = await supabase.from("matches").update({ status: "validated", validated_by: userId }).eq("id", match.id);
+        if (error) throw error;
+      }
       toast("Score validated!", "success");
       router.refresh();
     } catch (err: any) {

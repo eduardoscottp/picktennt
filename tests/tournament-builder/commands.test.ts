@@ -195,6 +195,11 @@ test('roster locks create deterministic local fixtures once and event starts exp
   assert.throws(() => planCommand(s, a, 'startTournament', {}, context), { code: 'FORBIDDEN' });
   const active = apply(s, planCommand(s, admin, 'startTournament', {}, context));
   assert.equal(active.event!.modular_state, 'active');
+  assert.throws(() => planCommand(active, admin, 'startTournament', {}, context), { code: 'INVALID_STATE' });
+  for (const state of ['draft', 'registration_open', 'registration_closed', 'completed', 'cancelled']) {
+    const unavailable = structuredClone(s); unavailable.event!.modular_state = state;
+    assert.throws(() => planCommand(unavailable, admin, 'startTournament', {}, context), { code: 'INVALID_STATE' });
+  }
   assert.throws(() => planCommand(active, admin, 'lockRoster', { reviewed_roster_revision: 0 }, context), { code: 'INVALID_STATE' });
 });
 test('tournament participants or admins may validate a score, while outsiders cannot', () => {

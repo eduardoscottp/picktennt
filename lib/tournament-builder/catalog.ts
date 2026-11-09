@@ -28,7 +28,7 @@ export const MODULE_CATALOG: readonly ModuleDescriptor[] = specs.map(spec => ({
   upstream_cardinality: spec.id === 'registration@1' ? 0 : 1,
   permitted_predecessors: [...new Set(SUPPORTED_COMPOSITIONS.flatMap(path => path.flatMap((id, i) => id === spec.id && i > 0 ? [path[i - 1]] : [])))],
   permitted_successors: [...new Set(SUPPORTED_COMPOSITIONS.flatMap(path => path.flatMap((id, i) => id === spec.id && i < path.length - 1 ? [path[i + 1]] : [])))],
-  corrections: 'Impact review required; preserve history and block changes to started dependents until explicit void-and-replay. Withdrawal follows stage_sensitive_v1.',
+  corrections: 'Impact review required; preserve history and block changes to started dependents until explicit void-and-replay. Automatic withdrawal is unavailable through MCP. Review and confirm manual administrative scores under the tournament rules; before play use roster revision to remove or replace an entry.',
 }));
 export function listModules() {
   const descriptions: Record<string, { description: string; input: string; output: string; questions: string[] }> = {
@@ -55,7 +55,7 @@ export function getCapabilities(administratorAccess = false, ownerAccess = false
       'policies.ranking.order': 'Wins first, then organizer-selected unique secondary criteria. Descending keys prefer larger metrics; points_against_asc prefers fewer conceded points; points_for_in_losses_desc counts points only in losses.',
       'policies.ranking.final_tie': 'An exact unresolved tie requires an owner-recorded draw; never invent or silently choose a winner.',
       'policies.confirmation': 'A submitted score is provisional until a registered tournament player or authorized administrator validates it.',
-      'policies.withdrawal': 'Stage-sensitive withdrawal: exclude incomplete round-robin participation, preserve completed-stage history, and never backfill a started playoff.',
+      'policies.withdrawal': 'Historical policy token retained for existing definitions. The website Admin team withdrawal explicitly confirms 0–11 losses for all existing past and future games; MCP uses reviewed manual result changes instead.',
       'policies.correction': 'Owner reviews downstream impact; started dependent games require explicit void and replay with history preserved.',
     },
     participant_enrollment: { ai_can_enroll: administratorAccess, administrator_can_organize: administratorAccess, requires_picktennt_account: true, administrator_scope: 'tournaments:admin', administrator_instructions: 'For a tournament you currently administer, read the current roster and available positions, resolve an existing Picktennt account by exact username using admin_find_player, and use admin_fill_position after explaining the enrollment and obtaining explicit administrator confirmation. The player does not need to have joined the tournament first. Never invent player consent. Use admin_place_registered_player for moving an already registered player.', instructions: 'A player may join individually through the website after accepting the rules. Administrator enrollment does not imply player consent. An authorized tournament administrator may directly enroll an existing Picktennt account into an available position in that tournament. Doubles has independent individual positions. Draft creation never enrolls anyone.' },

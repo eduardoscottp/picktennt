@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { presentStandings } from "@/lib/tournament-builder/standings-presentation";
 import { ShareButton } from "@/components/tournament/share-button";
 import { Badge } from "@/components/ui/badge";
 import { generateJoinUrl } from "@/lib/utils";
@@ -13,7 +14,6 @@ import type { CommandSnapshot, StorageRow } from "@/lib/tournament-builder/comma
 import type { DefinitionPreview } from "@/lib/tournament-builder/preview";
 import { useTournamentCommand } from "./use-command";
 import { BuilderMatch } from "./match-card";
-import { ImpactReview } from "./impact-review";
 import { DraftPolicyEditor } from "./draft-policy-editor";
 import { DraftSetupEditor, draftFieldId, draftSetupLabel, draftSetupError, hasDraftSetupField } from "./draft-setup-editor";
 import { OwnerAdministrators } from "./owner-administrators";
@@ -25,8 +25,9 @@ import { RevisionEditor } from "./revision-editor";
 import { IndividualRegistration } from "./individual-registration";
 import { PlayerStats } from "./player-stats";
 import { PlayerReplacement } from "./player-replacement";
-import { AdministrativeForfeits } from "./administrative-forfeits";
+import { ImpactReview } from "./impact-review";
 import { PlayerWithdrawal } from "./player-withdrawal";
+import { TeamWithdrawal } from "./team-withdrawal";
 import { individualRoster } from "@/lib/tournament-builder/individual-roster";
 import { TournamentTopNav, TournamentBottomNav } from "@/components/tournament/tournament-bottom-nav";
 import { MobileHeader } from "@/components/layout/navbar";
@@ -114,7 +115,8 @@ export function TournamentBuilder({ actorId, initialSnapshot, initialPreview, vi
   const graph = definition.schema_version === "2.0";
   const initialGroups = graph ? nodes.filter(node => node.module === "round_robin@2" && Array.isArray(node.inputs) && node.inputs.every(source => object(source).kind === "seed")).map(node => ({ id: String(node.id), capacity: (node.inputs as unknown[]).length })) : [];
   const rankingStages = snapshot.stages.filter((stage) => stage.module_id === "standings" || (stage.module_id === "round_robin" && Number(stage.module_version) === 2) || stage.module_id === "cross_play");
-  const standingsGroups = graph ? rankingStages.map((stage) => ({ id: stage.id, label: graphNodeLabel(String(stage.node_id), definition), rows: snapshot.standings.filter((row) => row.stage_id === stage.id) })).filter((group) => group.rows.length > 0) : [{ id: "rankings", label: "", rows: snapshot.standings }];
+  const standings = presentStandings(snapshot.standings, snapshot.teams, snapshot.disciplinary_excluded_team_ids);
+  const standingsGroups = graph ? rankingStages.map((stage) => ({ id: stage.id, label: graphNodeLabel(String(stage.node_id), definition), rows: standings.filter((row) => row.stage_id === stage.id) })).filter((group) => group.rows.length > 0) : [{ id: "rankings", label: "", rows: standings }];
   const rankedEntries = new Set(standingsGroups.flatMap(group => group.rows.map(row => row.team_id)));
   const unrankedRows: StorageRow[] = approvedEntries.filter(entry => !rankedEntries.has(entry.id)).map(entry => ({ id: `unranked-${entry.id}`, team_id: entry.id, rank: null, wins: 0, losses: 0, points_for: 0, points_against: 0 }));
   const approvedTeamIds = new Set(approvedEntries.map(entry => entry.id));
@@ -175,7 +177,6 @@ export function TournamentBuilder({ actorId, initialSnapshot, initialPreview, vi
       {showAdmin && <div className="space-y-3 border-t pt-4">{state === "registration_open" && <Button variant="outline" onClick={() => void run("closeRegistration", {})}>Close registration</Button>}{state === "registration_closed" && <><Button variant="outline" onClick={() => void run("reopenRegistration", {})}>Reopen registration</Button><label className="block text-sm"><input type="checkbox" className="mr-2" checked={rosterReviewed} onChange={(e) => setRosterReviewed(e.target.checked)} />I reviewed the current {approvedEntries.length} approved entries, their players, and how they were registered.</label><GroupFinalization key={`${event.revision}:${event.roster_revision}`} eventId={id} rosterRevision={event.roster_revision} groups={initialGroups} entries={approvedEntries} reviewed={rosterReviewed} pending={preview.generationReady === false} onChange={() => setRosterReviewed(false)} onGenerate={(payload) => void run("lockRoster", payload)} /></>}</div>}
     </fieldset>
     {manageEntries && state === "registration_open" && snapshot.teams.some((team) => team.entry_state === "pending") && <details className="rounded-xl border border-gray-200 p-3"><summary className="cursor-pointer text-sm font-medium">Review pending entries for rejection</summary><div className="mt-3 space-y-3"><Input label="Reason for rejecting an entry" value={reason} maxLength={1000} onChange={(e) => setReason(e.target.value)} />{snapshot.teams.filter((team) => team.entry_state === "pending").map((team) => <Button key={team.id} size="sm" variant="outline" className="mr-2" disabled={action.disabled || !reason.trim()} onClick={() => void run("rejectEntry", { entry_id: team.id, reason: reason.trim() })}>Reject {entryLabel(team.id)}</Button>)}</div></details>}
-    {["registration_open", "registration_closed", "ready", "active"].includes(state) && snapshot.teams.filter((team) => team.entry_state === "approved" && (team.registration_slot == null || snapshot.matches.length > 0) && (manageEntries || (rosterEditable && members(team).some((member) => member.user_id === actorId)))).map((team) => <details key={`withdraw-${team.id}`} className="rounded-xl border border-gray-200 p-3"><summary className="cursor-pointer text-sm font-medium text-amber-800">Withdraw {entryLabel(team.id)}</summary><div className="mt-3"><ImpactReview tournamentId={id} revision={Number(event.revision)} kind="withdrawal" proposal={{ entry_id: team.id }} disabled={action.disabled} owner={owner} matchLabel={matchLabel} run={run} /></div></details>)}
     </>)}</section>}
     {showOverview && !publishedOverview && progress}
     {publishedOverview && ["active", "completed"].includes(state) && (admin || snapshot.tournament_players.some(player => player.user_id === actorId && player.status === "approved")) && <PlayerStats snapshot={snapshot} doubles={registration.entry_type === "fixed_doubles"} />}
@@ -183,12 +184,12 @@ export function TournamentBuilder({ actorId, initialSnapshot, initialPreview, vi
       <div className="flex items-center justify-between"><h2 className="text-xl font-black text-gray-900">Leaderboard</h2><Badge variant="secondary">{registration.entry_type === "fixed_doubles" ? "Doubles" : "Singles"}</Badge></div>
       {standingsGroups.every(group => group.rows.length === 0) ? <div className="py-16 text-center text-gray-400"><Trophy className="mx-auto mb-3 h-10 w-10 text-gray-200" /><p className="font-semibold">No results yet</p><p className="text-sm">Standings will appear after matches are validated</p></div> : <>
         {registration.entry_type === "fixed_doubles" && <h3 className="text-lg font-black text-gray-900">Team Standings</h3>}
-        <div className="space-y-4">{standingsGroups.map((group) => <div key={group.id} className="space-y-2">{group.label && <h3 className="font-semibold">{group.label}</h3>}{[...group.rows].sort((a, b) => Number(a.rank ?? Infinity) - Number(b.rank ?? Infinity)).map((row) => {
+        <div className="space-y-4">{standingsGroups.map((group) => <div key={group.id} className="space-y-2">{group.label && <h3 className="font-semibold">{group.label}</h3>}{[...group.rows].sort((a, b) => Number(a.eligible === false) - Number(b.eligible === false) || Number(a.rank ?? Infinity) - Number(b.rank ?? Infinity)).map((row) => {
           const rank = typeof row.rank === "number" ? row.rank : Number(row.rank);
-          const medal = row.rank != null && rank >= 1 && rank <= 3 ? ["🥇", "🥈", "🥉"][rank - 1] : null;
+          const medal = row.eligible !== false && row.rank != null && rank >= 1 && rank <= 3 ? ["🥇", "🥈", "🥉"][rank - 1] : null;
           const roster = members(snapshot.teams.find((team) => team.id === row.team_id) ?? { id: "" }).map((member) => member.display_name).filter((name): name is string => typeof name === "string" && name.length > 0);
           const name = roster.length ? roster.join(" / ") : typeof row.display_name === "string" ? row.display_name : entryLabel(row.team_id);
-          const stage = reachedStage(row.team_id, snapshot);
+          const stage = row.eligible === false ? snapshot.teams.find(team => team.id === row.team_id)?.entry_state === "withdrawn" ? "Withdrawn" : "Ineligible" : reachedStage(row.team_id, snapshot);
           return <Card key={row.id} className={medal ? "border-brand-200 shadow-md" : ""}><CardContent className="grid grid-cols-[2rem_minmax(0,1fr)_3rem] items-center gap-3 py-3 px-4"><div className="text-center">{medal ? <span className="text-xl" aria-label={`Rank ${rank}`}>{medal}</span> : <span className="text-sm font-bold text-gray-400">{row.rank == null ? "—" : `#${display(row.rank)}`}</span>}</div><div className="min-w-0"><span className="block truncate whitespace-nowrap font-bold text-gray-900">{name}</span>{stage && <span className="text-xs font-semibold text-brand-600">{stage}</span>}{Boolean(row.tie_group) && <span className="text-xs text-gray-500">Tied</span>}<div className="text-xs text-gray-400">{display(row.wins)}W – {display(row.losses)}L · {display(row.points_for)}:{display(row.points_against)}</div></div><div className="justify-self-end text-right"><div className="text-lg font-black text-brand-500">{display(row.wins)}</div><div className="text-[10px] text-gray-400">wins</div></div></CardContent></Card>;
         })}</div>)}</div>
       </>}
@@ -199,8 +200,9 @@ export function TournamentBuilder({ actorId, initialSnapshot, initialPreview, vi
     {showAdmin && owner && ["active", "ready", "registration_open", "registration_closed", "completed"].includes(state) && <details className="rounded-2xl border border-gray-100 bg-white p-5"><summary className="cursor-pointer text-sm font-semibold">Organizer review and event controls</summary><div className="mt-4 space-y-3"><Input label="Reason for this action" maxLength={1000} value={reason} onChange={(e) => setReason(e.target.value)} />{state === "completed" ? <Button variant="outline" disabled={action.disabled || !reason.trim()} onClick={() => void run("reopenResults", { reason: reason.trim() })}>Reopen results for review</Button> : <Button variant="danger" disabled={action.disabled || !reason.trim()} onClick={() => { if (window.confirm("Cancel this tournament? Active matches will end without a contest.")) void run("cancelTournament", { reason: reason.trim() }); }}>Cancel tournament</Button>}</div></details>}
     {manageEntries && ["registration_open", "registration_closed", "ready", "active", "completed"].includes(state) && <RevisionEditor key={String(event.revision)} snapshot={snapshot} definition={definition} disabled={action.disabled} run={run} />}
     {showAdmin && ["registration_open", "registration_closed", "ready", "active"].includes(state) && <PlayerReplacement key={`replacement-${event.revision}`} snapshot={snapshot} disabled={action.disabled} run={run} />}
-    {showAdmin && ["registration_open", "registration_closed", "ready", "active"].includes(state) && <PlayerWithdrawal key={`player-withdrawal-${event.revision}`} snapshot={snapshot} disabled={action.disabled} run={run} />}
-    {showAdmin && state === "active" && <AdministrativeForfeits key={`forfeits-${event.revision}`} snapshot={snapshot} disabled={action.disabled} label={entryLabel} matchLabel={matchLabel} run={run} />}
+    {showAdmin && ["registration_open", "registration_closed", "ready"].includes(state) && <PlayerWithdrawal key={`player-removal-${event.revision}`} snapshot={snapshot} disabled={action.disabled} run={run} />}
+    {showAdmin && ["registration_open", "registration_closed", "ready"].includes(state) && snapshot.teams.filter(team => team.entry_state === "approved").map(team => <details key={`remove-${team.id}`} className="rounded-xl border border-gray-200 p-3"><summary className="cursor-pointer text-sm font-medium">Remove {entryLabel(team.id)}</summary><ImpactReview tournamentId={id} revision={Number(event.revision)} kind="withdrawal" proposal={{ entry_id: team.id }} disabled={action.disabled} owner={owner} matchLabel={matchLabel} run={run} /></details>)}
+    {showAdmin && (state === "active" || (state === "completed" && owner)) && <TeamWithdrawal key={`team-withdrawal-${event.revision}`} snapshot={snapshot} disabled={action.disabled} label={teamId => snapshot.team_members.filter(member => member.team_id === teamId).map(member => typeof member.display_name === "string" ? member.display_name : "").filter(Boolean).join(" / ") || entryLabel(teamId)} run={run} />}
     {showAdmin && state === "completed" && <DuprSubmission tournamentId={id} revision={Number(event.revision)} matches={snapshot.matches} underReview={event.results_under_review === true} disabled={action.disabled} label={entryLabel} playerNames={matchPlayerNames} run={run} />}
     {state !== "draft" && <TournamentBottomNav tournamentId={id} isAdmin={admin} />}
   </div>;

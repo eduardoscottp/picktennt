@@ -54,9 +54,9 @@ const receiver: { url?: string; method?: string; consentOriginMatches?: boolean 
 let queued: Promise<unknown> = Promise.resolve();
 function serialized<T>(fn: () => Promise<T>) { const task = queued.then(fn); queued = task.catch(() => undefined); return task; }
 try {
-  await db.exec(readFileSync("supabase/migrations/202610280002_tournament_connector_oauth.sql", "utf8"));
-  if (process.env.IDD7_ONLY !== "true") await db.exec(readFileSync("supabase/migrations/202610280008_tournament_connector_administration.sql", "utf8"));
-  if (process.env.IDD7_ONLY !== "true") await db.exec(readFileSync("supabase/migrations/202610280009_tournament_connector_owner_actions.sql", "utf8"));
+  if (process.env.IDD64_ONLY !== "true") await db.exec(readFileSync("supabase/migrations/202610280002_tournament_connector_oauth.sql", "utf8"));
+  if (process.env.IDD7_ONLY !== "true" && process.env.IDD64_ONLY !== "true") await db.exec(readFileSync("supabase/migrations/202610280008_tournament_connector_administration.sql", "utf8"));
+  if (process.env.IDD7_ONLY !== "true" && process.env.IDD64_ONLY !== "true") await db.exec(readFileSync("supabase/migrations/202610280009_tournament_connector_owner_actions.sql", "utf8"));
   if (process.env.IDD7_ONLY === "true") {
     const stored = (await db.query<{ source: string }>("select pg_get_functiondef('public.tb_oauth_store(text,jsonb)'::regprocedure) source")).rows[0].source;
     await db.exec(stored.replace("ARRAY['draft:create','draft:read','draft:update','operation:read']::text[]", "ARRAY['draft:create','draft:read','draft:update','operation:read','admin:manage','owner:manage']::text[]"));
@@ -167,6 +167,100 @@ try {
     current.on("requestfailed", (request) => appendFileSync(resolve(output, "browser.log"), `FAILED ${new URL(request.url()).pathname}: ${request.failure()?.errorText}\n`));
   }
   page.setDefaultTimeout(30000); other.setDefaultTimeout(30000);
+  if (process.env.IDD64_ONLY === "true") {
+    await db.exec(readFileSync("supabase/migrations/202611090004_modular_team_forfeit.sql", "utf8"));
+    const rpc: RpcClient = { async rpc(name, args) {
+      try { const keys = Object.keys(args); const result = await serialized(() => role(db, "service_role", owner, () => db.query<{ value: unknown }>("SELECT public." + name + "(" + keys.map((key, i) => key + " => $" + (i + 1)).join(",") + ") value", Object.values(args).map(value => value && typeof value === "object" ? JSON.stringify(value) : value)))); return { data: result.rows[0].value, error: null }; }
+      catch (error) { return { data: null, error: { message: String(error) } }; }
+    } };
+    const partners = [randomUUID(), randomUUID(), randomUUID(), randomUUID()], host = { id: owner, clientId: "web" };
+    for (const [index, id] of partners.entries()) {
+      await db.query("INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES($1,$2,$3)", [id, id + "@example.invalid", JSON.stringify({ given_name: "Synthetic " + index })]);
+      await db.query("UPDATE profiles SET first_name=$2,dupr_id='TEST' WHERE id=$1", [id, "Synthetic " + index]);
+    }
+    for (const state of ["active", "completed"]) {
+      const definition = JSON.parse(readFileSync("tests/tournament-builder/fixtures/tournament-definition.json", "utf8"));
+      definition.event.name = "Local team withdrawal " + state;
+      definition.event.starts_at = "2030-11-07T09:00:00-05:00"; definition.event.expected_end_at = "2030-11-07T12:30:00-05:00";
+      definition.registration = { ...definition.registration, partner_consent: false, mode: "open", min_entries: 3, max_entries: 3, closes_at: "2030-11-06T18:00:00-05:00" };
+      definition.nodes = definition.nodes.slice(0, 4).concat({ id: "result", module: "placements@1", from: "rank" });
+      const created = await executeCommand(rpc, host, "createDraft", null, { operation_id: randomUUID(), data: { definition } });
+      const id = created.tournament_id, preview = await previewTournament(rpc, host, id);
+      async function command(name: string, data: Record<string, unknown>) {
+        const current = await getSnapshot(rpc, host, id);
+        return executeCommand(rpc, host, name, id, { operation_id: randomUUID(), expected_revision: Number(current.event!.revision), data });
+      }
+      await command("publishTournament", { reviewed_definition_hash: preview.definitionHash, acknowledged_warning_codes: preview.warningCodes ?? [] });
+      const published = await getSnapshot(rpc, host, id);
+      for (const userId of [owner, player, ...partners]) {
+        const current = await getSnapshot(rpc, host, id);
+        await executeCommand(rpc, { id: userId, clientId: "web" }, "joinTournament", id, { operation_id: randomUUID(), expected_revision: Number(current.event!.revision), data: { definition_id: published.event!.definition_id, consent: true } });
+      }
+      for (const [index, pair] of [[owner, partners[0]], [player, partners[1]], [partners[2], partners[3]]].entries()) await command("addRegisteredEntry", { definition_id: published.event!.definition_id, player_ids: pair, entry_name: "Team " + index, reason: "Synthetic test enrollment" });
+      await command("closeRegistration", {});
+      const closed = await getSnapshot(rpc, host, id);
+      await command("lockRoster", { reviewed_roster_revision: closed.event!.roster_revision });
+      await page.goto(origin + "/tournaments/" + id + "/admin", { timeout: 90000 });
+      await page.getByRole("button", { name: "Start tournament", exact: true }).waitFor();
+      assert.equal(await page.getByRole("button", { name: "Retirar equipo", exact: true }).count(), 0);
+      await other.goto(origin + "/tournaments/" + id + "/matches");
+      assert.equal(await other.getByRole("button", { name: "Start tournament", exact: true }).count(), 0);
+      await page.goto(origin + "/tournaments/" + id + "/matches");
+      const started = page.waitForResponse(response => response.url().includes("commands?command=startTournament") && response.status() === 200);
+      await page.getByRole("button", { name: "Start tournament", exact: true }).click(); await started;
+      await page.getByRole("button", { name: "Start tournament", exact: true }).waitFor({ state: "detached" });
+      await page.getByRole("button", { name: "Enter and validate score", exact: true }).first().click();
+      const scoreDialog = page.getByRole("dialog");
+      assert.doesNotMatch(await scoreDialog.innerText(), /Walkover before play|Retirement after play/);
+      assert.equal(await scoreDialog.getByLabel("Winner", { exact: true }).count(), 0);
+      await page.keyboard.press("Escape");
+      let snapshot = await getSnapshot(rpc, host, id);
+      const team = snapshot.teams.find(row => row.name === "Team 0")!;
+      const selected = snapshot.matches.filter(row => row.is_current !== false && [row.team_a_id, row.team_b_id].includes(team.id));
+      const played = selected[0];
+      await command("attestScore", { match_id: played.id, outcome_kind: "played", score_a: played.team_a_id === team.id ? 11 : 3, score_b: played.team_b_id === team.id ? 11 : 3, reason: "Synthetic prior played result" });
+      if (state === "completed") {
+        snapshot = await getSnapshot(rpc, host, id);
+        for (const match of snapshot.matches.filter(row => row.is_current !== false && row.status === "scheduled")) await command("attestScore", { match_id: match.id, outcome_kind: "played", score_a: 11, score_b: 4, reason: "Synthetic completed result" });
+      }
+      const before = await getSnapshot(rpc, host, id);
+      assert.equal(before.event!.modular_state, state);
+      await other.goto(origin + "/tournaments/" + id + "/matches");
+      assert.equal(await other.getByRole("button", { name: "Retirar equipo", exact: true }).count(), 0);
+      await page.goto(origin + "/tournaments/" + id + "/admin");
+      await page.getByLabel("Equipo a retirar", { exact: true }).selectOption(team.id);
+      await page.getByLabel("Motivo del retiro", { exact: true }).fill("Synthetic confirmed team withdrawal");
+      await page.getByRole("button", { name: "Retirar equipo", exact: true }).click();
+      let dialog = page.getByRole("dialog", { name: "Confirmar retiro de equipo", exact: true });
+      await dialog.waitFor();
+      assert.match(await dialog.innerText(), /pasados y futuros/);
+      assert.equal(await dialog.getByRole("button", { name: "Confirmar retiro 0–11", exact: true }).isDisabled(), true);
+      await dialog.getByRole("button", { name: "Cancelar", exact: true }).click();
+      assert.deepEqual(await getSnapshot(rpc, host, id), before);
+      await page.getByRole("button", { name: "Retirar equipo", exact: true }).click();
+      dialog = page.getByRole("dialog", { name: "Confirmar retiro de equipo", exact: true });
+      await dialog.getByRole("checkbox").check();
+      await page.screenshot({ path: resolve(output, "team-withdrawal-" + state + ".png"), fullPage: true });
+      const saved = page.waitForResponse(response => response.url().includes("commands?command=withdrawEntry"));
+      await dialog.getByRole("button", { name: "Confirmar retiro 0–11", exact: true }).click();
+      const response = await saved; assert.equal(response.status(), 200, await response.text());
+      snapshot = await getSnapshot(rpc, host, id);
+      for (const old of selected) {
+        const match = snapshot.matches.find(row => row.id === old.id)!;
+        assert.equal(match.score_a, match.team_a_id === team.id ? 0 : 11); assert.equal(match.score_b, match.team_b_id === team.id ? 0 : 11);
+        assert.equal(match.outcome_kind, "administrative_score"); assert.equal(match.submit_to_dupr, false);
+      }
+      assert.equal(snapshot.teams.find(row => row.id === team.id)!.entry_state, "withdrawn");
+      const standing = snapshot.standings.find(row => row.team_id === team.id)!;
+      assert.equal(standing.wins, 0); assert.equal(standing.losses, 2); assert.equal(standing.rank, null);
+      for (const old of before.matches.filter(row => !selected.some(selected => selected.id === row.id))) assert.deepEqual(snapshot.matches.find(row => row.id === old.id), old);
+      cases.push(state + ": old per-match options hidden; Start restricted by role/state; cancellation unchanged; confirmed Admin withdrawal rewrites all past/future team games0–11, preserves unrelated games and disables DUPR");
+    }
+    evidence.status = "passed"; evidence.completed_at = new Date().toISOString();
+    writeFileSync(resolve(output, "evidence.json"), JSON.stringify(evidence, null, 2));
+    console.log(JSON.stringify({ status: "passed", cases: cases.length, evidence: resolve(output, "evidence.json") }));
+    return;
+  }
   if (process.env.IDD7_ONLY === "true") {
     const rpc: RpcClient = { async rpc(name, args) {
       try { const keys = Object.keys(args); const result = await serialized(() => role(db, "service_role", owner, () => db.query<{ value: unknown }>(`SELECT public.${name}(${keys.map((key, i) => `${key} => $${i + 1}`).join(",")}) value`, Object.values(args).map(value => value && typeof value === "object" ? JSON.stringify(value) : value)))); return { data: result.rows[0].value, error: null }; }

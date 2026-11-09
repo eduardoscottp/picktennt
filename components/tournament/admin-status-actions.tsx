@@ -40,12 +40,12 @@ export function AdminStatusActions({ tournament, hasExistingRounds, allMatchesVa
     );
   }
 
-  // Gate: "Complete Tournament" requires all matches validated
+  // Gate: "Complete Tournament" requires all matches resolved
   if (transition.next === "completed" && allMatchesValidated === false) {
     return (
       <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5 text-xs text-amber-800 flex items-start gap-2">
         <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
-        <span>All match scores must be validated before completing the tournament.</span>
+        <span>Resolve all matches and bracket winners before completing the tournament.</span>
       </div>
     );
   }

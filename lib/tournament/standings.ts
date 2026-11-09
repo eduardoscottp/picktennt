@@ -1,4 +1,5 @@
 import type { Match, Round } from "@/types/database";
+import { isLegacyMatchComplete, legacyWinnerSide, legacyMatchPlayerIds } from "./match-result";
 
 export interface StandingRow {
   id: string; // team or player id
@@ -18,6 +19,18 @@ interface StandingData {
   pfInLosses: number;
 }
 
+/** Preserve completed results, but withdrawn entities never retain a qualifying rank. */
+export function rankExitedLast(rows: StandingRow[], exitedIds: Set<string>): StandingRow[] {
+  const ranked = rows.map(row => ({ ...row }));
+  if (!exitedIds.size) return ranked;
+  for (const id of exitedIds) {
+    if (!ranked.some(row => row.id === id)) ranked.push({ id, wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, pointsForInLosses: 0, rank: 0 });
+  }
+  ranked.sort((a, b) => Number(exitedIds.has(a.id)) - Number(exitedIds.has(b.id)) || a.rank - b.rank);
+  ranked.forEach((row, i) => { row.rank = i + 1; });
+  return ranked;
+}
+
 /**
  * Tiebreaker order:
  * 1. Wins (descending)
@@ -29,135 +42,57 @@ export function computeStandings(
   entityKey: "team" | "player",
   nullifiedEntityIds?: Set<string>
 ): StandingRow[] {
-  const validated = matches.filter((m) => {
-    if (m.status !== "validated") return false;
-    if (!nullifiedEntityIds?.size) return true;
-    if (entityKey === "team") {
-      if (m.team_a_id && nullifiedEntityIds.has(m.team_a_id)) return false;
-      if (m.team_b_id && nullifiedEntityIds.has(m.team_b_id)) return false;
-    } else {
-      for (const id of [m.player_a1_id, m.player_a2_id, m.player_b1_id, m.player_b2_id]) {
-        if (id && nullifiedEntityIds.has(id)) return false;
-      }
-    }
-    return true;
-  });
-  const map = new Map<string, StandingData>();
-
-  function ensure(id: string) {
-    if (!map.has(id)) map.set(id, { wins: 0, losses: 0, pf: 0, pa: 0, pfInLosses: 0 });
-  }
-
-  for (const m of validated) {
-    if (entityKey === "team") {
-      if (!m.team_a_id || !m.team_b_id || m.score_a == null || m.score_b == null) continue;
-      ensure(m.team_a_id);
-      ensure(m.team_b_id);
-      const a = map.get(m.team_a_id)!;
-      const b = map.get(m.team_b_id)!;
-      a.pf += m.score_a; a.pa += m.score_b;
-      b.pf += m.score_b; b.pa += m.score_a;
-      if (m.score_a > m.score_b) {
-        a.wins++; b.losses++;
-        b.pfInLosses += m.score_b;
-      } else if (m.score_b > m.score_a) {
-        b.wins++; a.losses++;
-        a.pfInLosses += m.score_a;
-      } else {
-        a.wins += 0.5; b.wins += 0.5;
-      }
-    } else {
-      // Mixed — individual tracking
-      if (m.score_a == null || m.score_b == null) continue;
-      const sideAIds = [m.player_a1_id, m.player_a2_id].filter(Boolean) as string[];
-      const sideBIds = [m.player_b1_id, m.player_b2_id].filter(Boolean) as string[];
-      for (const pid of sideAIds) { ensure(pid); map.get(pid)!.pf += m.score_a!; map.get(pid)!.pa += m.score_b!; }
-      for (const pid of sideBIds) { ensure(pid); map.get(pid)!.pf += m.score_b!; map.get(pid)!.pa += m.score_a!; }
-      if (m.score_a !== m.score_b) {
-        const winnerIds = m.score_a > m.score_b ? sideAIds : sideBIds;
-        const loserIds  = m.score_a > m.score_b ? sideBIds : sideAIds;
-        const loserScore = m.score_a > m.score_b ? m.score_b : m.score_a;
-        for (const pid of winnerIds) { map.get(pid)!.wins++; }
-        for (const pid of loserIds)  { map.get(pid)!.losses++; map.get(pid)!.pfInLosses += loserScore!; }
-      }
-    }
-  }
-
-  const rows = [...map.entries()].map(([id, s]) => ({
-    id,
-    wins: s.wins,
-    losses: s.losses,
-    pointsFor: s.pf,
-    pointsAgainst: s.pa,
-    pointsForInLosses: s.pfInLosses,
-    rank: 0,
-  }));
-
-  rows.sort((a, b) => {
-    if (b.wins !== a.wins) return b.wins - a.wins;
-    if (a.pointsAgainst !== b.pointsAgainst) return a.pointsAgainst - b.pointsAgainst;
-    return b.pointsForInLosses - a.pointsForInLosses;
-  });
-
-  rows.forEach((r, i) => { r.rank = i + 1; });
-  return rows;
+  return standingsForSides(matches, (m, side) => entityKey === "team"
+    ? [side === "a" ? m.team_a_id : m.team_b_id].filter((id): id is string => !!id)
+    : [side === "a" ? m.player_a1_id : m.player_b1_id, side === "a" ? m.player_a2_id : m.player_b2_id].filter((id): id is string => !!id),
+  nullifiedEntityIds, entityKey === "team");
 }
 
-/**
- * Compute individual player standings from team-based (doubles) matches.
- * Each player inherits their team's stats for every match.
- */
+/** Credit the players who played each match, falling back only for older unsnapshotted games. */
 export function computeIndividualStandingsFromTeams(
   matches: Match[],
   teamToMembers: Map<string, string[]>,
   nullifiedEntityIds?: Set<string>
 ): StandingRow[] {
-  const validated = matches.filter((m) => {
-    if (m.status !== "validated") return false;
-    if (!nullifiedEntityIds?.size) return true;
-    const membersA = teamToMembers.get(m.team_a_id ?? "") ?? [];
-    const membersB = teamToMembers.get(m.team_b_id ?? "") ?? [];
-    if (membersA.some((id) => nullifiedEntityIds.has(id))) return false;
-    if (membersB.some((id) => nullifiedEntityIds.has(id))) return false;
-    return true;
-  });
+  return standingsForSides(matches, (m, side) => legacyMatchPlayerIds(m, side, teamToMembers), nullifiedEntityIds, true);
+}
+
+function standingsForSides(
+  matches: Match[],
+  idsForSide: (match: Match, side: "a" | "b") => string[],
+  nullifiedEntityIds: Set<string> | undefined,
+  countDraws: boolean
+): StandingRow[] {
   const map = new Map<string, StandingData>();
-
-  function ensure(id: string) {
-    if (!map.has(id)) map.set(id, { wins: 0, losses: 0, pf: 0, pa: 0, pfInLosses: 0 });
-  }
-
-  for (const m of validated) {
-    if (!m.team_a_id || !m.team_b_id || m.score_a == null || m.score_b == null) continue;
-    const membersA = teamToMembers.get(m.team_a_id) ?? [];
-    const membersB = teamToMembers.get(m.team_b_id) ?? [];
-
-    for (const pid of membersA) { ensure(pid); map.get(pid)!.pf += m.score_a!; map.get(pid)!.pa += m.score_b!; }
-    for (const pid of membersB) { ensure(pid); map.get(pid)!.pf += m.score_b!; map.get(pid)!.pa += m.score_a!; }
-
-    if (m.score_a > m.score_b) {
-      for (const pid of membersA) { map.get(pid)!.wins++; }
-      for (const pid of membersB) { map.get(pid)!.losses++; map.get(pid)!.pfInLosses += m.score_b!; }
-    } else if (m.score_b > m.score_a) {
-      for (const pid of membersB) { map.get(pid)!.wins++; }
-      for (const pid of membersA) { map.get(pid)!.losses++; map.get(pid)!.pfInLosses += m.score_a!; }
-    } else {
-      for (const pid of [...membersA, ...membersB]) { map.get(pid)!.wins += 0.5; }
+  for (const match of matches) {
+    if (!isLegacyMatchComplete(match) || match.outcome_kind === "no_contest") continue;
+    const sides = { a: idsForSide(match, "a"), b: idsForSide(match, "b") };
+    if (!sides.a.length || !sides.b.length) continue;
+    if ([...sides.a, ...sides.b].some(id => nullifiedEntityIds?.has(id))) continue;
+    const winner = legacyWinnerSide(match);
+    const hasScore = match.score_a != null && match.score_b != null;
+    // Old ambiguous walkovers/retirements cannot safely be assigned to either side.
+    if (!winner && (!hasScore || match.outcome_kind === "retirement")) continue;
+    for (const side of ["a", "b"] as const) {
+      const scored = hasScore ? (side === "a" ? match.score_a! : match.score_b!) : 0;
+      const conceded = hasScore ? (side === "a" ? match.score_b! : match.score_a!) : 0;
+      for (const id of sides[side]) {
+        if (!map.has(id)) map.set(id, { wins: 0, losses: 0, pf: 0, pa: 0, pfInLosses: 0 });
+        const row = map.get(id)!;
+        row.pf += scored;
+        row.pa += conceded;
+        if (winner === side) row.wins++;
+        else if (winner) { row.losses++; row.pfInLosses += scored; }
+        else if (countDraws) row.wins += 0.5;
+      }
     }
   }
-
   const rows = [...map.entries()].map(([id, s]) => ({
-    id, wins: s.wins, losses: s.losses,
-    pointsFor: s.pf, pointsAgainst: s.pa,
+    id, wins: s.wins, losses: s.losses, pointsFor: s.pf, pointsAgainst: s.pa,
     pointsForInLosses: s.pfInLosses, rank: 0,
   }));
-
-  rows.sort((a, b) => {
-    if (b.wins !== a.wins) return b.wins - a.wins;
-    if (a.pointsAgainst !== b.pointsAgainst) return a.pointsAgainst - b.pointsAgainst;
-    return b.pointsForInLosses - a.pointsForInLosses;
-  });
-  rows.forEach((r, i) => { r.rank = i + 1; });
+  rows.sort((a, b) => b.wins - a.wins || a.pointsAgainst - b.pointsAgainst || b.pointsForInLosses - a.pointsForInLosses);
+  rows.forEach((row, i) => { row.rank = i + 1; });
   return rows;
 }
 
@@ -185,13 +120,14 @@ export function computeBracketFinishPositions(
 
   function winnerLoser(m: Match): [string, string] | null {
     const [a, b] = entities(m);
-    if (!a || !b || m.score_a == null || m.score_b == null) return null;
-    return m.score_a >= m.score_b ? [a, b] : [b, a];
+    const winner = legacyWinnerSide(m);
+    if (!a || !b || !winner) return null;
+    return winner === "a" ? [a, b] : [b, a];
   }
 
   // Gold and bronze finals
   for (const m of bracketMatches) {
-    if (m.status !== "validated") continue;
+    if (!isLegacyMatchComplete(m)) continue;
     const round = roundById.get(m.round_id);
     if (!round) continue;
     const wl = winnerLoser(m);
@@ -209,7 +145,7 @@ export function computeBracketFinishPositions(
   // Permanently-eliminated losers (elimination rounds where losers don't go to bronze)
   const elimLosers = bracketMatches
     .filter((m) => {
-      if (m.status !== "validated") return false;
+      if (!isLegacyMatchComplete(m)) return false;
       const round = roundById.get(m.round_id);
       return round?.round_type === "elimination" && m.bracket_next_loser_match_id === null;
     });

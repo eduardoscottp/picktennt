@@ -73,8 +73,10 @@ test("match form remounts for changed stored scores or court, but not unrelated 
   assert.notEqual(matchEditorKey(match), matchEditorKey({ ...match, revision: 5 }));
 });
 
-test("walkover corrections identify winning players while preserving side IDs", () => {
+test("corrections keep player names and ordinary scores without walkover or retirement selectors", () => {
   const html = renderToStaticMarkup(createElement(BuilderMatch, { ...props, match: { ...match, status: 'walkover', outcome_kind: 'walkover', winner_team_id: 'b' }, playerNames: id => id === 'a' ? ['Ana', 'Luis'] : ['Bea', 'Juan'] }));
-  assert.match(html, /<option value="a">Ana \/ Luis<\/option>/);
-  assert.match(html, /<option value="b" selected="">Bea \/ Juan<\/option>/);
+  assert.match(html, /Ana \/ Luis/);
+  assert.match(html, /Bea \/ Juan/);
+  assert.doesNotMatch(html, /<option value="(?:walkover|retirement)"|Corrected winner/);
+  assert.match(html, /Played — use the scores above/);
 });

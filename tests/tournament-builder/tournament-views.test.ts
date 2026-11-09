@@ -10,6 +10,8 @@ import { previewDefinition } from "../../lib/tournament-builder/preview";
 import { ToastProvider } from "../../components/ui/toast";
 import { AppRouterContext } from "next/dist/shared/lib/app-router-context.shared-runtime";
 import { orderedMatches, reachedStage } from "../../components/tournament-builder/match-presentation";
+import { AdminStatusActions } from "../../components/tournament/admin-status-actions";
+import type { Tournament } from "../../types/database";
 
 const definition = JSON.parse(readFileSync("tests/tournament-builder/fixtures/tournament-definition.json", "utf8"));
 function snapshot(state = "active", caller_role = "owner"): CommandSnapshot & { caller_role: string } {
@@ -117,14 +119,16 @@ test("standings show player names including entries without results", () => {
 });
 test("admin view contains entry and lifecycle controls, links to score administration and excludes match wall", () => {
   const html = render("admin", snapshot("registration_open"));
-  assert.match(html, /Tournament administration/); assert.match(html, /Approve entry/); assert.match(html, /Close registration/); assert.match(html, /Withdraw Alpha/); assert.match(html, /Organizer review and event controls/);
+  assert.match(html, /Tournament administration/); assert.match(html, /Approve entry/); assert.match(html, /Close registration/); assert.match(html, /Remove Alpha/); assert.match(html, /Organizer review and event controls/);
   assert.match(html, /<details open=""[^>]*><summary[^>]*>Edit tournament (setup and teams|name and venue)/);
   assert.match(html, /Open Matches to enter, validate, or correct scores/);
   assert.doesNotMatch(html, /id="rules"|id="matches"|id="placements"|Join as a player/);
   const overview = render("overview", snapshot("registration_open"));
   assert.doesNotMatch(overview, /Approve entry|Close registration/);
-  assert.match(render("admin", snapshot("active")), /Apply walkovers \/ forfeits to pending matches/);
-  assert.match(render("admin", snapshot("active")), /Withdraw a player/);
+  assert.match(render("admin", snapshot("active")), /Retirar equipo/);
+  assert.doesNotMatch(render("admin", snapshot("active")), /Withdraw a player|Remove a player before starting|Apply walkovers \/ forfeits/);
+  assert.doesNotMatch(render("overview", snapshot("active")), /Retirar equipo|Review withdrawal impact/);
+  assert.doesNotMatch(render("matches", snapshot("active")), /Retirar equipo|Review withdrawal impact/);
 });
 test("member views preserve own consent and opponent confirmation while restricting administrator actions", () => {
   const member = openRoster();
@@ -140,7 +144,7 @@ test("member views preserve own consent and opponent confirmation while restrict
   assert.match(render("standings", active, "player"), /An administrator must record a draw/);
   const denied = render("admin", member, "player");
   assert.match(denied, /Only tournament administrators/); assert.doesNotMatch(denied, /id="entries"|Close registration|Approve entry/);
-  assert.doesNotMatch(render("admin", active, "player"), /Apply walkovers \/ forfeits/);
+  assert.doesNotMatch(render("admin", active, "player"), /Retirar equipo/);
   assert.doesNotMatch(render("admin", active, "player"), /Withdraw a player/);
 });
 test("player stats are limited to active tournament administrators and approved players", () => {
@@ -310,11 +314,27 @@ test("completed Admin provides explicit DUPR selection and blocks results under 
 });
 
 test("start tournament is prominent only for administrators of ready tournaments", () => {
-  for (const view of ["admin", "matches"] as const) {
-    const html = render(view, snapshot("ready"));
+  for (const [role, actor] of [["owner", "owner"], ["admin", "delegate"]]) {
+   for (const view of ["admin", "matches"] as const) {
+    const html = render(view, snapshot("ready", role), actor);
     assert.equal((html.match(/Start tournament<\/button>/g) ?? []).length, 1);
     assert.ok(html.indexOf('Start tournament') < html.indexOf(view === 'admin' ? 'id="entries"' : 'id="matches"'));
-    for (const state of ['registration_open', 'registration_closed', 'active', 'completed']) assert.doesNotMatch(render(view, snapshot(state)), /Start tournament/);
+    for (const state of ['draft', 'registration_open', 'registration_closed', 'active', 'completed', 'cancelled']) assert.doesNotMatch(render(view, snapshot(state, role), actor), /Start tournament/);
     assert.doesNotMatch(render(view, snapshot('ready', 'player'), 'player'), /Start tournament/);
+    assert.doesNotMatch(render(view, snapshot('ready', 'player'), 'visitor'), /Start tournament/);
+   }
+   for (const view of ["overview", "standings"] as const) assert.doesNotMatch(render(view, snapshot("ready", role), actor), /Start tournament/);
   }
+});
+
+test("legacy start action requires generated rounds and disappears after registration", () => {
+  const router = { back() {}, forward() {}, refresh() {}, push() {}, replace() {}, prefetch() {}, bfcacheId: "test" };
+  const renderStatus = (status: Tournament["status"], hasExistingRounds: boolean) => renderToStaticMarkup(
+    createElement(AppRouterContext.Provider, { value: router }, createElement(ToastProvider, null,
+      createElement(AdminStatusActions, { tournament: { id: "legacy-event", status } as Tournament, hasExistingRounds }))));
+  assert.match(renderStatus("registration", true), /Start Tournament<\/button>/);
+  const unprepared = renderStatus("registration", false);
+  assert.doesNotMatch(unprepared, /Start Tournament<\/button>/);
+  assert.match(unprepared, /Generate the round robin schedule before starting/);
+  for (const state of ["draft", "active", "finals", "completed"] as const) assert.doesNotMatch(renderStatus(state, true), /Start Tournament<\/button>/);
 });

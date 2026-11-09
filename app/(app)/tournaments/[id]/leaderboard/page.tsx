@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { getInitials, duprRatingColor, tournamentTypeLabel } from "@/lib/utils";
-import { computeStandings, computeBracketFinishPositions } from "@/lib/tournament/standings";
+import { computeStandings, computeBracketFinishPositions, rankExitedLast } from "@/lib/tournament/standings";
 import { TournamentBottomNav, TournamentTopNav } from "@/components/tournament/tournament-bottom-nav";
 import type { Match, Profile, Tournament } from "@/types/database";
 import { Trophy } from "lucide-react";
@@ -33,7 +33,7 @@ export default async function LeaderboardPage({ params }: { params: Promise<{ id
     : { data: null };
   const isAdmin = !!adminRow;
 
-  // Fetch rounds (for bracket detection) and all validated matches
+  // Fetch completed results, including scoreless walkovers.
   const { data: roundsRaw } = await supabase
     .from("rounds")
     .select("id, round_type, round_number")
@@ -45,7 +45,7 @@ export default async function LeaderboardPage({ params }: { params: Promise<{ id
     .from("matches")
     .select("*")
     .eq("tournament_id", id)
-    .eq("status", "validated");
+    .in("status", ["validated", "walkover"]);
 
   const allMatches = (matches ?? []) as Match[];
 
@@ -55,7 +55,24 @@ export default async function LeaderboardPage({ params }: { params: Promise<{ id
   const rrMatches = allMatches.filter((m) => roundTypeById.get(m.round_id) === "round_robin");
   const bracketMatches = allMatches.filter((m) => roundTypeById.get(m.round_id) !== "round_robin");
 
-  const baseStandings = computeStandings(rrMatches, isMixed ? "player" : "team");
+  const { data: exitedPlayers, error: nullifiedError } = await supabase
+    .from("tournament_players").select("user_id, nullified_from_standings, exit_reason")
+    .eq("tournament_id", id).or("nullified_from_standings.eq.true,exit_reason.not.is.null");
+  if (nullifiedError) throw new Error("Could not load withdrawal rules for standings.");
+  const nullifiedUserIds = new Set<string>((exitedPlayers ?? []).filter((p: any) => p.nullified_from_standings).map((p: any) => p.user_id));
+  const exitedUserIds = new Set<string>((exitedPlayers ?? []).map((p: any) => p.user_id));
+  const exitedEntityIds = new Set<string>(isMixed ? exitedUserIds : []);
+  const nullifiedEntityIds = new Set<string>(isMixed ? nullifiedUserIds : []);
+  if (!isMixed && exitedUserIds.size) {
+    const { data: memberships, error } = await supabase.from("team_members").select("team_id, user_id")
+      .eq("tournament_id", id).in("user_id", Array.from(exitedUserIds));
+    if (error) throw new Error("Could not load withdrawn teams for standings.");
+    for (const member of memberships ?? []) {
+      exitedEntityIds.add(member.team_id);
+      if (nullifiedUserIds.has(member.user_id)) nullifiedEntityIds.add(member.team_id);
+    }
+  }
+  const baseStandings = computeStandings(rrMatches, isMixed ? "player" : "team", nullifiedEntityIds);
 
   let standings = baseStandings;
   if (hasBracket) {
@@ -69,6 +86,8 @@ export default async function LeaderboardPage({ params }: { params: Promise<{ id
       bracketPositions.has(row.id) ? { ...row, rank: bracketPositions.get(row.id)! } : row
     ).sort((a, b) => a.rank - b.rank);
   }
+
+  standings = rankExitedLast(standings, exitedEntityIds);
 
   // Fetch entity details
   const entityMap = new Map<string, { name: string; avatar?: string; rating?: number | null }>();
@@ -130,13 +149,14 @@ export default async function LeaderboardPage({ params }: { params: Promise<{ id
           <div className="space-y-2">
             {standings.map((row, idx) => {
               const entity = entityMap.get(row.id);
-              const isTop3 = idx < 3;
+              const isExited = exitedEntityIds.has(row.id);
+              const isTop3 = idx < 3 && !isExited;
               return (
                 <Card key={row.id} className={isTop3 ? "border-brand-200 shadow-md" : ""}>
                   <CardContent className="grid grid-cols-[2rem_minmax(0,1fr)_3rem] items-center gap-3 py-3 px-4">
                     {/* Rank */}
                     <div className="text-center">
-                      {idx < 3 ? (
+                      {isTop3 ? (
                         <span className="text-xl">{RANK_ICONS[idx]}</span>
                       ) : (
                         <span className="text-sm font-bold text-gray-400">#{row.rank}</span>
@@ -163,6 +183,7 @@ export default async function LeaderboardPage({ params }: { params: Promise<{ id
                           )}
                         </div>
                         <div className="text-xs text-gray-400">
+                          {isExited && <span className="font-semibold">Withdrawn · </span>}
                           {row.wins}W – {row.losses}L · {row.pointsFor}:{row.pointsAgainst}
                         </div>
                       </div>

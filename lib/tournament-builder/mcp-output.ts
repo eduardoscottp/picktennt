@@ -1,8 +1,9 @@
+import { presentStandings } from './standings-presentation';
 import { individualRoster } from './individual-roster';
 import { definitionJsonSchema, type DefinitionJsonSchema } from './definition-schema';
 import { DomainError } from './requests';
 import { resolvedDefinition } from './resolved-definition';
-import type { CommandSnapshot } from './commands';
+import type { CommandSnapshot, StorageRow } from './commands';
 
 type Shape = true | { [key: string]: Shape } | [Shape];
 const scalar = true;
@@ -60,7 +61,7 @@ function tournament(value: unknown, args: Record<string, unknown>) {
     rounds: project(rows('rounds').filter(round => roundIds.has(round.id)), [fields('id stage_id round_number round_type status logical_wave is_current')]),
     matches: project(page, [fields('id stage_id round_id team_a_id team_b_id player_a1_id player_a2_id player_b1_id player_b2_id court_number score_a score_b status outcome_kind winner_team_id result_revision started_at ended_at is_current voided_at')]),
     match_page: { offset, total: matches.length, next_offset: offset + 64 < matches.length ? offset + 64 : null },
-    standings: project(source.standings, [fields('stage_id team_id wins losses points_for points_against rank input_revision eligible tie_group')]),
+    standings: project(presentStandings(rows('standings') as StorageRow[], rows('teams') as StorageRow[], Array.isArray(source.disciplinary_excluded_team_ids) ? source.disciplinary_excluded_team_ids as string[] : []), [fields('stage_id team_id wins losses points_for points_against rank input_revision eligible tie_group')]),
   };
 }
 export function publicMcpResult(name: string, value: unknown, args: Record<string, unknown> = {}): unknown {
