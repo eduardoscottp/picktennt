@@ -130,6 +130,22 @@ test("admin view contains entry and lifecycle controls, links to score administr
   assert.doesNotMatch(render("overview", snapshot("active")), /Retirar equipo|Review withdrawal impact/);
   assert.doesNotMatch(render("matches", snapshot("active")), /Retirar equipo|Review withdrawal impact/);
 });
+test("team withdrawal names only current active players after a replacement", () => {
+  const data = snapshot("active");
+  data.team_members = [
+    { id: "current-1", team_id: "a", user_id: "current-1", membership_status: "active", display_name: "Current One" },
+    { id: "current-2", team_id: "a", user_id: "current-2", membership_status: "active", display_name: "Current Two" },
+    { id: "former", team_id: "a", user_id: "former", membership_status: "cancelled", display_name: "Former Player" },
+    { id: "withdrawn", team_id: "a", user_id: "withdrawn", membership_status: "withdrawn", display_name: "Withdrawn Player" },
+    { id: "pending", team_id: "a", user_id: "pending", membership_status: "pending", display_name: "Pending Player" },
+  ];
+  const html = render("admin", data);
+  const selector = html.match(/<select aria-label="Equipo a retirar"[^>]*>(.*?)<\/select>/)![1];
+  assert.match(selector, /<option value="a">Current One \/ Current Two<\/option>/);
+  assert.doesNotMatch(selector, /Former Player|Withdrawn Player|Pending Player/);
+  assert.match(selector, /<option value="b">Beta<\/option>/);
+});
+
 test("member views preserve own consent and opponent confirmation while restricting administrator actions", () => {
   const member = openRoster();
   const overview = render("overview", member, "new-player");
