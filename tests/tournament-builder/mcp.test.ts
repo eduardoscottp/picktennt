@@ -92,3 +92,18 @@ test('forcing pending teams requires an admin and explicit confirmation of the r
  await callTournamentTool('admin_force_pending_match', { ...args, confirmed_structure_change: true }, adminDeps);
  assert.equal((calls[0] as { name: string }).name, 'forcePendingMatch');
 });
+
+test('name search validates input, preserves ambiguity and projects only search fields', async () => {
+ const { publicMcpResult } = await import('../../lib/tournament-builder/mcp-output');
+ const calls: unknown[] = [];
+ const searchDeps = { ...deps, permissions: ['admin:manage'], searchTournaments: async (query: string, offset: number) => { calls.push([query, offset]); return { tournaments: [{ id, name: 'Summer', status: 'ready', revision: 1, secret: 'private' }, { id: 'second', name: 'Summer Cup' }], next_offset: 20 }; } };
+ const result = await callTournamentTool('search_tournaments', { query: ' Summer ' }, searchDeps);
+ assert.deepEqual(calls, [['Summer', 0]]);
+ const output = publicMcpResult('search_tournaments', result) as { tournaments: unknown[] };
+ assert.equal(output.tournaments.length, 2); assert.doesNotMatch(JSON.stringify(output), /secret|private/);
+ for (const query of ['', '   ', 'x'.repeat(121)]) await assert.rejects(callTournamentTool('search_tournaments', { query }, searchDeps));
+ await assert.rejects(callTournamentTool('search_tournaments', { query: 'Summer', offset: -1 }, searchDeps));
+ await assert.rejects(callTournamentTool('search_tournaments', { query: 'Summer', actor_id: id }, searchDeps));
+ await assert.rejects(callTournamentTool('search_tournaments', { query: 'Summer' }, { ...searchDeps, permissions: ['player:manage'] }));
+ await assert.rejects(callTournamentTool('search_tournaments', { query: 'Summer' }, deps));
+});

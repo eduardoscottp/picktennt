@@ -1,3 +1,4 @@
+import { isLegacyMatchComplete, legacyWinnerSide } from "@/lib/tournament/match-result";
 import { modularTournamentPage } from "@/lib/tournament-builder/server-page";
 import { createClient } from "@/lib/supabase/server";
 import { notFound, redirect } from "next/navigation";
@@ -13,6 +14,7 @@ import { AdminGenerateRound } from "@/components/tournament/admin-generate-round
 import { AdminAddPlayer } from "@/components/tournament/admin-add-player";
 import { AdminUploadDupr } from "@/components/tournament/admin-upload-dupr";
 import { AdminTournamentInfo } from "@/components/tournament/admin-tournament-info";
+import { LegacyTeamWithdrawal } from "@/components/tournament/legacy-team-withdrawal";
 import { DoublesTeamGrid } from "@/components/tournament/doubles-team-grid";
 import { ShareButton } from "@/components/tournament/share-button";
 import { TournamentBottomNav, TournamentTopNav } from "@/components/tournament/tournament-bottom-nav";
@@ -31,6 +33,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
     .from("tournaments").select("*").eq("id", id).single();
   if (!tournamentData) notFound();
   const tournament = tournamentData as Tournament;
+  const beforeStart = ["draft", "registration"].includes(tournament.status);
 
   // Must be admin
   const { data: adminRow } = await supabase
@@ -59,13 +62,14 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
     .order("succession_order");
 
   // For doubles/singles: fetch teams with members
-  const { data: teamsRaw } = tournament.type !== "mixed"
+  const { data: teamsRaw, error: teamsError } = tournament.type !== "mixed"
     ? await supabase
         .from("teams")
-        .select("id, name, team_members(user_id, profile:player_profiles(first_name, last_name, avatar_url))")
+        .select("id, name, legacy_withdrawn_at, team_members!team_members_team_id_fkey(user_id, profile:player_profiles(first_name, last_name, avatar_url))")
         .eq("tournament_id", id)
         .order("created_at")
     : { data: null };
+  if (teamsError) throw new Error("Could not load tournament teams. Please try again.");
   const teams = (teamsRaw ?? []) as any[];
   const teamsData = teams.map((t) => ({ id: t.id as string, memberCount: (t.team_members ?? []).length as number }));
 
@@ -94,14 +98,12 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
     .eq("tournament_id", id);
   const allMatches = (allMatchesRaw ?? []) as Match[];
 
-  const rrMatches = allMatches.filter(
-    (m) => m.bracket_next_winner_match_id === null && m.bracket_next_loser_match_id === null
-      && m.bracket_winner_fills_side === null
-  );
-  const rrAllValidated = rrMatches.length > 0 && rrMatches.every((m) => m.status === "validated");
+  const rrRoundIds = new Set((roundsRaw ?? []).filter((r: any) => r.round_type === "round_robin").map((r: any) => r.id));
+  const rrMatches = allMatches.filter((m) => rrRoundIds.has(m.round_id));
+  const rrAllValidated = rrMatches.length > 0 && rrMatches.every(isLegacyMatchComplete);
   const bracketRoundTypes = new Set(["elimination", "finals_gold", "finals_bronze"]);
   const hasBracketAlready = (roundsRaw ?? []).some((r: any) => bracketRoundTypes.has(r.round_type));
-  const allMatchesValidated = allMatches.length > 0 && allMatches.every((m) => m.status === "validated");
+  const allMatchesValidated = allMatches.length > 0 && allMatches.every((m) => isLegacyMatchComplete(m) && (rrRoundIds.has(m.round_id) || m.outcome_kind === "no_contest" || legacyWinnerSide(m) !== null));
 
   const joinUrl = generateJoinUrl(tournament.join_code);
   const currentUserPlayer = (approvedPlayers ?? []).find((p: any) => p.user_id === user.id);
@@ -191,13 +193,14 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
   }));
 
   // Nullified players — they have status='rejected' so we query separately
-  const { data: nullifiedTPs } = await supabase
+  const { data: exitedTPs, error: exitsError } = await supabase
     .from("tournament_players")
-    .select("user_id")
+    .select("user_id, exit_reason, nullified_from_standings")
     .eq("tournament_id", tournament.id)
-    .eq("nullified_from_standings", true);
+    .or("nullified_from_standings.eq.true,exit_reason.not.is.null");
+  if (exitsError) throw new Error("Could not load tournament withdrawals.");
 
-  const nullifiedUserIds = new Set((nullifiedTPs ?? []).map((p: any) => p.user_id as string));
+  const nullifiedUserIds = new Set((exitedTPs ?? []).filter((p: any) => p.nullified_from_standings).map((p: any) => p.user_id as string));
 
   const nullifiedTeamIds = new Set<string>();
   for (const userId of nullifiedUserIds) {
@@ -209,11 +212,18 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
     ? Array.from(nullifiedUserIds)
     : Array.from(nullifiedTeamIds);
 
+  const excludedEntityIds = (exitedTPs ?? []).flatMap((p: any) => {
+    const entityId = tournament.type === "mixed" ? p.user_id : playerToTeamId.get(p.user_id);
+    return entityId ? [entityId] : [];
+  });
+
   return (
     <div className="max-w-2xl mx-auto">
       <MobileHeader title="Admin Panel" back={`/tournaments/${id}`} />
       <div className="px-4 py-6 pb-32 space-y-5">
         <TournamentTopNav tournamentId={id} isAdmin={true} />
+
+        {!beforeStart && tournament.type !== "mixed" && <LegacyTeamWithdrawal tournamentId={id} teams={teams.filter(team => !team.legacy_withdrawn_at && team.team_members?.length).map(team => ({ id: team.id, name: (team.team_members ?? []).map((member: any) => [member.profile?.first_name, member.profile?.last_name].filter(Boolean).join(" ")).join(" / ") || team.name || "Equipo" }))} />}
 
         {/* Status + actions */}
         <Card>
@@ -258,6 +268,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
             hasBracketAlready={hasBracketAlready}
             advancingCount={tournament.advancement_count ?? null}
             nullifiedEntityIds={nullifiedEntityIds}
+            excludedEntityIds={excludedEntityIds}
           />
         )}
 
@@ -284,7 +295,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
                       </div>
 
                     </div>
-                    <AdminPlayerActions
+                    <AdminPlayerActions allowRemoval={beforeStart}
                       tournamentPlayerId={p.id}
                       tournamentId={tournament.id}
                       playerName={`${profile.first_name} ${profile.last_name}`}
@@ -358,7 +369,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <DoublesTeamGrid
+              <DoublesTeamGrid allowRemoval={beforeStart}
                 tournamentId={id}
                 teams={doublesTeams}
                 isAdmin={true}

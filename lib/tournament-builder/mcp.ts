@@ -18,6 +18,7 @@ export interface McpDependencies {
   player?: { snapshot(id: string): Promise<unknown> };
   admin?: AdminMcpDependencies;
   owner?: OwnerMcpDependencies;
+  searchTournaments?(query: string, offset: number): Promise<unknown>;
   getDraft(tournamentId: string): Promise<unknown>;
   preview(tournamentId: string): Promise<unknown>;
   operation(tournamentId: string, operationId: string): Promise<unknown>;
@@ -27,6 +28,7 @@ const uuid = { type: 'string', format: 'uuid' };
 const object = (properties: Record<string, object>, required: string[]): Tool['inputSchema'] => ({ type: 'object', properties, required, additionalProperties: false });
 const readAnnotations = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 export const TOURNAMENT_TOOLS: Tool[] = [
+  { name: 'search_tournaments', description: 'Find tournaments you administer by full or partial name, ignoring case. Returns up to 20 matches with IDs and states. If several names match, ask the organizer to select one before using its ID. Use next_offset to continue.', inputSchema: object({ query: { type: 'string', minLength: 1, maxLength: 120 }, offset: { type: 'integer', minimum: 0, maximum: 10000 } }, ['query']), annotations: readAnnotations },
   { name: 'list_modules', description: 'List trusted tournament modules, supported rules and questions to ask the organizer. No executable code can be supplied.', inputSchema: object({}, []), annotations: readAnnotations },
   { name: 'get_capabilities', description: 'Read the complete and partial definition JSON Schemas, exact policy tokens, bounds, compositions, and consent requirements before proposing or updating a tournament.', inputSchema: object({}, []), annotations: readAnnotations },
   { name: 'create_draft', description: 'Create a private Picktennt tournament draft. Ask for missing facts; do not invent dates or player consent. Reuse the same operation_id after an uncertain response. This does not publish or enroll anyone.', inputSchema: object({ operation_id: uuid, data: object({ definition: definitionJsonSchema(true) }, ['definition']) }, ['operation_id', 'data']), annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
@@ -38,7 +40,9 @@ export const TOURNAMENT_TOOLS: Tool[] = [
 
 function availableTools(dependencies: McpDependencies): Tool[] {
   return [...TOURNAMENT_TOOLS.filter(tool => {
+    if (tool.name === 'search_tournaments' && !dependencies.searchTournaments) return false;
     if (!dependencies.permissions || ['list_modules', 'get_capabilities'].includes(tool.name)) return true;
+    if (tool.name === 'search_tournaments') return dependencies.permissions.some(permission => ['draft:read', 'admin:manage', 'owner:manage'].includes(permission));
     const permission = tool.name === 'create_draft' ? 'draft:create' : tool.name === 'update_draft' ? 'draft:update' : tool.name === 'get_operation' ? 'operation:read' : 'draft:read';
     return dependencies.permissions.includes(permission) || (permission === 'operation:read' && Boolean(dependencies.admin || dependencies.owner || dependencies.player));
   }), ...(dependencies.player ? PLAYER_TOOLS : []), ...(dependencies.admin ? ADMIN_TOOLS : []), ...(dependencies.owner ? OWNER_TOOLS : [])];
@@ -60,6 +64,11 @@ export async function callTournamentTool(name: string, args: Record<string, unkn
   if (name.startsWith('owner_') && dependencies.owner) return callOwnerTool(name,args,dependencies.owner,(command,id,input)=>dependencies.execute(command,id,input));
   if (name === 'list_modules') return listModules();
   if (name === 'get_capabilities') return getCapabilities(Boolean(dependencies.admin), Boolean(dependencies.owner), Boolean(dependencies.player));
+  if (name === 'search_tournaments') {
+    const query = String(args.query).trim();
+    if (!query) throw new DomainError('INVALID_REQUEST', 'Enter a tournament name.');
+    return dependencies.searchTournaments!(query, Number(args.offset ?? 0));
+  }
   if (name === 'create_draft') return dependencies.execute('createDraft', null, parseEnvelope(args, true));
   const tournamentId = args.tournament_id;
   if (typeof tournamentId !== 'string' || !UUID.test(tournamentId)) throw new DomainError('INVALID_REQUEST', 'A tournament UUID is required.');

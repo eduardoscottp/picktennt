@@ -102,6 +102,7 @@ export interface TournamentPlayer {
 }
 
 export interface Team {
+  legacy_withdrawn_at?: string | null;
   id: string;
   tournament_id: string;
   name: string | null;
@@ -141,6 +142,9 @@ export interface Match {
   score_a: number | null;
   score_b: number | null;
   status: MatchStatus;
+  outcome_kind?: "played" | "retirement" | "walkover" | "no_contest" | "administrative_score" | null;
+  winner_team_id?: string | null;
+  legacy_winner_side?: "a" | "b" | null;
   submit_to_dupr: boolean;
   entered_by: string | null;
   validated_by: string | null;

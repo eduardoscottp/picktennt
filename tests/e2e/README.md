@@ -36,3 +36,13 @@ Covered flows:
 `test-results/tournament-smoke/evidence.json` records the result and evidence limits. `synthetic-shared-third.png` is a full-page render. Logs and test certificates remain in the same ignored directory.
 
 These checks verify local UI and real SQL behavior with simulated authentication. Actual Google login, hosted Supabase behavior, and account connections from ChatGPT/Claude require separate hosted checks.
+
+For the focused Admin withdrawal and hidden match-option regressions (IDD-60/64), run:
+
+```powershell
+$env:IDD64_ONLY = "true"
+node --import tsx tests/e2e/tournament-smoke.ts
+Remove-Item Env:IDD64_ONLY
+```
+
+This creates active and completed synthetic three-team doubles tournaments. It checks that per-match Walkover and Retirement options are hidden, cancellation leaves the database unchanged, and explicit Admin confirmation changes every past and future game of the chosen team to a 0–11 administrative loss. Unrelated games stay unchanged, the withdrawn team has no competitive rank, and generated results cannot be exported to DUPR. It also verifies Start on Admin/Matches, hidden for players and after starting. Screenshots are `test-results/tournament-smoke/team-withdrawal-active.png` and `team-withdrawal-completed.png`. The environment switch keeps its existing name for compatibility.

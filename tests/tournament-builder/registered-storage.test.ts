@@ -147,7 +147,7 @@ test('SQL withdrawal rejects a pending teammate belonging to another team even w
  const after=await getSnapshot(rpc,host,f.event); assert.equal(after.team_members.find(row=>row.id===member.id)?.membership_status,'active');
 });
 
-test('MCP individual withdrawal requires administrator scope, reviewed revision and explicit confirmation', async()=>{
+test('MCP no longer exposes automatic individual or team withdrawal, even with administrator confirmation', async()=>{
  const f=await fixture(false,2,true);
  for(const [id,slot] of [[player,1],[stranger,2]] as const) { await f.join(id); await f.run('placeRegisteredPlayer',{user_id:id,slot_index:slot,position:1}); }
  let s=await getSnapshot(rpc,host,f.event); await f.run('closeRegistration'); await f.run('lockRoster',{reviewed_roster_revision:s.event!.roster_revision}); await f.run('startTournament');
@@ -155,12 +155,9 @@ test('MCP individual withdrawal requires administrator scope, reviewed revision 
  const grantId=randomUUID(),actor={id:owner,clientId:'admin-withdraw-test',grantId,permissions:['admin:manage']};
  await db.query('INSERT INTO connection_grants(id,user_id,provider,client_id,permissions) VALUES($1,$2,$3,$4,$5)',[grantId,owner,'synthetic-test',actor.clientId,actor.permissions]);
  const deps:McpDependencies={permissions:actor.permissions,admin:{snapshot:id=>getSnapshot(rpc,actor,id),findPlayer:async()=>({}),previewCorrection:async()=>({}),previewWithdrawal:async()=>({}),previewPlayerWithdrawal:async(id,data)=>previewPlayerWithdrawal(await getSnapshot(rpc,actor,id),actor,data)},execute:(name,id,input)=>executeCommand(rpc,actor,name,id,input),getDraft:async()=>({}),preview:async()=>({}),operation:async()=>({}),reviewLink:async()=>({})};
- const proposal={team_id:team,user_id:player,reason:'Player unavailable'}, review=await callTournamentTool('admin_preview_player_withdrawal',{tournament_id:f.event,data:proposal},deps) as ReturnType<typeof previewPlayerWithdrawal>;
- const args={tournament_id:f.event,operation_id:randomUUID(),expected_revision:Number(s.event!.revision),data:{...proposal,preview_hash:review.preview_hash}};
- await assert.rejects(callTournamentTool('admin_withdraw_player',args,deps),{code:'CONFIRMATION_REQUIRED'});
- await assert.rejects(callTournamentTool('admin_withdraw_player',{...args,confirmed_structure_change:true},{...deps,admin:undefined}),{code:'INVALID_REQUEST'});
- await callTournamentTool('admin_withdraw_player',{...args,confirmed_structure_change:true},deps);
- const after=await getSnapshot(rpc,host,f.event); assert.equal(after.teams.find(row=>row.id===team)?.entry_state,'approved'); assert.equal(after.team_members.find(row=>row.user_id===player&&row.team_id===team)?.membership_status,'cancelled');
+ const args={tournament_id:f.event,operation_id:randomUUID(),expected_revision:Number(s.event!.revision),data:{team_id:team,entry_id:team,user_id:player,reason:'Player unavailable',preview_hash:'a'.repeat(64)},confirmed_structure_change:true};
+ for(const name of ['admin_preview_player_withdrawal','admin_withdraw_player','admin_preview_withdrawal','admin_withdraw_entry']) await assert.rejects(callTournamentTool(name,args,deps),{code:'INVALID_REQUEST'});
+ assert.deepEqual(await getSnapshot(rpc,host,f.event),s);
 });
 
 for (const doubles of [false,true]) test(`administrator fills an empty ${doubles?'Doubles':'Singles'} position with an unjoined account before and after registration closes`, async()=>{
@@ -284,25 +281,36 @@ test('individual removal cannot alter another player or rewrite generated fixtur
  assert.deepEqual(await getSnapshot(rpc,host,f.event),snapshot);
 });
 test('SQL team withdrawal preserves a former player who now belongs to another team', async()=>{
- const f=await fixture(false,2,true); await f.join(player); await f.join(stranger);
+ const f=await fixture(false,3,true); await f.join(player); await f.join(stranger); await f.join(owner);
  await f.run('placeRegisteredPlayer',{user_id:player,slot_index:1,position:1});
  await f.run('removeRegisteredPlayer',{user_id:player,release_only:true});
  await f.run('placeRegisteredPlayer',{user_id:player,slot_index:2,position:1});
  await f.run('placeRegisteredPlayer',{user_id:stranger,slot_index:1,position:1});
+ await f.run('placeRegisteredPlayer',{user_id:owner,slot_index:3,position:1});
  let s=await getSnapshot(rpc,host,f.event); const team=s.teams.find(row=>row.registration_slot===1)!;
  const former=s.team_members.find(row=>row.team_id===team.id&&row.user_id===player)!;
  const playerProjection=s.tournament_players.find(row=>row.user_id===player)!;
  assert.equal(former.membership_status,'cancelled');
  await f.run('closeRegistration'); await f.run('lockRoster',{reviewed_roster_revision:s.event!.roster_revision}); await f.run('startTournament');
- s=await getSnapshot(rpc,host,f.event); const match=s.matches.find(row=>row.status==='scheduled')!;
+ s=await getSnapshot(rpc,host,f.event); const currentTeam=s.team_members.find(row=>row.user_id===player&&row.membership_status==='active')!.team_id;
+ const match=s.matches.find(row=>row.status==='scheduled'&&[row.team_a_id,row.team_b_id].includes(team.id)&&[row.team_a_id,row.team_b_id].includes(currentTeam))!;
  await executeCommand(rpc,{id:player,clientId:'web'},'submitScore',f.event,{operation_id:randomUUID(),expected_revision:Number(s.event!.revision),data:{match_id:match.id,score_a:11,score_b:3}});
- s=await getSnapshot(rpc,host,f.event); const request={entry_id:team.id,reason:'Team withdrew'}, reviewed=previewWithdrawal(s,host,request);
+ s=await getSnapshot(rpc,host,f.event); const request={entry_id:team.id,reason:'Team withdrew'};
+ assert.throws(()=>previewWithdrawal(s,host,request),{code:'UNRESOLVED_RESULT'});
+ await assert.rejects(executeCommand(rpc,host,'withdrawEntry',f.event,{operation_id:randomUUID(),expected_revision:Number(s.event!.revision),data:{...request,preview_hash:'a'.repeat(64)}}),{code:'UNRESOLVED_RESULT'});
+ assert.deepEqual(await getSnapshot(rpc,host,f.event),s);
+ const submitted=s.matches.find(row=>row.id===match.id)!;
+ await executeCommand(rpc,host,'confirmScore',f.event,{operation_id:randomUUID(),expected_revision:Number(s.event!.revision),data:{match_id:match.id,result_revision:submitted.result_revision}});
+ s=await getSnapshot(rpc,host,f.event); const accepted=s.matches.find(row=>row.id===match.id)!, reviewed=previewWithdrawal(s,host,request);
  for(const effects of [{team_members:[{id:former.id,membership_status:'withdrawn'}]},{tournament_players:[{id:playerProjection.id,status:'rejected',exit_reason:'withdrew',nullified_from_standings:true}]}]) await assert.rejects(command(db,{event:f.event,command:'withdrawEntry',revision:Number(s.event!.revision),request:{...request,preview_hash:reviewed.preview_hash},effects}),/INVALID_EFFECTS/);
  await executeCommand(rpc,host,'withdrawEntry',f.event,{operation_id:randomUUID(),expected_revision:Number(s.event!.revision),data:{...request,preview_hash:reviewed.preview_hash}});
  const after=await getSnapshot(rpc,host,f.event);
  assert.equal(after.team_members.find(row=>row.id===former.id)?.membership_status,'cancelled');
  assert.equal(after.tournament_players.find(row=>row.id===playerProjection.id)?.status,'approved');
  assert.equal(after.team_members.find(row=>row.user_id===player&&row.team_id!==team.id)?.membership_status,'active');
+ const excluded=after.matches.find(row=>row.id===match.id)!;
+ assert.ok(excluded.excluded_at);
+ assert.deepEqual({...excluded,excluded_at:accepted.excluded_at,updated_at:accepted.updated_at},accepted);
 });
 test('SQL administrator moves a joined player within and across teams without changing others', async()=>{
  const f=await fixture(true,3,true); await f.join(player); await f.join(stranger);

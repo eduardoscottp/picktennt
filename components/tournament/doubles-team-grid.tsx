@@ -9,8 +9,9 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import { getInitials } from "@/lib/utils";
-import { Plus, Search, Users } from "lucide-react";
+import { Plus, Search, Users, RefreshCw } from "lucide-react";
 import { RemovePlayerDialog } from "@/components/tournament/remove-player-dialog";
+import { assignLegacyPlayer, replaceLegacyPlayer } from "@/lib/tournament/player-replacement";
 
 export interface TeamMemberData {
   user_id: string;
@@ -39,6 +40,7 @@ interface Props {
   existingMemberIds: string[];
   anyTournamentScores?: boolean;
   readonly?: boolean;
+  allowRemoval?: boolean;
 }
 
 interface ProfileResult {
@@ -59,8 +61,9 @@ export function DoublesTeamGrid({
   existingMemberIds,
   anyTournamentScores = false,
   readonly = false,
+  allowRemoval = true,
 }: Props) {
-  const [activeSlot, setActiveSlot] = useState<{ teamId: string } | null>(null);
+  const [activeSlot, setActiveSlot] = useState<{ teamId: string; oldUserId?: string; oldName?: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<ProfileResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -69,8 +72,8 @@ export function DoublesTeamGrid({
   const router = useRouter();
   const { toast } = useToast();
 
-  function openSearch(teamId: string) {
-    setActiveSlot({ teamId });
+  function openSearch(teamId: string, member?: TeamMemberData) {
+    setActiveSlot({ teamId, ...(member ? { oldUserId: member.user_id, oldName: [member.first_name, member.last_name].filter(Boolean).join(" ") || "Player" } : {}) });
     setSearchQuery("");
     setSearchResults([]);
   }
@@ -112,34 +115,11 @@ export function DoublesTeamGrid({
     if (!activeSlot) return;
     setAssigning(profile.id);
     try {
-      const supabase = createClient();
-
-      // Add to tournament_players if not already in (ignore unique conflict)
-      const { error: tpErr } = await supabase.from("tournament_players").insert({
-        tournament_id: tournamentId,
-        user_id: profile.id,
-        status: "approved",
-        joined_via: "invite",
-      });
-      if (tpErr && tpErr.code !== "23505") throw tpErr;
-
-      // If they were pending, promote to approved
-      if (tpErr?.code === "23505") {
-        await supabase
-          .from("tournament_players")
-          .update({ status: "approved" })
-          .eq("tournament_id", tournamentId)
-          .eq("user_id", profile.id)
-          .eq("status", "pending");
-      }
-
-      const { error: tmErr } = await supabase
-        .from("team_members")
-        .insert({ team_id: activeSlot.teamId, user_id: profile.id });
-      if (tmErr) throw tmErr;
+      if (activeSlot.oldUserId) await replaceLegacyPlayer(tournamentId, activeSlot.teamId, activeSlot.oldUserId, profile.id);
+      else await assignLegacyPlayer(tournamentId, activeSlot.teamId, profile.id);
 
       const name = [profile.first_name, profile.last_name].filter(Boolean).join(" ") || profile.username || "Player";
-      toast(`${name} added to team!`, "success");
+      toast(activeSlot.oldUserId ? `${name} replaced ${activeSlot.oldName}.` : `${name} added to team!`, "success");
       closeSearch();
       router.refresh();
     } catch (err: any) {
@@ -153,11 +133,7 @@ export function DoublesTeamGrid({
     if (!currentUserId) return;
     setAssigning(currentUserId);
     try {
-      const supabase = createClient();
-      const { error } = await supabase
-        .from("team_members")
-        .insert({ team_id: teamId, user_id: currentUserId });
-      if (error) throw error;
+      await assignLegacyPlayer(tournamentId, teamId, currentUserId);
       toast("You joined the team!", "success");
       router.refresh();
     } catch (err: any) {
@@ -200,8 +176,9 @@ export function DoublesTeamGrid({
                           {member.first_name} {member.last_name}
                           {isMySlot && <span className="ml-1 text-brand-500">(you)</span>}
                         </span>
-                        {isAdmin && !readonly && member.tournament_player_id && (
-                          <RemovePlayerDialog
+                        {isAdmin && !readonly && member.tournament_player_id && (<>
+                          <Button size="icon" variant="ghost" className="h-8 w-8" title={`Replace ${member.first_name ?? "player"}`} onClick={() => openSearch(team.id, member)}><RefreshCw className="h-4 w-4" /></Button>
+                          {allowRemoval && <RemovePlayerDialog
                             tournamentPlayerId={member.tournament_player_id}
                             tournamentId={tournamentId}
                             playerName={`${member.first_name ?? ""} ${member.last_name ?? ""}`.trim()}
@@ -209,8 +186,8 @@ export function DoublesTeamGrid({
                             anyTournamentScores={anyTournamentScores}
                             gamesPlayed={member.games_played}
                             inProgressMatchId={member.in_progress_match_id}
-                          />
-                        )}
+                          />}
+                        </>)}
                       </div>
                     );
                   }
@@ -268,9 +245,10 @@ export function DoublesTeamGrid({
       <Dialog open={!!activeSlot} onOpenChange={(open) => { if (!open) closeSearch(); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Player to Slot</DialogTitle>
+            <DialogTitle>{activeSlot?.oldUserId ? `Replace ${activeSlot.oldName}` : "Add Player to Slot"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 pt-1">
+            {activeSlot?.oldUserId && <p className="text-sm text-gray-600">The team and past results stay. The replacement joins pending matches. Games with a result awaiting validation or incomplete player history must be reviewed first.</p>}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <input
@@ -302,7 +280,7 @@ export function DoublesTeamGrid({
                       loading={assigning === p.id}
                       onClick={() => adminAssign(p)}
                     >
-                      Add
+                      {activeSlot?.oldUserId ? "Replace" : "Add"}
                     </Button>
                   </div>
                 ))}

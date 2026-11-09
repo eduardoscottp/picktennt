@@ -84,9 +84,11 @@ export function planGraphRuntime(snapshot: CommandSnapshot, d: GraphDefinition, 
     put('stages', { id: stage.id, state, input_revision: stageInputs[node.id].inputRevision, output_revision: revision, output: payload, blocked_code: state === 'blocked' ? graph?.blockedCode ?? analysis!.blockedCode ?? 'UNRESOLVED_TIE' : null });
     if (['round_robin@2', 'cross_play@1'].includes(node.module) && graph?.rows) {
       const round = s.rounds.find(r => r.stage_id === stage.id && r.is_current !== false)!;
-      graph.rows.forEach((row, index) => {
-        const tie = graph.ties?.find(t => t.includes(row.entryId));
-        const rank = tie ? graph.rows!.findIndex(r => tie.includes(r.entryId)) + 1 : index + 1;
+      const ranked = graph.rows.filter(row => options.eligibleEntryIds!.includes(row.entryId));
+      graph.rows.forEach(row => {
+        const eligible = options.eligibleEntryIds!.includes(row.entryId);
+        const tie = eligible ? graph.ties?.map(group => group.filter(id => options.eligibleEntryIds!.includes(id))).find(group => group.length > 1 && group.includes(row.entryId)) : undefined;
+        const rank = !eligible ? null : tie ? ranked.findIndex(r => tie.includes(r.entryId)) + 1 : ranked.indexOf(row) + 1;
         const old = s.standings.find(r => r.stage_id === stage.id && r.team_id === row.entryId);
         put('standings', { id: old?.id ?? context.id(), stage_id: stage.id, round_id: round.id, team_id: row.entryId, wins: row.wins, losses: row.losses, points_for: row.pointsFor, points_against: row.pointsAgainst, rank, input_revision: stageInputs[node.id].inputRevision, eligible: options.eligibleEntryIds!.includes(row.entryId), tie_group: tie ? tie.join(',') : null });
       });

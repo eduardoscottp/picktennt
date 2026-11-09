@@ -137,6 +137,12 @@ test('an administrative score advances the bracket only with a legal score and m
   assert.equal(resolveBracket(fixtures, [awarded]).fixtures[0].winnerEntryId, scheduled.entryA);
   assert.throws(() => resolveBracket(fixtures, [{ ...awarded, winnerEntryId: scheduled.entryB }]), /Winner disagrees/);
   assert.throws(() => resolveBracket(fixtures, [{ ...awarded, scoreA: 5 }]), /illegal/);
+  const twentyOne = { target: 21, win_by: 2 };
+  assert.equal(resolveBracket(fixtures, [awarded], undefined, twentyOne).fixtures[0].winnerEntryId, scheduled.entryA);
+  assert.equal(resolveBracket(fixtures, [{ ...awarded, scoreA: 0, scoreB: 11, winnerEntryId: scheduled.entryB }], undefined, twentyOne).fixtures[0].winnerEntryId, scheduled.entryB);
+  assert.throws(() => resolveBracket(fixtures, [{ ...awarded, scoreA: 7 }], undefined, twentyOne), /illegal/);
+  assert.throws(() => resolveBracket(fixtures, [{ ...awarded, scoreB: 1 }], undefined, twentyOne), /illegal/);
+  assert.throws(() => resolveBracket(fixtures, [{ ...awarded, outcome: 'played' }], undefined, twentyOne), /illegal/);
 });
 test('exact RR ties block qualifiers until a current recorded whole-group draw is supplied', () => {
   const d = definition(); d.registration.min_entries = 3; d.registration.max_entries = 3;

@@ -10,7 +10,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --import tsx --test tests/tournament-builder/*.test.ts",
-    "test:auth": "node --experimental-test-module-mocks --import tsx --test tests/auth/*.test.ts"
+    "test:auth": "node --experimental-test-module-mocks --import tsx --test tests/auth/*.test.ts",
+    "test:legacy": "node --experimental-test-module-mocks --import tsx --test tests/legacy/*.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",

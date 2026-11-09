@@ -9,6 +9,7 @@ import { useToast } from "@/components/ui/toast";
 import { generateMixedSchedule } from "@/lib/tournament/mixed-pairing";
 import { generateRoundRobinSchedule, roundsNeeded } from "@/lib/tournament/round-robin";
 import { buildBracket } from "@/lib/tournament/bracket";
+import { isLegacyMatchComplete } from "@/lib/tournament/match-result";
 import { computeStandings } from "@/lib/tournament/standings";
 import type { Tournament, Match } from "@/types/database";
 import { CalendarRange, CheckCircle2, Trophy, AlertCircle } from "lucide-react";
@@ -31,6 +32,7 @@ interface Props {
   hasBracketAlready: boolean;
   advancingCount: number | null;
   nullifiedEntityIds?: string[];
+  excludedEntityIds?: string[];
 }
 
 export function AdminGenerateRound({
@@ -46,6 +48,7 @@ export function AdminGenerateRound({
   hasBracketAlready,
   advancingCount,
   nullifiedEntityIds = [],
+  excludedEntityIds = [],
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [adminOptOut, setAdminOptOut] = useState(false);
@@ -78,18 +81,20 @@ export function AdminGenerateRound({
         tournament.games_per_player ?? Math.max(1, entityCount - 1)
       );
 
-  const pendingRRCount = rrMatches.filter((m) => m.status !== "validated").length;
+  const pendingRRCount = rrMatches.filter((m) => !isLegacyMatchComplete(m)).length;
   const advancementOptions = [2, 4, 8].filter((count) => count <= entityCount);
 
   async function fetchTeamIds(supabase: ReturnType<typeof createClient>) {
     const { data, error } = await supabase
       .from("teams")
-      .select("id, team_members(user_id)")
+      .select("id, team_members!team_members_team_id_fkey(user_id)")
       .eq("tournament_id", tournament.id)
       .order("created_at", { ascending: true });
     if (error) throw error;
+    const approved = new Set(await fetchPlayerIds(supabase));
     return (data ?? [])
-      .filter((t: any) => (t.team_members ?? []).length >= (isDoubles ? 2 : 1))
+      .filter((t: any) => (t.team_members ?? []).length === (isDoubles ? 2 : 1)
+        && t.team_members.every((member: { user_id: string }) => approved.has(member.user_id)))
       .map((t: any) => t.id as string);
   }
 
@@ -240,18 +245,41 @@ export function AdminGenerateRound({
     try {
       const supabase = createClient();
 
-      const { data: allMatchesRaw } = await supabase
+      const { data: allMatchesRaw, error: matchesError } = await supabase
         .from("matches")
         .select("*")
         .eq("tournament_id", tournament.id);
-      const allMatches = (allMatchesRaw ?? []) as Match[];
+      if (matchesError) throw matchesError;
+      const rrRoundIds = new Set(rrMatches.map((m) => m.round_id));
+      const allMatches = ((allMatchesRaw ?? []) as Match[]).filter((m) => rrRoundIds.has(m.round_id));
+      if (!allMatches.length || !allMatches.every(isLegacyMatchComplete)) throw new Error("Resolve all round robin matches before generating the bracket.");
 
+      const { data: exits, error: exitsError } = await supabase.from("tournament_players")
+        .select("user_id, nullified_from_standings").eq("tournament_id", tournament.id)
+        .or("nullified_from_standings.eq.true,exit_reason.not.is.null");
+      if (exitsError) throw exitsError;
+      const excluded = new Set(excludedEntityIds);
+      const nullified = new Set(nullifiedEntityIds);
+      if (isMixed) {
+        for (const exit of exits ?? []) {
+          excluded.add(exit.user_id);
+          if (exit.nullified_from_standings) nullified.add(exit.user_id);
+        }
+      } else if (exits?.length) {
+        const { data: memberships, error } = await supabase.from("team_members").select("team_id, user_id")
+          .eq("tournament_id", tournament.id).in("user_id", exits.map(exit => exit.user_id));
+        if (error) throw error;
+        for (const member of memberships ?? []) {
+          excluded.add(member.team_id);
+          if (exits.some(exit => exit.user_id === member.user_id && exit.nullified_from_standings)) nullified.add(member.team_id);
+        }
+      }
       const standings = computeStandings(
         allMatches,
         isMixed ? "player" : "team",
-        new Set(nullifiedEntityIds)
+        nullified
       );
-      const topIds = standings.slice(0, selectedAdvancingCount).map((s) => s.id);
+      const topIds = standings.filter((s) => !excluded.has(s.id)).slice(0, selectedAdvancingCount).map((s) => s.id);
 
       if (topIds.length < selectedAdvancingCount) {
         throw new Error(
@@ -388,9 +416,9 @@ export function AdminGenerateRound({
                   <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
                   <span>
                     <span className="font-semibold">
-                      {pendingRRCount} match{pendingRRCount !== 1 ? "es" : ""} still need{pendingRRCount === 1 ? "s" : ""} scores.
+                      {pendingRRCount} match{pendingRRCount !== 1 ? "es" : ""} still need{pendingRRCount === 1 ? "s" : ""} results.
                     </span>{" "}
-                    Enter all round robin results before generating the bracket.
+                    Resolve all round robin matches before generating the bracket.
                   </span>
                 </div>
               ) : (

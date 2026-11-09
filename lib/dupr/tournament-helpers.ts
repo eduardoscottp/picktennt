@@ -50,8 +50,8 @@ export async function collectMatchUserIds(
     for (const id of [m.player_a1_id, m.player_a2_id, m.player_b1_id, m.player_b2_id]) {
       if (id) directIds.add(id);
     }
-    if (m.team_a_id && (!currentRosterOnly || (!m.player_a1_id && !m.player_a2_id))) teamIds.add(m.team_a_id);
-    if (m.team_b_id && (!currentRosterOnly || (!m.player_b1_id && !m.player_b2_id))) teamIds.add(m.team_b_id);
+    if (m.team_a_id && (!m.player_a1_id && !m.player_a2_id)) teamIds.add(m.team_a_id);
+    if (m.team_b_id && (!m.player_b1_id && !m.player_b2_id)) teamIds.add(m.team_b_id);
   }
 
   if (teamIds.size > 0) {
@@ -119,8 +119,8 @@ export async function resolveMatchPlayers(
     const aIds: string[] = [];
     const bIds: string[] = [];
 
-    if (m.team_a_id && (!currentRosterOnly || (!m.player_a1_id && !m.player_a2_id))) aIds.push(...(teamMembers.get(m.team_a_id) ?? []));
-    if (m.team_b_id && (!currentRosterOnly || (!m.player_b1_id && !m.player_b2_id))) bIds.push(...(teamMembers.get(m.team_b_id) ?? []));
+    if (m.team_a_id && (!m.player_a1_id && !m.player_a2_id)) aIds.push(...(teamMembers.get(m.team_a_id) ?? []));
+    if (m.team_b_id && (!m.player_b1_id && !m.player_b2_id)) bIds.push(...(teamMembers.get(m.team_b_id) ?? []));
     for (const id of [m.player_a1_id, m.player_a2_id]) if (id) aIds.push(id);
     for (const id of [m.player_b1_id, m.player_b2_id]) if (id) bIds.push(id);
 

@@ -1,3 +1,4 @@
+import { isLegacyMatchComplete } from "@/lib/tournament/match-result";
 import { modularTournamentPage } from "@/lib/tournament-builder/server-page";
 import { createClient } from "@/lib/supabase/server";
 import { notFound, redirect } from "next/navigation";
@@ -19,7 +20,7 @@ import { ScoreEntryButton } from "@/components/tournament/score-entry-button";
 import { PlayersDialog } from "@/components/tournament/players-dialog";
 import { DoublesTeamGrid } from "@/components/tournament/doubles-team-grid";
 import { TournamentBottomNav, TournamentTopNav } from "@/components/tournament/tournament-bottom-nav";
-import { computeIndividualStandingsFromTeams, computeStandings, computeBracketFinishPositions } from "@/lib/tournament/standings";
+import { computeIndividualStandingsFromTeams, computeStandings, computeBracketFinishPositions, rankExitedLast } from "@/lib/tournament/standings";
 import type { StandingRow } from "@/lib/tournament/standings";
 import type { Match, Profile, Round, Tournament } from "@/types/database";
 
@@ -99,11 +100,12 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
   let existingMemberIds: string[] = [];
 
   if (!isMixed) {
-    const { data: teamsRaw } = await supabase
+    const { data: teamsRaw, error: teamsError } = await supabase
       .from("teams")
-      .select("id, name, team_members(user_id, profile:player_profiles(first_name, last_name, avatar_url))")
+      .select("id, name, team_members!team_members_team_id_fkey(user_id, profile:player_profiles(first_name, last_name, avatar_url))")
       .eq("tournament_id", id)
       .order("created_at");
+    if (teamsError) throw new Error("Could not load tournament teams. Please try again.");
     allTeams = (teamsRaw ?? []) as any[];
 
     for (const t of allTeams) {
@@ -242,8 +244,8 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
       .from("matches")
       .select(`
         *,
-        team_a:teams!matches_team_a_id_fkey(id, name, team_members(user_id, profile:player_profiles(*))),
-        team_b:teams!matches_team_b_id_fkey(id, name, team_members(user_id, profile:player_profiles(*))),
+        team_a:teams!matches_team_a_id_fkey(id, name, team_members!team_members_team_id_fkey(user_id, profile:player_profiles(*))),
+        team_b:teams!matches_team_b_id_fkey(id, name, team_members!team_members_team_id_fkey(user_id, profile:player_profiles(*))),
         player_a1:player_profiles!matches_player_a1_id_fkey(*),
         player_a2:player_profiles!matches_player_a2_id_fkey(*),
         player_b1:player_profiles!matches_player_b1_id_fkey(*),
@@ -255,13 +257,14 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
     const matches = (matchesRaw ?? []) as any[];
 
     // Nullified players — excluded from standings (withdrew/retired mid-RR)
-    const { data: nullifiedTPs } = await supabase
+    const { data: exitedTPs, error: exitsError } = await supabase
       .from("tournament_players")
-      .select("user_id")
+      .select("user_id, exit_reason, nullified_from_standings")
       .eq("tournament_id", id)
-      .eq("nullified_from_standings", true);
+      .or("nullified_from_standings.eq.true,exit_reason.not.is.null");
+    if (exitsError) throw new Error("Could not load tournament withdrawals.");
 
-    const nullifiedUserIds = new Set((nullifiedTPs ?? []).map((p: any) => p.user_id as string));
+    const nullifiedUserIds = new Set((exitedTPs ?? []).filter((p: any) => p.nullified_from_standings).map((p: any) => p.user_id as string));
 
     // For team-based: resolve user IDs → team IDs
     const nullifiedTeamIds = new Set<string>();
@@ -269,7 +272,8 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
       const { data: nullifiedTMs } = await supabase
         .from("team_members")
         .select("user_id, team_id")
-        .in("user_id", Array.from(nullifiedUserIds));
+        .in("user_id", Array.from(nullifiedUserIds))
+        .eq("tournament_id", id);
       for (const tm of nullifiedTMs ?? []) {
         nullifiedTeamIds.add((tm as any).team_id as string);
       }
@@ -331,7 +335,7 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
     }
 
     function TeamDisplay({ match, side }: { match: any; side: "a" | "b" }) {
-      if (isMixed) {
+      if (isMixed || (side === "a" ? match.player_a1_id || match.player_a2_id : match.player_b1_id || match.player_b2_id)) {
         const p1: Profile | undefined = side === "a" ? match.player_a1 : match.player_b1;
         const p2: Profile | undefined = side === "a" ? match.player_a2 : match.player_b2;
         return (
@@ -364,18 +368,21 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
     }
 
     // Data for standings computation
-    const activeRrMatches = matches.filter((m: any) =>
-      m.bracket_next_winner_match_id === null &&
-      m.bracket_next_loser_match_id === null &&
-      m.bracket_winner_fills_side === null
-    ) as Match[];
+    const rrRoundIds = new Set((rounds ?? []).filter((r: any) => r.round_type === "round_robin").map((r: any) => r.id));
+    const activeRrMatches = matches.filter((m: any) => rrRoundIds.has(m.round_id)) as Match[];
     const bracketRoundTypes = new Set(["elimination", "finals_gold", "finals_bronze"]);
     const activeHasBracketAlready = (rounds ?? []).some((r: any) => bracketRoundTypes.has(r.round_type));
 
     // Standings: RR-only as baseline, bracket positions overlaid when bracket exists
-    const rrStandings = isMixed
+    const exitedPlayerIds = new Set<string>((exitedTPs ?? []).map((p: any) => p.user_id));
+    if (!isMixed) {
+      for (const members of teamToMembers.values()) {
+        if (members.some(id => exitedPlayerIds.has(id))) members.forEach(id => exitedPlayerIds.add(id));
+      }
+    }
+    const rrStandings = rankExitedLast(isMixed
       ? computeStandings(activeRrMatches, "player", nullifiedEntityIds)
-      : computeIndividualStandingsFromTeams(activeRrMatches, teamToMembers, nullifiedUserIds);
+      : computeIndividualStandingsFromTeams(activeRrMatches, teamToMembers, nullifiedUserIds), exitedPlayerIds);
 
     let standingsByPlayer: Map<string, StandingRow>;
     if (activeHasBracketAlready) {
@@ -409,7 +416,7 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
         ...row,
         rank: playerBracketRank.has(row.id) ? playerBracketRank.get(row.id)! : row.rank,
       }));
-      standingsByPlayer = new Map(finalRows.map((r) => [r.id, r]));
+      standingsByPlayer = new Map(rankExitedLast(finalRows, exitedPlayerIds).map((r) => [r.id, r]));
     } else {
       standingsByPlayer = new Map(rrStandings.map((r) => [r.id, r]));
     }
@@ -418,7 +425,7 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
     const playerStats = players.map((player: any) => {
       const teamIds = playerToTeams.get(player.user_id as string) ?? new Set<string>();
       const playerMatches = matches.filter((match) => hasPlayerInMatch(match, player.user_id as string, teamIds));
-      const remainingMatches = playerMatches.filter((match) => match.status !== "validated");
+      const remainingMatches = playerMatches.filter((match) => !isLegacyMatchComplete(match));
       const nextMatch = remainingMatches
         .slice()
         .sort((a, b) => {

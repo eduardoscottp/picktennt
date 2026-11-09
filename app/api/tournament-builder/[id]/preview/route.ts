@@ -8,6 +8,7 @@ import { previewSchedule } from '@/lib/tournament-builder/schedule-preview';
 import { previewPlayerReplacement } from '@/lib/tournament-builder/player-replacement';
 import { previewBulkOperation } from '@/lib/tournament-builder/bulk-adjudication';
 import { previewPlayerWithdrawal } from '@/lib/tournament-builder/player-withdrawal';
+import { assertWebWithdrawalPolicy } from '@/lib/tournament-builder/web-withdrawal-policy';
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -19,6 +20,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw new DomainError('INVALID_REQUEST', 'Provide the proposed change.');
     const verifiedActor: CommandActor = { ...actor, role: snapshot.caller_role === 'owner' || snapshot.caller_role === 'admin' ? snapshot.caller_role : 'player' };
     const kind = new URL(request.url).searchParams.get('kind');
+    assertWebWithdrawalPolicy(kind === 'withdrawal' ? 'withdrawEntry' : kind === 'player-withdrawal' ? 'withdrawPlayer' : kind === 'correction' ? 'commitCorrection' : '', body as Record<string, unknown>, snapshot);
     const preview = kind === 'correction' ? previewCorrection(snapshot, verifiedActor, body as Record<string, unknown>) :
       kind === 'withdrawal' ? previewWithdrawal(snapshot, verifiedActor, body as Record<string, unknown>) :
       kind === 'revision' ? previewRevision(snapshot, verifiedActor, body as Record<string, unknown>) :

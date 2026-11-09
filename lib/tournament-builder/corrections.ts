@@ -9,6 +9,7 @@ import { analyzeTournament } from './runtime';
 import { generateElimination } from './modules/elimination';
 import type { FixtureResult, RuntimeOptions } from './types';
 import { graphDependencies, graphManualEntries, type GraphDefinition } from './graph-types';
+import { planTeamForfeit, previewTeamForfeit, TEAM_FORFEIT_POLICY } from './team-forfeit';
 import { analyzeGraph } from './graph-runtime';
 import type { GraphRuntimeOptions } from './graph-types';
 
@@ -170,9 +171,10 @@ export function planCorrection(snapshot: CommandSnapshot, actor: CommandActor, d
   if (preview.next_qualifier_ids) { const q = snapshot.stages.find(s => s.module_id === 'qualify'); if (q) stages.push({ id: q.id, output: { ...record(q.output), entryIds: preview.next_qualifier_ids } }); }
   return { effects: { matches, stages }, result: { source_match_id: preview.source_match_id, affected_match_ids: preview.affected_match_ids, replayed_match_ids: archive } };
 }
-export type WithdrawalTiming = 'before_lock' | 'locked_before_play' | 'incomplete_round_robin' | 'completed_rr_before_playoff' | 'playoffs_started' | 'direct_elimination';
+export type WithdrawalTiming = 'before_lock' | 'locked_before_play' | 'incomplete_round_robin' | 'completed_rr_before_playoff' | 'playoffs_started' | 'direct_elimination' | 'all_matches_forfeit';
 export interface WithdrawalPreview { preview_hash: string; event_revision: number; entry_id: string; reason: string; timing: WithdrawalTiming; affected_match_ids: string[]; preserved_match_ids: string[]; next_qualifier_ids?: string[]; empty_qualifier_slots?: boolean; affected_matches: StorageRow[]; preserved_matches: StorageRow[]; dupr_history_unknown: boolean; round_robin_results_excluded: boolean }
 export function previewWithdrawal(snapshot: CommandSnapshot, actor: CommandActor, data: Record<string, unknown>, now = new Date().toISOString()): WithdrawalPreview {
+  if (data.policy === TEAM_FORFEIT_POLICY) return previewTeamForfeit(snapshot, actor, data);
   keys(data, ['entry_id', 'reason']); const entryId = ref(data.entry_id), why = reason(data.reason); authorized(snapshot, actor, entryId);
   const admin = snapshot.event!.created_by === actor.id || actor.role === 'admin';
   if (!admin && (snapshot.event!.modular_state !== 'registration_open' || Date.parse(definition(snapshot).registration.closes_at) <= Date.parse(now))) fail('REGISTRATION_CLOSED', 'Registration is closed. Contact the tournament administrator to withdraw.');
@@ -189,6 +191,7 @@ export function previewWithdrawal(snapshot: CommandSnapshot, actor: CommandActor
   const timing: WithdrawalTiming = beforeLock ? 'before_lock' : !active.some(startedOrRecorded) ? 'locked_before_play' : playoffStarted ? 'playoffs_started' : rr && !rrComplete ? 'incomplete_round_robin' : rrComplete ? 'completed_rr_before_playoff' : 'direct_elimination';
   if (actor.clientId === 'web' && snapshot.matches.length && ['before_lock', 'locked_before_play'].includes(timing)) fail('STRUCTURE_LOCKED', 'A team cannot be removed on the website after games have been generated.');
   const involving = active.filter(m => [m.team_a_id, m.team_b_id].includes(entryId));
+  if (involving.some(m => ['score_entered', 'disputed'].includes(String(m.status)))) fail('UNRESOLVED_RESULT', 'Validate or adjudicate this team’s submitted results before withdrawing it.');
   const affected = timing === 'locked_before_play' ? active.map(m => m.id).sort() : descendants(snapshot, involving.filter(m => !accepted(m) || timing === 'incomplete_round_robin').map(m => m.id));
   const payload: Omit<WithdrawalPreview, 'preview_hash' | 'affected_matches' | 'preserved_matches' | 'dupr_history_unknown' | 'round_robin_results_excluded'> = { event_revision: Number(snapshot.event!.revision), entry_id: entryId, reason: why, timing, affected_match_ids: affected, preserved_match_ids: involving.filter(m => accepted(m) && timing !== 'incomplete_round_robin').map(m => m.id).sort() };
   if (timing === 'completed_rr_before_playoff' && elimination) {
@@ -206,6 +209,7 @@ export function previewWithdrawal(snapshot: CommandSnapshot, actor: CommandActor
   return { ...payload, preview_hash: definitionHash(payload), affected_matches: affectedMatches, preserved_matches: preservedMatches, dupr_history_unknown: [...affectedMatches, ...preservedMatches].some(mayHaveDuprHistory), round_robin_results_excluded: timing === 'incomplete_round_robin' };
 }
 export function planWithdrawal(snapshot: CommandSnapshot, actor: CommandActor, data: Record<string, unknown>, context: CommandContext): CommandPlan {
+  if (data.policy === TEAM_FORFEIT_POLICY) return planTeamForfeit(snapshot, actor, data, context.now);
   keys(data, ['entry_id', 'reason', 'preview_hash']);
   const preview = previewWithdrawal(snapshot, actor, { entry_id: data.entry_id, reason: data.reason }, context.now);
   if (preview.preview_hash !== data.preview_hash) fail('STALE_PREVIEW', 'Recompute withdrawal impact for the current revision.');

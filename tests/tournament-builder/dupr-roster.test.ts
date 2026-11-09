@@ -32,6 +32,11 @@ test('modular DUPR excludes replaced players while preserving actual players who
   const historical = [{ ...matches[0], player_a1_id: 'replaced', player_b1_id: 'actual-b' } as Match];
   assert.equal(await hasAmbiguousHistoricalRosters(db,historical,'singles'),false);
   assert.deepEqual([...await collectMatchUserIds(db,historical,true)],['replaced','actual-b']);
+  // Legacy upload/preflight also use historical IDs, never today's replacement roster.
+  assert.deepEqual([...await collectMatchUserIds(db,historical)],['replaced','actual-b']);
+  const legacyPlayed = await resolveMatchPlayers(db,historical,profiles);
+  assert.deepEqual(legacyPlayed[0].teamA.map(player=>player.userId),['replaced']);
+  assert.deepEqual(legacyPlayed[0].teamB.map(player=>player.userId),['actual-b']);
   const played = await resolveMatchPlayers(db,historical,profiles,true);
   assert.deepEqual(played[0].teamA.map(player=>player.userId),['replaced']);
   assert.deepEqual(played[0].teamB.map(player=>player.userId),['actual-b']);
