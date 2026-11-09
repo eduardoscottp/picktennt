@@ -99,7 +99,7 @@ export function DoublesTeamGrid({
           ? existingMemberIds
           : ["00000000-0000-0000-0000-000000000000"];
         const { data } = await supabase
-          .from("profiles")
+          .from("player_profiles")
           .select("id, first_name, last_name, username, dupr_id")
           .or(filter)
           .not("id", "in", `(${exclude.join(",")})`)
