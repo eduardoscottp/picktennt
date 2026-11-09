@@ -57,8 +57,8 @@ export default async function DashboardPage() {
       player_a2_id,
       player_b1_id,
       player_b2_id,
-      team_a:teams!matches_team_a_id_fkey(team_members(user_id)),
-      team_b:teams!matches_team_b_id_fkey(team_members(user_id))
+      team_a:teams!matches_team_a_id_fkey(team_members!team_members_team_id_fkey(user_id)),
+      team_b:teams!matches_team_b_id_fkey(team_members!team_members_team_id_fkey(user_id))
     `)
     .eq("status", "validated");
 

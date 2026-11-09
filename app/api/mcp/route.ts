@@ -43,6 +43,7 @@ async function handle(request: Request) {
       // independent of source IP and the OAuth token endpoint's keys.
       rateLimit: actorId => callRpc(db, 'tb_oauth_store', { p_action: 'rate_limit', p_payload: { bucket: 'token', key_hash: hashOAuthSecret(`mcp:user:${actorId}`) } }),
       forActor: actor => ({
+        searchTournaments: (query, offset) => callRpc(db, 'tb_search_tournaments', { p_actor_id: actor.id, p_client_id: actor.clientId, p_grant_id: actor.grantId, p_query: query, p_offset: offset }),
         ...(actor.permissions?.includes('player:manage') ? { player: { snapshot: (id:string) => getSnapshot(db,actor,id) } } : {}),
         ...(actor.permissions?.includes('admin:manage') ? { admin: {
           snapshot: (id:string) => authorizedSnapshot(actor,id),

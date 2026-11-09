@@ -99,11 +99,12 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
   let existingMemberIds: string[] = [];
 
   if (!isMixed) {
-    const { data: teamsRaw } = await supabase
+    const { data: teamsRaw, error: teamsError } = await supabase
       .from("teams")
-      .select("id, name, team_members(user_id, profile:player_profiles(first_name, last_name, avatar_url))")
+      .select("id, name, team_members!team_members_team_id_fkey(user_id, profile:player_profiles(first_name, last_name, avatar_url))")
       .eq("tournament_id", id)
       .order("created_at");
+    if (teamsError) throw new Error("Could not load tournament teams. Please try again.");
     allTeams = (teamsRaw ?? []) as any[];
 
     for (const t of allTeams) {
@@ -242,8 +243,8 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
       .from("matches")
       .select(`
         *,
-        team_a:teams!matches_team_a_id_fkey(id, name, team_members(user_id, profile:player_profiles(*))),
-        team_b:teams!matches_team_b_id_fkey(id, name, team_members(user_id, profile:player_profiles(*))),
+        team_a:teams!matches_team_a_id_fkey(id, name, team_members!team_members_team_id_fkey(user_id, profile:player_profiles(*))),
+        team_b:teams!matches_team_b_id_fkey(id, name, team_members!team_members_team_id_fkey(user_id, profile:player_profiles(*))),
         player_a1:player_profiles!matches_player_a1_id_fkey(*),
         player_a2:player_profiles!matches_player_a2_id_fkey(*),
         player_b1:player_profiles!matches_player_b1_id_fkey(*),

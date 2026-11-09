@@ -84,7 +84,7 @@ export function AdminGenerateRound({
   async function fetchTeamIds(supabase: ReturnType<typeof createClient>) {
     const { data, error } = await supabase
       .from("teams")
-      .select("id, team_members(user_id)")
+      .select("id, team_members!team_members_team_id_fkey(user_id)")
       .eq("tournament_id", tournament.id)
       .order("created_at", { ascending: true });
     if (error) throw error;

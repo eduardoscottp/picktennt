@@ -1,3 +1,4 @@
+import { AdminStatusActions } from "@/components/tournament/admin-status-actions";
 import { modularTournamentPage } from "@/lib/tournament-builder/server-page";
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
@@ -36,8 +37,8 @@ export default async function MatchesPage({ params }: { params: Promise<{ id: st
     .from("matches")
     .select(`
       *,
-      team_a:teams!matches_team_a_id_fkey(id, name, team_members(user_id, profile:player_profiles(*))),
-      team_b:teams!matches_team_b_id_fkey(id, name, team_members(user_id, profile:player_profiles(*))),
+      team_a:teams!matches_team_a_id_fkey(id, name, team_members!team_members_team_id_fkey(user_id, profile:player_profiles(*))),
+      team_b:teams!matches_team_b_id_fkey(id, name, team_members!team_members_team_id_fkey(user_id, profile:player_profiles(*))),
       player_a1:player_profiles!matches_player_a1_id_fkey(*),
       player_a2:player_profiles!matches_player_a2_id_fkey(*),
       player_b1:player_profiles!matches_player_b1_id_fkey(*),
@@ -108,6 +109,7 @@ export default async function MatchesPage({ params }: { params: Promise<{ id: st
       <MobileHeader title="Matches" back={`/tournaments/${id}`} />
       <div className="px-4 py-6 pb-32 space-y-6">
         <TournamentTopNav tournamentId={id} isAdmin={isAdmin} />
+        {isAdmin && tournament.status === "registration" && <AdminStatusActions tournament={tournament} hasExistingRounds={(rounds ?? []).length > 0} />}
         {(rounds ?? []).length === 0 && (
           <div className="text-center py-16 text-gray-400">
             <p className="font-semibold">No rounds scheduled yet</p>

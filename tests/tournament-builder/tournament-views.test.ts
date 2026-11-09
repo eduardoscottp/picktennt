@@ -308,3 +308,13 @@ test("completed Admin provides explicit DUPR selection and blocks results under 
   data.event!.results_under_review = true;
   assert.match(render("admin", data), /Resolve results under review before selecting or submitting/);
 });
+
+test("start tournament is prominent only for administrators of ready tournaments", () => {
+  for (const view of ["admin", "matches"] as const) {
+    const html = render(view, snapshot("ready"));
+    assert.equal((html.match(/Start tournament<\/button>/g) ?? []).length, 1);
+    assert.ok(html.indexOf('Start tournament') < html.indexOf(view === 'admin' ? 'id="entries"' : 'id="matches"'));
+    for (const state of ['registration_open', 'registration_closed', 'active', 'completed']) assert.doesNotMatch(render(view, snapshot(state)), /Start tournament/);
+    assert.doesNotMatch(render(view, snapshot('ready', 'player'), 'player'), /Start tournament/);
+  }
+});

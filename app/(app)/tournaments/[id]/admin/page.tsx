@@ -59,13 +59,14 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
     .order("succession_order");
 
   // For doubles/singles: fetch teams with members
-  const { data: teamsRaw } = tournament.type !== "mixed"
+  const { data: teamsRaw, error: teamsError } = tournament.type !== "mixed"
     ? await supabase
         .from("teams")
-        .select("id, name, team_members(user_id, profile:player_profiles(first_name, last_name, avatar_url))")
+        .select("id, name, team_members!team_members_team_id_fkey(user_id, profile:player_profiles(first_name, last_name, avatar_url))")
         .eq("tournament_id", id)
         .order("created_at")
     : { data: null };
+  if (teamsError) throw new Error("Could not load tournament teams. Please try again.");
   const teams = (teamsRaw ?? []) as any[];
   const teamsData = teams.map((t) => ({ id: t.id as string, memberCount: (t.team_members ?? []).length as number }));
 

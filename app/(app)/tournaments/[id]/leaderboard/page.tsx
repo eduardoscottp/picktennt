@@ -91,7 +91,7 @@ export default async function LeaderboardPage({ params }: { params: Promise<{ id
     // Fetch all teams in the tournament (not just ranked ones) to get member data
     const { data: teamsRaw } = await supabase
       .from("teams")
-      .select("*, team_members(user_id, profile:player_profiles(id, first_name, last_name, avatar_url, dupr_rating))")
+      .select("*, team_members!team_members_team_id_fkey(user_id, profile:player_profiles(id, first_name, last_name, avatar_url, dupr_rating))")
       .eq("tournament_id", id);
     teamsForDoubles = (teamsRaw ?? []) as any[];
 

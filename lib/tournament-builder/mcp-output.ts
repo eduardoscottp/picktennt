@@ -66,6 +66,7 @@ function tournament(value: unknown, args: Record<string, unknown>) {
 export function publicMcpResult(name: string, value: unknown, args: Record<string, unknown> = {}): unknown {
   if (name === 'list_modules' || name === 'get_capabilities') return value;
   if (name === 'admin_get_tournament' || name === 'owner_get_tournament' || name === 'player_get_tournament') return JSON.parse(JSON.stringify(tournament(value, args)));
+  if (name === 'search_tournaments') return project(value, { tournaments: [fields('id name status revision')], next_offset: scalar });
   if (name === 'get_draft') return project(value, { ...fields('tournament_id revision status'), definition });
   if (['validate_draft', 'preview_tournament'].includes(name)) return project(value, preview);
   if (name === 'get_review_link') return project(value, fields('tournament_id revision review_url publication_requires_owner_review'));
