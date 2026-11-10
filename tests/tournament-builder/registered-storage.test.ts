@@ -62,10 +62,10 @@ for (const doubles of [false,true]) test(`IDD-7 ${doubles?'Doubles':'Singles'} M
  await db.query("UPDATE connection_grants SET status='revoked',revoked_at=now() WHERE id=$1",[grantId]);
  await assert.rejects(callTournamentTool('player_get_tournament',{tournament_id:f.event},deps),{code:'GRANT_REVOKED'});
 });
-async function fixture(doubles=false, capacity=2, individualSlots=false) {
+async function fixture(doubles=false, capacity=2, individualSlots=false, mode: "open" | "approval" = "open") {
  const definition=JSON.parse(readFileSync('tests/tournament-builder/fixtures/tournament-definition.json','utf8'));
  definition.event.starts_at='2030-11-07T09:00:00-05:00';definition.event.expected_end_at='2030-11-07T12:30:00-05:00';
- definition.registration={...definition.registration,entry_type:doubles?'fixed_doubles':'singles',partner_consent:doubles&&!individualSlots,mode:'approval',min_entries:2,max_entries:capacity,closes_at:'2030-11-06T18:00:00-05:00'};
+ definition.registration={...definition.registration,entry_type:doubles?'fixed_doubles':'singles',partner_consent:doubles&&!individualSlots,mode,min_entries:2,max_entries:capacity,closes_at:'2030-11-06T18:00:00-05:00'};
  definition.nodes=definition.nodes.slice(0,4).concat({id:'result',module:'placements@1',from:'rank'});
  const created=await executeCommand(rpc,host,'createDraft',null,{operation_id:randomUUID(),data:{definition}});
  const event=created.tournament_id;let revision=created.revision;
@@ -439,7 +439,7 @@ test('Doubles SQL and backend reject unjoined profiles before allocating a roste
  assert.equal(snapshot.tournament_players.length,2);
 });
 test('SQL rejects nonadmins, stale/cross-event definition requests and duplicate active or pending membership',async()=>{
- const f=await fixture(),foreign=await fixture();
+ const f=await fixture(false,2,false,'approval'),foreign=await fixture();
  await assert.rejects(command(db,{...enrollment(f,[player]),actor:player}),/FORBIDDEN/);
  const stale=enrollment(f,[player]);stale.request.definition_id=foreign.definitionId;await assert.rejects(command(db,stale),/STALE_PREVIEW/);
  const forged=enrollment(f,[player]);forged.effects.teams[0].admin_definition_id=foreign.definitionId;await assert.rejects(command(db,forged),/INVALID_EFFECTS/);
@@ -588,7 +588,7 @@ test('replacement after a score preserves team and historical players while upda
  const envelope={operation_id:randomUUID(),expected_revision:Number(s.event!.revision),data};
  const receipt=await executeCommand(rpc,host,'replacePlayer',f.event,envelope);
  assert.deepEqual(await executeCommand(rpc,host,'replacePlayer',f.event,envelope),receipt);
- const after=await getSnapshot(rpc,host,f.event);
+ let after=await getSnapshot(rpc,host,f.event);
  assert.equal(after.teams.find(t=>t.id===team.id)?.id,team.id);
  assert.equal(after.team_members.find(m=>m.team_id===team.id&&m.user_id===fourth)?.membership_status,'active');
  assert.equal(after.team_members.find(m=>m.team_id===team.id&&m.user_id===player)?.membership_status,'cancelled');
@@ -596,6 +596,14 @@ test('replacement after a score preserves team and historical players while upda
  const played=after.matches.find(m=>m.id===match.id)!;
  assert.ok([played.player_a1_id,played.player_b1_id].includes(player));
  assert.equal(played.score_a,11);assert.equal(played.score_b,5);
+ const rename={team_id:team.id,name:'Renamed team',reason:'Organizer updated the name'};
+ await assert.rejects(command(db,{event:f.event,actor:stranger,command:'renameTeam',revision:Number(after.event!.revision),request:rename,effects:{teams:[{id:team.id,name:rename.name}]}}),/FORBIDDEN/);
+ await assert.rejects(command(db,{event:f.event,command:'renameTeam',revision:Number(after.event!.revision),request:rename,effects:{teams:[{id:team.id,name:rename.name,entry_state:'cancelled'}]}}),/INVALID_EFFECTS/);
+ await executeCommand(rpc,host,'renameTeam',f.event,{operation_id:randomUUID(),expected_revision:Number(after.event!.revision),data:rename});
+ const renamed=await getSnapshot(rpc,host,f.event);
+ assert.equal(renamed.teams.find(t=>t.id===team.id)?.name,rename.name);
+ assert.equal(renamed.event!.modular_state,after.event!.modular_state);assert.deepEqual(renamed.matches,after.matches);assert.deepEqual(renamed.standings,after.standings);
+ after=renamed;
  const viewer=await getSnapshot(rpc,{id:stranger,clientId:'web'},f.event);
  const viewed=viewer.matches.find(m=>m.id===match.id)!;
  const playerSide=viewed.player_a1_id===player?'a':'b';

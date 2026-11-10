@@ -33,6 +33,7 @@ function apply(s: CommandSnapshot, p: CommandPlan) {
 }
 function execute(s: CommandSnapshot, command: string, data = {}, actor = owner) { return apply(s, planCommand(s, actor, command, data, context)); }
 export function activeGroups(d = JSON.parse(readFileSync('../examples/four-groups-definition.json', 'utf8'))) {
+  d = structuredClone(d); d.registration.mode = 'open';
   const preview = previewDefinition(d, 1);
   let s = execute(empty(), 'createDraft', { definition: d });
   s = execute(s, 'publishTournament', { reviewed_definition_hash: preview.definitionHash, acknowledged_warning_codes: preview.warningCodes });

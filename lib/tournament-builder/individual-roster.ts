@@ -24,7 +24,7 @@ export function individualRoster(snapshot: CommandSnapshot) {
     allowed_actions: editable ? ['join', 'select_own_position', 'cancel_own_registration', ...(['owner', 'admin'].includes(String((snapshot as CommandSnapshot & { caller_role?: string }).caller_role)) ? ['place_registered_player', 'remove_registered_player', 'release_position'] : [])] : [],
     slots: Array.from({ length: definition.registration.max_entries }, (_, index) => {
       const team = snapshot.teams.find(row => Number(row.registration_slot) === index + 1);
-      const members = positionedMembers(snapshot.team_members.filter(row => row.team_id === team?.id && row.membership_status === 'active'), size);
+      const members = positionedMembers(snapshot.team_members.filter(row => row.team_id === team?.id && ['active', 'pending'].includes(String(row.membership_status))), size);
       return { slot_index: index + 1, positions: members.map((member, position) => ({
         position: position + 1, state: member ? 'occupied' : editable ? 'available' : 'locked',
         ...(member ? { profile_id: typeof member.user_id === 'string' ? member.user_id : undefined, display_name: typeof member.display_name === 'string' ? member.display_name : undefined } : {}),

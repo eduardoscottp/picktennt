@@ -12,7 +12,7 @@ test('SQL protects occupied explicit and legacy null positions while allowing va
   const rpc:RpcClient={async rpc(name,args){try{const keys=Object.keys(args);const result=await role(db,'service_role',owner,()=>db.query<{value:unknown}>(`SELECT public.${name}(${keys.map((key,i)=>`${key} => $${i+1}`).join(',')}) value`,Object.values(args).map(v=>v&&typeof v==='object'?JSON.stringify(v):v)));return {data:result.rows[0].value,error:null};}catch(error){return {data:null,error:{message:String(error)}};}}};
   const host={id:owner,clientId:'web'}, d=JSON.parse(readFileSync('tests/tournament-builder/fixtures/tournament-definition.json','utf8'));
   d.event.starts_at='2030-11-07T09:00:00-05:00';d.event.expected_end_at='2030-11-07T12:30:00-05:00';
-  d.registration={...d.registration,entry_type:'fixed_doubles',partner_consent:false,mode:'approval',min_entries:2,max_entries:2,closes_at:'2030-11-06T18:00:00-05:00'};
+  d.registration={...d.registration,entry_type:'fixed_doubles',partner_consent:false,mode:'open',min_entries:2,max_entries:2,closes_at:'2030-11-06T18:00:00-05:00'};
   d.nodes=d.nodes.slice(0,4).concat({id:'result',module:'placements@1',from:'rank'});
   const created=await executeCommand(rpc,host,'createDraft',null,{operation_id:randomUUID(),data:{definition:d}}), event=created.tournament_id;
   let s=await getSnapshot(rpc,host,event);

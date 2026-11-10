@@ -16,7 +16,7 @@ const owner = { id: randomUUID(), clientId: 'web' };
 const context = { now: '2026-10-28T16:00:00Z', id: randomUUID, draw: (ids: readonly string[]) => [...ids] };
 const definition = (): GraphDefinition => {
   const d = JSON.parse(readFileSync('../examples/four-groups-definition.json', 'utf8'));
-  d.registration.min_entries = 8;
+  d.registration.min_entries = 8; d.registration.mode = 'open';
   return d;
 };
 function execute(s: CommandSnapshot, command: string, data: Record<string, unknown> = {}, actor = owner) {

@@ -17,7 +17,7 @@ const rpc: RpcClient = { async rpc(name,args) { try { const keys=Object.keys(arg
 async function fixture(withMatches=true) {
  const definition=JSON.parse(readFileSync('tests/tournament-builder/fixtures/tournament-definition.json','utf8'));
  definition.event.starts_at='2030-11-07T09:00:00-05:00';definition.event.expected_end_at='2030-11-07T12:30:00-05:00';
- definition.registration={...definition.registration,entry_type:'singles',partner_consent:false,mode:'approval',min_entries:2,max_entries:4,closes_at:'2030-11-06T18:00:00-05:00'};
+ definition.registration={...definition.registration,entry_type:'singles',partner_consent:false,mode:'open',min_entries:2,max_entries:4,closes_at:'2030-11-06T18:00:00-05:00'};
  definition.nodes=definition.nodes.slice(0,4).concat({id:'result',module:'placements@1',from:'rank'});
  const created=await executeCommand(rpc,host,'createDraft',null,{operation_id:randomUUID(),data:{definition}});
  const event=created.tournament_id;

@@ -4,6 +4,7 @@ import test from 'node:test';
 import { planCommand, planInternalRuntime, type CommandActor, type CommandContext, type CommandSnapshot, type CommandPlan, type StorageRow } from '../../lib/tournament-builder/commands';
 import { previewCorrection, previewWithdrawal } from '../../lib/tournament-builder/corrections';
 import { definitionHash, requestHash } from '../../lib/tournament-builder/requests';
+import { planPlayerReplacement, previewPlayerReplacement } from '../../lib/tournament-builder/player-replacement';
 
 let counter = 100;
 const id = () => `00000000-0000-4000-8000-${String(counter++).padStart(12, '0')}`;
@@ -49,6 +50,63 @@ function ready(): CommandSnapshot {
   s = apply(s, planCommand(s, admin, 'closeRegistration', {}, context));
   return apply(s, planCommand(s, admin, 'lockRoster', { reviewed_roster_revision: s.event!.roster_revision }, context));
 }
+
+test('player position actions keep their distinct effects and generation rejects incomplete teams', () => {
+  const d = definition(); d.registration.entry_type = 'fixed_doubles'; d.registration.partner_consent = false;
+  let s = published(d);
+  s = apply(s, planCommand(s, a, 'joinTournament', { definition_id: s.event!.definition_id, consent: true, slot_index: 1, position: 1 }, context));
+  s = apply(s, planCommand(s, b, 'joinTournament', { definition_id: s.event!.definition_id, consent: true, slot_index: 1, position: 2 }, context));
+  const teamId = s.teams[0].id;
+  const released = apply(s, planCommand(s, admin, 'removeRegisteredPlayer', { user_id: a.id, release_only: true }, context));
+  assert.equal(released.tournament_players.find(row => row.user_id === a.id)?.status, 'approved');
+  assert.equal(released.team_members.find(row => row.user_id === a.id)?.membership_status, 'cancelled');
+  assert.equal(released.teams.find(row => row.id === teamId)?.entry_state, 'approved');
+  const removed = apply(s, planCommand(s, admin, 'removeRegisteredPlayer', { user_id: a.id, release_only: false }, context));
+  assert.equal(removed.tournament_players.find(row => row.user_id === a.id)?.status, 'rejected');
+  assert.equal(removed.tournament_players.find(row => row.user_id === b.id)?.status, 'approved');
+  const other = id();
+  const proposal = { team_id: teamId, old_user_id: a.id, new_user_id: other, reason: 'Replace player' };
+  const review = previewPlayerReplacement(s, admin, proposal);
+  const replaced = apply(s, planPlayerReplacement(s, admin, { ...proposal, preview_hash: review.preview_hash }, context));
+  assert.equal(replaced.team_members.find(row => row.user_id === a.id)?.membership_status, 'cancelled');
+  assert.equal(replaced.team_members.find(row => row.user_id === other)?.player_slot, 1);
+  assert.equal(replaced.teams[0].id, teamId);
+  const closed = apply(released, planCommand(released, admin, 'closeRegistration', {}, context));
+  assert.throws(() => planCommand(closed, admin, 'lockRoster', { reviewed_roster_revision: closed.event!.roster_revision }, context), { code: 'INCOMPLETE_ROSTER' });
+});
+
+test('approval-mode individual requests hold a position until approval or rejection', () => {
+  const d = definition(); d.registration.mode = 'approval'; d.registration.entry_type = 'fixed_doubles'; d.registration.partner_consent = false;
+  let s = published(d);
+  const request = { definition_id: s.event!.definition_id, consent: true, slot_index: 1, position: 1 };
+  s = apply(s, planCommand(s, a, 'joinTournament', request, context));
+  assert.equal(s.tournament_players.find(row => row.user_id === a.id)?.status, 'pending');
+  assert.equal(s.team_members.find(row => row.user_id === a.id)?.membership_status, 'pending');
+  assert.doesNotThrow(() => planCommand(s, admin, 'approveIndividual', { user_id: a.id }, { ...context, now: d.registration.closes_at }));
+  const staleRules = structuredClone(s);
+  staleRules.team_members.find(row => row.user_id === a.id)!.consented_definition_id = id();
+  assert.throws(() => planCommand(staleRules, admin, 'approveIndividual', { user_id: a.id }, context), { code: 'INCOMPLETE_ROSTER' });
+  assert.doesNotThrow(() => planCommand(staleRules, admin, 'rejectIndividual', { user_id: a.id, reason: 'Rules changed' }, context));
+  assert.throws(() => planCommand(s, b, 'joinTournament', request, context), { code: 'SLOT_FULL' });
+  assert.throws(() => planCommand(s, b, 'approveIndividual', { user_id: a.id }, context), { code: 'FORBIDDEN' });
+  const rejected = apply(s, planCommand(s, admin, 'rejectIndividual', { user_id: a.id, reason: 'Not eligible' }, context));
+  assert.equal(rejected.tournament_players.find(row => row.user_id === a.id)?.status, 'rejected');
+  assert.equal(rejected.team_members.find(row => row.user_id === a.id)?.membership_status, 'cancelled');
+  const next = apply(rejected, planCommand(rejected, b, 'joinTournament', request, context));
+  const approved = apply(next, planCommand(next, admin, 'approveIndividual', { user_id: b.id }, context));
+  assert.equal(approved.tournament_players.find(row => row.user_id === b.id)?.status, 'approved');
+  assert.equal(approved.team_members.find(row => row.user_id === b.id)?.membership_status, 'active');
+  assert.equal(approved.team_members.find(row => row.user_id === b.id)?.player_slot, 1);
+});
+
+test('renaming an active team changes no games or results', () => {
+  const s = ready(), teamId = s.teams[0].id;
+  s.event!.modular_state = 'active';
+  s.matches[0] = { ...s.matches[0], status: 'validated', score_a: 11, score_b: 5 };
+  const plan = planCommand(s, admin, 'renameTeam', { team_id: teamId, name: '  The Aces  ', reason: 'Team requested a name' }, context);
+  assert.deepEqual(plan.effects, { teams: [{ id: teamId, name: 'The Aces' }] });
+  assert.throws(() => planCommand(s, a, 'renameTeam', { team_id: teamId, name: 'Other', reason: 'No access' }, context), { code: 'FORBIDDEN' });
+});
 test('v1 runtime preserves disciplinary exclusion across later recalculation', () => {
   const s=ready(), team=s.teams[0].id;
   const excluded={...s,disciplinary_excluded_team_ids:[team]};
@@ -118,8 +176,8 @@ test('individual slots require join first, move one player atomically, and allow
   assert.equal(s.team_members.find(row => row.user_id === b.id && row.membership_status === 'active'), undefined);
   assert.throws(() => planCommand(s, b, 'selectEntrySlot', { slot_index: 1 }, context), { code: 'NOT_REGISTERED' });
 });
-test('individual join approves instantly and all self-withdrawal routes stop at registration closure', () => {
-  const d = definition(); d.registration.entry_type = 'fixed_doubles'; d.registration.mode = 'approval';
+test('open individual registration approves instantly and self-withdrawal stops at closure', () => {
+  const d = definition(); d.registration.entry_type = 'fixed_doubles'; d.registration.mode = 'open';
   let s = published(d);
   const joined = planCommand(s, a, 'joinTournament', { definition_id: s.event!.definition_id, consent: true, slot_index: 1, position: 1 }, context);
   assert.equal(joined.result.entry_state, 'approved');

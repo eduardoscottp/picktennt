@@ -33,18 +33,16 @@ test('after play only name venue and reason controls are available and display o
   assert.match(html, /<button[^>]*disabled=""[^>]*>Save name and venue/);
 });
 
-test('before play exposes existing roster edits and requires review before revision confirmation', () => {
+test('before play keeps roster edits on team cards and requires revision review', () => {
   const html = renderToStaticMarkup(createElement(RevisionEditor, { snapshot: base, definition, disabled: false, run: async () => {} }));
-  assert.match(html, /Team One/);
-  assert.match(html, /Remove this entry/);
-  assert.match(html, /do not record personal consent/);
+  assert.doesNotMatch(html, /Remove this entry|Approved teams/);
   assert.match(html, /Review proposed revision/);
   assert.doesNotMatch(html, /Confirm reviewed revision and close registration/);
 });
 
 test('schedule generation requires an actual schedule preview even without group assignments', () => {
   const html = renderToStaticMarkup(createElement(GroupFinalization, { eventId: 'event', rosterRevision: 1, groups: [], entries: base.teams, reviewed: true, pending: false, onChange: () => {}, onGenerate: () => {} }));
-  assert.match(html, /Preview matches and team rest/);
+  assert.match(html, /Generate games: review schedule/);
   assert.doesNotMatch(html, /Confirm reviewed schedule and generate matches|Lock reviewed roster and generate matches/);
 });
 
