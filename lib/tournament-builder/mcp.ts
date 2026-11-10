@@ -93,7 +93,7 @@ export function createTournamentMcpServer(dependencies: McpDependencies): Server
       const data = publicMcpResult(request.params.name, await callTournamentTool(request.params.name, request.params.arguments ?? {}, dependencies), request.params.arguments ?? {});
       assertPublicMcpOutput(data);
       const question = confirmationQuestion(request.params.name, data, request.params.arguments ?? {});
-      return { content: [{ type: 'text', text: question ?? JSON.stringify(data) }], ...(question ? { structuredContent: { ...data as Record<string, unknown>, confirmation_question: question } } : {}) };
+      return { content: [...(question ? [{ type: 'text' as const, text: question }] : []), { type: 'text' as const, text: JSON.stringify(data) }], ...(question ? { structuredContent: { ...data as Record<string, unknown>, confirmation_question: question } } : {}) };
     } catch (error) {
       const data = mcpError(error);
       return { isError: true, content: [{ type: 'text', text: data.code === 'CONFIRMATION_REQUIRED' ? confirmationQuestion(request.params.name, {}, request.params.arguments ?? {}) ?? 'Apply this reviewed change and its consequences?' : JSON.stringify(data) }] };
