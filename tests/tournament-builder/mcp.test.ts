@@ -49,8 +49,10 @@ test('confirmation previews keep machine fields in content for clients without s
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
   try {
     const result = await client.callTool({ name: 'admin_preview_revision', arguments: { tournament_id: id, data: { definition, reason: 'Increase capacity' } } });
-    assert.match((result.content[0] as { text: string }).text, /Apply these tournament changes/);
-    const machineContent = JSON.parse((result.content[1] as { text: string }).text) as { preview_hash: string };
+    assert.ok(Array.isArray(result.content));
+    const content = result.content as Array<{ text?: string }>;
+    assert.match(content[0]?.text ?? '', /Apply these tournament changes/);
+    const machineContent = JSON.parse(content[1]?.text ?? '') as { preview_hash: string };
     assert.equal(machineContent.preview_hash, previewHash);
   } finally { await client.close(); await server.close(); }
 });
