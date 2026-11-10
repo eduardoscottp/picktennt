@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { callTournamentTool, createTournamentMcpServer, type McpDependencies } from '../../lib/tournament-builder/mcp';
@@ -26,6 +27,31 @@ test('real MCP client initializes, discovers bounded tools and receives missing 
     const mutation = await client.callTool({ name: 'create_draft', arguments: { operation_id: id, data: { definition: { event: { name: 'Saturday' } } } } });
     assert.equal(mutation.isError, undefined);
     assert.ok(JSON.stringify(mutation).includes('definition_id'));
+  } finally { await client.close(); await server.close(); }
+});
+
+test('confirmation previews keep machine fields in content for clients without structured content support', async () => {
+  const definition = JSON.parse(readFileSync('tests/tournament-builder/fixtures/tournament-definition.json', 'utf8'));
+  const previewHash = 'a'.repeat(64);
+  const adminDeps: McpDependencies = {
+    ...deps,
+    admin: {
+      snapshot: async () => ({}),
+      findPlayer: async () => ({}),
+      previewCorrection: async () => ({}),
+      previewWithdrawal: async () => ({}),
+      previewRevision: async () => ({ event_revision: 4, preview_hash: previewHash, reason: 'Increase capacity', next_state: 'registration_closed', definition, entries: [], approved_entries: [], affected_match_ids: [], affected_nodes: [], warnings: [] }),
+    },
+  };
+  const server = createTournamentMcpServer(adminDeps);
+  const client = new Client({ name: 'content-only-client', version: '1' });
+  const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  try {
+    const result = await client.callTool({ name: 'admin_preview_revision', arguments: { tournament_id: id, data: { definition, reason: 'Increase capacity' } } });
+    const content = JSON.parse((result.content[0] as { text: string }).text) as { preview_hash: string; confirmation_question: string };
+    assert.equal(content.preview_hash, previewHash);
+    assert.match(content.confirmation_question, /Apply these tournament changes/);
   } finally { await client.close(); await server.close(); }
 });
 
