@@ -73,7 +73,7 @@ export function IndividualRegistration({ snapshot, actorId, definitionId, double
     {!admin && pendingPlayer && <div className="rounded-xl bg-amber-50 p-4 text-sm"><p>Your request is pending organizer approval. Your selected position is held.</p>{!locked && <Button variant="outline" disabled={disabled} onClick={() => { if (window.confirm("Cancel your pending request and release your position?")) void run("cancelRegistration", {}); }}>Cancel request</Button>}</div>}
     {!admin && !pendingPlayer && !locked && (!player ? <div className="rounded-xl bg-gray-50 p-4"><h3 className="font-semibold">Join tournament</h3><p className="mt-1 text-sm text-gray-600">Choose an open position to join. Your name is already known from your Picktennt account.</p></div> : <div className="rounded-xl bg-gray-50 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold">Choose your {doubles ? "team" : "entry"} position</h3><p className="text-sm text-gray-600">{activeSlot > 0 ? `Your current position is ${doubles ? "Team" : "Entry"} ${activeSlot}. Choose another open position to move.` : "Choose an open position."}</p></div><Button variant="outline" disabled={disabled} onClick={() => { if (window.confirm("Leave this tournament and free your position?")) void run("cancelRegistration", {}); }}>Leave tournament</Button></div></div>)}
     <Dialog open={!!joinTarget} onOpenChange={open => { if (!open) { setJoinTarget(null); setAccepted(false); } }}>
-      <DialogContent>
+      <DialogContent className="mx-0 w-[calc(100%-2rem)]">
         <DialogHeader><DialogTitle>Join tournament</DialogTitle><DialogDescription>Do you want to join {doubles ? "Team" : "Entry"} {joinTarget?.slot}, position {joinTarget?.position}?</DialogDescription></DialogHeader>
         <label className="block text-sm"><input type="checkbox" className="mr-2" checked={accepted} onChange={event => setAccepted(event.target.checked)} />I accept the published rules.</label>
         {!joinPositionOpen && <p role="status" className="mt-3 text-sm text-amber-800">This position is no longer available. Please choose another.</p>}
@@ -110,4 +110,3 @@ export function IndividualRegistration({ snapshot, actorId, definitionId, double
     })}</div>
   </div>;
 }
-

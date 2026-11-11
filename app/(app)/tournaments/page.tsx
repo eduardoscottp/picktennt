@@ -35,7 +35,7 @@ export default async function TournamentsPage({
           <input
             name="q"
             defaultValue={q}
-            placeholder="Search by tournament name or full ID"
+            placeholder="Search by name, tournament code or ID"
             className="w-full h-11 pl-10 pr-4 rounded-xl border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
@@ -70,4 +70,3 @@ export default async function TournamentsPage({
     </div>
   );
 }
-
