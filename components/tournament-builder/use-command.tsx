@@ -39,19 +39,19 @@ export function useTournamentCommand(actorId: string, eventId: string | undefine
         const rejected = rejectionFeedback(outcome);
         clear(); setMessage(rejected.message); setFeedback({ matchId, message: rejected.message });
         if (rejected.refresh && eventId) await onSuccess({ operation_id: operation.envelope.operation_id, tournament_id: eventId, revision, status: "stale", data: {} });
-      } else { clear(); await onSuccess(outcome.receipt); }
+      } else { clear(); await onSuccess(outcome.receipt); return outcome.receipt; }
     } catch { const message = "Your action may have completed. Reload to review the current tournament."; setMessage(message); setFeedback({ matchId, message }); }
     finally { locked.current = false; setBusy(false); }
   }
-  async function run(command: string, data: Record<string, unknown>) {
+  async function run(command: string, data: Record<string, unknown>, expectedRevision = revision) {
     if (!ready || pending || locked.current) return;
     const operation: PendingOperation = {
       command, url: eventId ? `/api/tournament-builder/${eventId}/commands?command=${encodeURIComponent(command)}` : "/api/tournament-builder/drafts",
-      envelope: { operation_id: crypto.randomUUID(), ...(eventId ? { expected_revision: revision } : {}), data },
+      envelope: { operation_id: crypto.randomUUID(), ...(eventId ? { expected_revision: expectedRevision } : {}), data },
     };
     try { sessionStorage.setItem(key, JSON.stringify(operation)); changed(); }
     catch { setMessage("Your browser could not save this action for recovery. No change was sent."); return; }
-    await send(operation);
+    return await send(operation);
   }
   async function recover() {
     if (!pending || locked.current) return;
