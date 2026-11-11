@@ -13,6 +13,18 @@ export function positionedMembers(members: StorageRow[], size: number): (Storage
   return positions;
 }
 
+/** Show older teams without stored registration slots in otherwise empty display positions. */
+export function displayRosterTeams(teams: StorageRow[], capacity: number, includeUnslotted: boolean): (StorageRow | undefined)[] {
+  const slots = Array.from({ length: capacity }, (_, index) => teams.find(team => Number(team.registration_slot) === index + 1));
+  if (includeUnslotted) {
+    for (const team of teams.filter(row => row.registration_slot == null && row.entry_state === 'approved')) {
+      const empty = slots.findIndex(row => !row);
+      if (empty < 0) slots.push(team); else slots[empty] = team;
+    }
+  }
+  return slots;
+}
+
 export function individualRoster(snapshot: CommandSnapshot) {
   const definition = resolvedDefinition(snapshot)?.definition as TournamentDefinition | undefined;
   if (!definition?.registration || !Number.isInteger(definition.registration.max_entries) || definition.registration.max_entries < 1 || definition.registration.max_entries > 16) return null;

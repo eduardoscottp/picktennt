@@ -1,6 +1,6 @@
 "use client";
 
-import { individualRoster, positionedMembers } from "@/lib/tournament-builder/individual-roster";
+import { displayRosterTeams, individualRoster, positionedMembers } from "@/lib/tournament-builder/individual-roster";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -77,9 +77,8 @@ export function IndividualRegistration({ snapshot, actorId, definitionId, double
       <Button disabled={disabled || !adminPlayerId || !reason.trim()} onClick={() => void assign(target.slot, target.position)}>Place selected player</Button>
       <Button variant="outline" onClick={() => { setTarget(null); setAdminPlayerId(""); }}>Cancel</Button>
     </section>}
-    <div className="grid grid-cols-2 gap-3">{Array.from({ length: maxEntries }, (_, index) => {
+    <div className="grid grid-cols-2 gap-3">{displayRosterTeams(snapshot.teams, maxEntries, !admin && locked).map((team, index) => {
       const slotIndex = index + 1;
-      const team = snapshot.teams.find(row => Number(row.registration_slot) === slotIndex);
       const roster = positionedMembers(members(team), slotsPerTeam);
       const full = roster.every(Boolean);
       return <Card key={slotIndex} aria-label={doubles ? `Team ${slotIndex}` : `Entry ${slotIndex}`} className={`overflow-hidden ${full ? "border-green-200" : ""}`}>
