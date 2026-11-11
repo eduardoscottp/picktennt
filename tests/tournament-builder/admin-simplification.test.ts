@@ -3,6 +3,7 @@ import test from 'node:test';
 import type { CommandSnapshot } from '../../lib/tournament-builder/commands';
 import { generationProblems } from '../../lib/tournament-builder/generation-readiness';
 import { tournamentTeamLabel } from '../../lib/tournament-builder/team-label';
+import { displayRosterTeams } from '../../lib/tournament-builder/individual-roster';
 
 const snapshot = (): CommandSnapshot => ({
   event: { id: 'event', definition_id: 'definition' }, definitions: [], stages: [], rounds: [], matches: [], standings: [], tournament_players: [],
@@ -13,6 +14,14 @@ const snapshot = (): CommandSnapshot => ({
     { id: 'b1', team_id: 'b', user_id: 'b1', membership_status: 'active', player_slot: 1, display_name: 'Sam Smith', consented_at: 'now', consented_definition_id: 'definition' },
     { id: 'b2', team_id: 'b', user_id: 'b2', membership_status: 'active', player_slot: 2, display_name: 'Lee Jones', consented_at: 'now', consented_definition_id: 'definition' },
   ],
+});
+
+test('locked overview includes older teams without stored slots without displacing numbered teams', () => {
+  const s = snapshot();
+  s.teams[0].registration_slot = null;
+  assert.deepEqual(displayRosterTeams(s.teams, 2, true).map(team => team?.id), ['a', 'b']);
+  assert.equal(tournamentTeamLabel(s, displayRosterTeams(s.teams, 2, true)[0], true, 1), 'Eduardo / Ana');
+  assert.deepEqual(displayRosterTeams(s.teams, 2, false).map(team => team?.id), [undefined, 'b']);
 });
 
 test('team names follow positions, singles retain full names, and custom and empty names remain stable', () => {
