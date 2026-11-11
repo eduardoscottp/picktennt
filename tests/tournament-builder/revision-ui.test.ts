@@ -40,9 +40,9 @@ test('before play keeps roster edits on team cards and requires revision review'
   assert.doesNotMatch(html, /Confirm reviewed revision and close registration/);
 });
 
-test('schedule generation requires an actual schedule preview even without group assignments', () => {
-  const html = renderToStaticMarkup(createElement(GroupFinalization, { eventId: 'event', rosterRevision: 1, groups: [], entries: base.teams, reviewed: true, pending: false, onChange: () => {}, onGenerate: () => {} }));
-  assert.match(html, /Generate games: review schedule/);
+test('schedule generation is available without a review checkbox', () => {
+  const html = renderToStaticMarkup(createElement(GroupFinalization, { rosterRevision: 1, groups: [], entries: base.teams, pending: false, onGenerate: () => {} }));
+  assert.match(html, />Generate games<\/button>/);
   assert.doesNotMatch(html, /Confirm reviewed schedule and generate matches|Lock reviewed roster and generate matches/);
 });
 

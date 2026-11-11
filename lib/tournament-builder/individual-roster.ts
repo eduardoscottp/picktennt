@@ -44,3 +44,8 @@ export function individualRoster(snapshot: CommandSnapshot) {
     }),
   };
 }
+
+export function adminPlacement(members: StorageRow[], userId: string, locked: boolean): 'add' | 'move' | 'blocked' {
+  const current = members.find(row => row.user_id === userId && ['active', 'pending'].includes(String(row.membership_status)));
+  return !current ? 'add' : current.membership_status === 'active' && !locked ? 'move' : 'blocked';
+}
