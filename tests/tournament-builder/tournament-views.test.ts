@@ -287,7 +287,7 @@ test("an individual approval hold is visible to the organizer and pending player
   assert.doesNotMatch(player, /Join this spot/);
 });
 
-test("the same automatic doubles name appears across tournament pages", () => {
+test("automatic doubles names remain on team pages while matches show players", () => {
   const data = snapshot("active");
   data.teams = [{ id: "a", name: "Team 1", registration_slot: 1, entry_state: "approved" }, { id: "b", name: "Team 2", registration_slot: 2, entry_state: "approved" }];
   data.team_members = [
@@ -296,7 +296,10 @@ test("the same automatic doubles name appears across tournament pages", () => {
     { id: "b1", team_id: "b", user_id: "b1", membership_status: "active", player_slot: 1, display_name: "Luis Rojas" },
     { id: "b2", team_id: "b", user_id: "b2", membership_status: "active", player_slot: 2, display_name: "Mia Smith" },
   ];
-  for (const view of ["overview", "admin", "matches", "standings"] as const) assert.match(render(view, data), /Eduardo \/ Ana/);
+  for (const view of ["overview", "admin", "standings"] as const) assert.match(render(view, data), /Eduardo \/ Ana/);
+  const matches = render("matches", data);
+  assert.match(matches, />Eduardo Scott<\/p>/); assert.match(matches, />Ana Ravelo<\/p>/);
+  assert.doesNotMatch(matches, /Eduardo \/ Ana/);
 });
 
 test("registered-account form starts disabled and binds only distinct resolved profile IDs, current definition and admin audit reason", () => {
