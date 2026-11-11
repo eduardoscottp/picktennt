@@ -36,6 +36,7 @@ const fields: Record<string, readonly string[]> = {
   addRegisteredEntry: ['definition_id', 'player_ids', 'entry_name', 'reason'],
   addAdministrator: ['user_id', 'reason', 'confirmed_owner_action', 'reviewed_action_hash'], removeAdministrator: ['user_id', 'reason', 'confirmed_owner_action', 'reviewed_action_hash'],
   approveEntry: ['entry_id'], rejectEntry: ['entry_id', 'reason'], cancelEntry: ['entry_id'],
+  approveIndividual: ['user_id'], rejectIndividual: ['user_id', 'reason'], renameTeam: ['team_id', 'name', 'reason'],
   closeRegistration: [], reopenRegistration: [], lockRoster: ['reviewed_roster_revision', 'nodes', 'group_assignments', 'preview_hash'], startTournament: [],
   startMatch: ['match_id', 'rest_override_reason'], submitScore: ['match_id', 'score_a', 'score_b'], confirmScore: ['match_id', 'result_revision'],
   disputeScore: ['match_id', 'result_revision', 'reason'], attestScore: ['match_id', 'score_a', 'score_b', 'outcome_kind', 'winner_entry_id', 'reason'],
@@ -164,6 +165,7 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
     const active = work.team_members.filter(row => row.user_id === userId && row.membership_status === 'active');
     let target: StorageRow | undefined = work.teams.find(row => Number(row.registration_slot) === slot);
     if (work.matches.length) fail('STRUCTURE_LOCKED', 'Player positions are locked after fixtures are generated.');
+    if (target && target.entry_state !== 'approved') fail('INVALID_STATE', 'This team is not available.');
     const size = d.registration.entry_type === 'singles' ? 1 : 2;
     const occupied = positionedMembers(target ? members(target.id) : [], size);
     const position = data.position === undefined ? occupied.findIndex(row => !row) + 1 : integer(data.position, 'position');
@@ -389,14 +391,40 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
       effects.definition = { id: currentDefinition()!.id, schema_version: d.schema_version === '2.0' ? 2 : 1, definition: d, status: 'published', canonical_hash: definitionHash(d), approved_at: iso };
       event({ definition_id: currentDefinition()!.id, name: d.event.name, modular_state: 'registration_open', court_count: d.event.courts, max_players: d.registration.max_entries * (d.registration.entry_type === 'singles' ? 1 : 2), type: d.registration.entry_type === 'singles' ? 'singles' : 'doubles', is_public: d.event.visibility === 'public', is_open: d.registration.mode === 'open', timezone: d.event.timezone, court_name: d.event.venue_name, tournament_date: d.event.starts_at.slice(0, 10), rules_text: JSON.stringify(d.policies) });
       for (const node of d.nodes) put('stages', { id: context.id(), definition_id: currentDefinition()!.id, node_id: node.id, module_id: node.module.split('@')[0], module_version: Number(node.module.split('@')[1]), state: 'waiting', input_revision: 0, output_revision: 0, output: {}, blocked_code: null });
+    } else if (command === 'renameTeam') {
+      needAdmin(); state('registration_open', 'registration_closed', 'ready', 'active', 'completed');
+      const teamId = reference(data.team_id, 'team_id'), name = text(data.name, 'a team name', 120);
+      text(data.reason, 'a reason', 1000);
+      if (!work.teams.some(team => team.id === teamId && team.entry_state === 'approved')) fail('NOT_FOUND', 'Choose an active team.');
+      put('teams', { id: teamId, name }); result = { team_id: teamId };
     } else if (command === 'joinTournament') {
       admissionWindow(d); consent(d);
       const existing = work.tournament_players.find(player => player.user_id === actor.id);
-      if (existing?.status === 'approved') fail('DUPLICATE_ENTRY', 'You already joined this tournament.');
-      if (work.tournament_players.filter(player => player.status === 'approved').length >= d.registration.max_entries * (d.registration.entry_type === 'singles' ? 1 : 2)) fail('CAPACITY_FULL', 'The tournament has no available player positions.');
+      if (existing && ['approved', 'pending'].includes(String(existing.status))) fail('DUPLICATE_ENTRY', 'You already joined or requested this tournament.');
+      if (work.tournament_players.filter(player => player.status === 'approved' || (d.registration.mode === 'approval' && player.status === 'pending')).length >= d.registration.max_entries * (d.registration.entry_type === 'singles' ? 1 : 2)) fail('CAPACITY_FULL', 'The tournament has no available player positions.');
+      if (d.registration.mode === 'approval' && (data.slot_index === undefined || data.position === undefined)) fail('INVALID_REQUEST', 'Choose the position to hold while approval is pending.');
       put('tournament_players', { id: existing?.id ?? context.id(), user_id: actor.id, status: 'approved', joined_via: 'link' });
       result = { player_status: 'approved' };
       if (data.slot_index !== undefined) { placeRegisteredPlayer(actor.id, slotIndex()); bumpRoster(); }
+      if (d.registration.mode === 'approval') {
+        const held = work.team_members.find(member => member.user_id === actor.id && member.membership_status === 'active');
+        if (!held) fail('INVALID_STATE', 'The requested position could not be held.');
+        put('team_members', { id: held!.id, membership_status: 'pending' });
+        put('tournament_players', { id: work.tournament_players.find(player => player.user_id === actor.id)!.id, status: 'pending' });
+        result = { ...result, player_status: 'pending', entry_state: 'pending_approval' };
+      }
+    } else if (command === 'approveIndividual' || command === 'rejectIndividual') {
+      needAdmin(); state('registration_open');
+      if (d.registration.mode !== 'approval' || work.matches.length) fail('INVALID_STATE', 'Individual approval is unavailable in this tournament state.');
+      const userId = reference(data.user_id, 'user_id');
+      if (command === 'rejectIndividual') text(data.reason, 'a rejection reason', 1000);
+      const player = work.tournament_players.find(row => row.user_id === userId && row.status === 'pending');
+      const held = work.team_members.filter(row => row.user_id === userId && row.membership_status === 'pending');
+      if (!player || held.length !== 1 || !Number.isInteger(held[0].player_slot) || !work.teams.some(team => team.id === held[0].team_id && team.entry_state === 'approved' && Number.isInteger(team.registration_slot))) fail('NOT_FOUND', 'Choose a pending individual position request.');
+      if (command === 'approveIndividual' && (!held[0].consented_at || held[0].consented_definition_id !== currentDefinition()?.id)) fail('INCOMPLETE_ROSTER', 'The player must accept the current tournament rules.');
+      put('team_members', { id: held[0].id, membership_status: command === 'approveIndividual' ? 'active' : 'cancelled' });
+      put('tournament_players', { id: player!.id, user_id: userId, status: command === 'approveIndividual' ? 'approved' : 'rejected', joined_via: player!.joined_via ?? 'link' });
+      bumpRoster(); result = { user_id: userId, entry_id: held[0].team_id, player_status: command === 'approveIndividual' ? 'approved' : 'rejected' };
     } else if (command === 'selectEntrySlot' || command === 'placeRegisteredPlayer') {
       admissionWindow(d);
       const slot = slotIndex();
@@ -409,7 +437,7 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
       if (work.matches.length) fail('STRUCTURE_LOCKED', 'Player positions are locked after fixtures are generated.');
       const userId = command === 'removeRegisteredPlayer' ? (needAdmin(), reference(data.user_id, 'user_id')) : actor.id;
       if (data.release_only !== undefined && typeof data.release_only !== 'boolean') fail('INVALID_REQUEST', 'Choose whether to release the position only.');
-      if (!work.tournament_players.some(player => player.user_id === userId && player.status === 'approved')) fail('NOT_REGISTERED', 'You have not joined this tournament.');
+      if (!work.tournament_players.some(player => player.user_id === userId && (player.status === 'approved' || (command === 'cancelRegistration' && player.status === 'pending')))) fail('NOT_REGISTERED', 'You have not joined this tournament.');
       for (const member of work.team_members.filter(row => row.user_id === userId && ['active', 'pending'].includes(String(row.membership_status)))) {
         put('team_members', { id: member.id, membership_status: 'cancelled' });
       }
@@ -472,6 +500,7 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
           state('registration_open', 'registration_closed');
           if (command === 'rejectEntry') { needAdmin(); text(data.reason, 'reason', 1000); if (team.entry_state !== 'pending') fail('INVALID_STATE', 'Only pending entries can be rejected.'); }
           else {
+            if (team.registration_slot != null && members(team.id).some(member => member.user_id === actor.id && member.membership_status === 'pending')) fail('INVALID_STATE', 'Use individual registration cancellation for a pending request.');
             if (!members(team.id).some(m => m.user_id === actor.id)) fail('FORBIDDEN', 'Only an entry participant can cancel it.');
             if (work.event!.modular_state !== 'registration_open' || Date.parse(d.registration.closes_at) <= now.getTime()) fail('REGISTRATION_CLOSED', 'Registration is closed. Contact the tournament administrator to withdraw.');
           }
@@ -481,14 +510,14 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
         }
       }
       bumpRoster();
-    } else if (command === 'closeRegistration') { needAdmin(); state('registration_open'); event({ modular_state: 'registration_closed', registration_closed_at: iso });
+    } else if (command === 'closeRegistration') { needAdmin(); state('registration_open'); if (work.team_members.some(member => member.membership_status === 'pending' && work.tournament_players.some(player => player.user_id === member.user_id && player.status === 'pending') && work.teams.some(team => team.id === member.team_id && team.entry_state === 'approved' && Number.isInteger(team.registration_slot)))) fail('PENDING_APPROVALS', 'Approve or reject pending player requests before closing registration.'); event({ modular_state: 'registration_closed', registration_closed_at: iso });
     } else if (command === 'reopenRegistration') { needAdmin(); state('registration_closed'); if (Date.parse(d.registration.closes_at) <= now.getTime()) fail('REGISTRATION_CLOSED', 'Published registration deadline has passed.'); event({ modular_state: 'registration_open', registration_closed_at: null });
     } else if (command === 'lockRoster') {
       needAdmin(); state('registration_closed');
       if (data.preview_hash !== undefined && data.preview_hash !== previewSchedule(snapshot, actor, data, context.now).preview_hash) fail('STALE_PREVIEW', 'The roster or schedule changed. Review the schedule again.');
       if (integer(data.reviewed_roster_revision, 'reviewed_roster_revision') !== Number(work.event!.roster_revision)) fail('STALE_REVISION', 'Review the current roster.');
       const approved = work.teams.filter(t => t.entry_state === 'approved');
-      if (approved.length < d.registration.min_entries || approved.length > d.registration.max_entries || approved.some(t => !complete(t, d))) fail('INCOMPLETE_ROSTER', 'The actual approved roster does not satisfy the published rules.');
+      if (approved.length < d.registration.min_entries || approved.length > d.registration.max_entries || approved.some(t => !complete(t, d) || members(t.id).some(member => member.membership_status !== 'active'))) fail('INCOMPLETE_ROSTER', 'The actual approved roster does not satisfy the published rules.');
       let seedAssignments: Record<string, string> | undefined;
       if (d.schema_version === '2.0') {
         d = finalizeGraph(d, data.nodes);

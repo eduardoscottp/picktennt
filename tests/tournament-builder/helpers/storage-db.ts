@@ -71,7 +71,9 @@ export async function storageDatabase(deferIndividualRoster = false) {
   if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611030005_bulk_adjudication.sql'), 'utf8'));
   if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611060001_tournament_score_validation.sql'), 'utf8'));
   if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611060002_tournament_match_roster_snapshot.sql'), 'utf8'));
-  if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611060003_preserve_empty_teams.sql'), 'utf8'));
+  // The migration compares normalized function source with literal anchors; normalize
+  // the SQL file as well when Git has checked it out with Windows line endings.
+  if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611060003_preserve_empty_teams.sql'), 'utf8').replace(/\r\n/g, '\n'));
   if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611060004_revision_existing_accounts.sql'), 'utf8'));
   if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611060005_player_replacement.sql'), 'utf8'));
   if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611060006_match_player_display_names.sql'), 'utf8'));
@@ -84,6 +86,7 @@ export async function storageDatabase(deferIndividualRoster = false) {
   if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611060013_unplayed_walkover_rosters.sql'), 'utf8'));
   if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611060014_replay_terminal_match.sql'), 'utf8'));
   if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611060015_append_terminal_match.sql'), 'utf8'));
+  if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611100001_individual_approval.sql'), 'utf8').replace(/\r\n/g, '\n'));
   return db;
 }
 export async function role<T>(db: PGlite, name: 'anon'|'authenticated'|'service_role', actor: string, fn: () => Promise<T>) {

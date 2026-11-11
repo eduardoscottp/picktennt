@@ -8,6 +8,9 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Plus, Users } from "lucide-react";
 import type { CommandSnapshot, StorageRow } from "@/lib/tournament-builder/commands";
 import { PlayerSearch } from "./player-search";
+import { PlayerActions } from "./player-actions";
+import { tournamentTeamLabel } from "@/lib/tournament-builder/team-label";
+import { TeamActions } from "./team-actions";
 
 type Props = {
   snapshot: CommandSnapshot;
@@ -16,13 +19,15 @@ type Props = {
   doubles: boolean;
   maxEntries: number;
   admin: boolean;
+  owner: boolean;
+  matchLabel: (id: string) => string;
   disabled: boolean;
   run: (command: string, data: Record<string, unknown>) => Promise<void>;
 };
 
 const name = (row: StorageRow | undefined) => typeof row?.display_name === "string" ? row.display_name : "Open position";
 
-export function IndividualRegistration({ snapshot, actorId, definitionId, doubles, maxEntries, admin, disabled, run }: Props) {
+export function IndividualRegistration({ snapshot, actorId, definitionId, doubles, maxEntries, admin, owner, matchLabel, disabled, run }: Props) {
   const [accepted, setAccepted] = useState(false);
   const [adminPlayerId, setAdminPlayerId] = useState("");
   const [target, setTarget] = useState<{ slot: number; position: number } | null>(null);
@@ -32,10 +37,11 @@ export function IndividualRegistration({ snapshot, actorId, definitionId, double
   const locked = !individualRoster(snapshot)?.editable;
   const slotsPerTeam = doubles ? 2 : 1;
   const player = snapshot.tournament_players.find(row => row.user_id === actorId && row.status === "approved");
+  const pendingPlayer = snapshot.tournament_players.find(row => row.user_id === actorId && row.status === "pending");
   const active = snapshot.team_members.find(row => row.user_id === actorId && row.membership_status === "active");
   const activeTeam = snapshot.teams.find(row => row.id === active?.team_id);
   const activeSlot = Number(activeTeam?.registration_slot);
-  const members = (team: StorageRow | undefined) => team ? snapshot.team_members.filter(row => row.team_id === team.id && row.membership_status === "active") : [];
+  const members = (team: StorageRow | undefined) => team ? snapshot.team_members.filter(row => row.team_id === team.id && ["active", "pending"].includes(String(row.membership_status))) : [];
   const adminCanAssign = admin && ["registration_open", "registration_closed", "ready", "active"].includes(String(snapshot.event?.modular_state));
   const selectedTeam = target && snapshot.teams.find(row => Number(row.registration_slot) === target.slot);
   const selectedPositionOpen = target && !positionedMembers(members(selectedTeam || undefined), slotsPerTeam)[target.position - 1];
@@ -58,14 +64,10 @@ export function IndividualRegistration({ snapshot, actorId, definitionId, double
     else await run("adminFillPosition", { user_id: adminPlayerId, slot_index: slotIndex, position, reason: reason.trim() });
   }
 
-  async function remove(userId: string, releaseOnly: boolean) {
-    if (!window.confirm(releaseOnly ? "Free this player's position? They will remain registered in the tournament." : "Remove this player from the tournament? Their teammate will remain registered.")) return;
-    await run("removeRegisteredPlayer", { user_id: userId, release_only: releaseOnly });
-  }
-
   return <div className="space-y-4">
-    {!locked && (!player ? <div className="rounded-xl bg-gray-50 p-4"><h3 className="font-semibold">Join tournament</h3><p className="mt-1 text-sm text-gray-600">Choose an open position to join. Your name is already known from your Picktennt account.</p><label className="mt-3 block text-sm"><input type="checkbox" className="mr-2" checked={accepted} onChange={event => setAccepted(event.target.checked)} />I accept the published rules.</label><p className="mt-3 text-sm">Accept the rules, then choose an open position below.</p></div> : <div className="rounded-xl bg-gray-50 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold">Choose your {doubles ? "team" : "entry"} position</h3><p className="text-sm text-gray-600">{activeSlot > 0 ? `Your current position is ${doubles ? "Team" : "Entry"} ${activeSlot}. Choose another open position to move.` : "Choose an open position."}</p></div><Button variant="outline" disabled={disabled} onClick={() => { if (window.confirm("Leave this tournament and free your position?")) void run("cancelRegistration", {}); }}>Leave tournament</Button></div></div>)}
-    {locked && <p role="status" className="text-sm text-gray-600">Player self-service positions are locked.{player && " To leave the tournament, contact the administrator."}</p>}
+    {!admin && pendingPlayer && <div className="rounded-xl bg-amber-50 p-4 text-sm"><p>Your request is pending organizer approval. Your selected position is held.</p>{!locked && <Button variant="outline" disabled={disabled} onClick={() => { if (window.confirm("Cancel your pending request and release your position?")) void run("cancelRegistration", {}); }}>Cancel request</Button>}</div>}
+    {!admin && !pendingPlayer && !locked && (!player ? <div className="rounded-xl bg-gray-50 p-4"><h3 className="font-semibold">Join tournament</h3><p className="mt-1 text-sm text-gray-600">Choose an open position to join. Your name is already known from your Picktennt account.</p><label className="mt-3 block text-sm"><input type="checkbox" className="mr-2" checked={accepted} onChange={event => setAccepted(event.target.checked)} />I accept the published rules.</label><p className="mt-3 text-sm">Accept the rules, then choose an open position below.</p></div> : <div className="rounded-xl bg-gray-50 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold">Choose your {doubles ? "team" : "entry"} position</h3><p className="text-sm text-gray-600">{activeSlot > 0 ? `Your current position is ${doubles ? "Team" : "Entry"} ${activeSlot}. Choose another open position to move.` : "Choose an open position."}</p></div><Button variant="outline" disabled={disabled} onClick={() => { if (window.confirm("Leave this tournament and free your position?")) void run("cancelRegistration", {}); }}>Leave tournament</Button></div></div>)}
+    {!admin && locked && <p role="status" className="text-sm text-gray-600">Player self-service positions are locked.{player && " To leave the tournament, contact the administrator."}</p>}
     {adminCanAssign && <p className="text-sm">Choose an open position and find an existing Picktennt account. An administrator can enroll the player directly.</p>}
     {admin && target && selectedPositionOpen && <section className="rounded-xl border p-3" aria-label="Place a registered player">
       <p className="font-medium">Team {target.slot}, position {target.position}</p>
@@ -81,17 +83,17 @@ export function IndividualRegistration({ snapshot, actorId, definitionId, double
       const roster = positionedMembers(members(team), slotsPerTeam);
       const full = roster.every(Boolean);
       return <Card key={slotIndex} aria-label={doubles ? `Team ${slotIndex}` : `Entry ${slotIndex}`} className={`overflow-hidden ${full ? "border-green-200" : ""}`}>
-        <CardHeader className={`py-2 px-3 border-b ${full ? "bg-green-50" : "bg-brand-50"}`}><CardTitle className={`text-xs font-bold flex items-center gap-1.5 ${full ? "text-green-700" : "text-brand-700"}`}><Users className="h-3 w-3" />{doubles ? "Team" : "Entry"} {slotIndex}{full && <span className="ml-auto text-[10px] font-semibold bg-green-100 text-green-700 rounded-full px-1.5 py-0.5">Ready</span>}</CardTitle></CardHeader>
+        <CardHeader className={`py-2 px-3 border-b ${full ? "bg-green-50" : "bg-brand-50"}`}><CardTitle className={`text-xs font-bold flex items-center gap-1.5 ${full ? "text-green-700" : "text-brand-700"}`}><Users className="h-3 w-3" />{tournamentTeamLabel(snapshot, team, doubles, slotIndex)}{full && <span className="ml-auto text-[10px] font-semibold bg-green-100 text-green-700 rounded-full px-1.5 py-0.5">Ready</span>}</CardTitle></CardHeader>
         <CardContent className="p-2.5 space-y-1.5">{roster.map((member, index) => {
           const parts = member ? name(member).trim().split(/\s+/) : [];
           return <div key={index}>
-            {member ? <div className="flex items-center gap-2 rounded-lg bg-gray-50 border border-gray-100 px-2 py-1.5"><Avatar className="h-6 w-6 flex-shrink-0"><AvatarImage src={typeof member.avatar_url === "string" ? member.avatar_url : ""} /><AvatarFallback className="text-[9px]">{parts.map(part => part[0]).slice(0, 2).join("").toUpperCase()}</AvatarFallback></Avatar><span className="text-xs font-medium text-gray-900 flex-1 truncate">{name(member)}{member.user_id === actorId && <span className="ml-1 text-brand-500">(you)</span>}</span></div> : <>
-              {locked ? <div className="flex items-center gap-2 rounded-lg border border-dashed border-gray-200 px-2 py-1.5 text-xs text-gray-400">Position {index + 1} · Locked for players</div> : <button type="button" disabled={disabled || (!player && !accepted)} aria-label={`${player ? "Choose" : "Join"} team ${slotIndex} position ${index + 1}`} onClick={() => void choose(slotIndex, index + 1)} className="w-full flex items-center gap-2 rounded-lg border-2 border-dashed border-brand-300 px-2 py-1.5 hover:border-brand-500 hover:bg-brand-50 transition-colors group disabled:opacity-50"><div className="h-6 w-6 rounded-full border-2 border-brand-300 flex items-center justify-center flex-shrink-0"><Plus className="h-3 w-3 text-brand-400" /></div><span className="text-xs text-brand-500 font-medium">{player ? activeSlot > 0 ? "Move here" : "Choose this spot" : "Join this spot"}</span></button>}
+            {member ? <div className="flex items-center gap-2 rounded-lg bg-gray-50 border border-gray-100 px-2 py-1.5"><Avatar className="h-6 w-6 flex-shrink-0"><AvatarImage src={typeof member.avatar_url === "string" ? member.avatar_url : ""} /><AvatarFallback className="text-[9px]">{parts.map(part => part[0]).slice(0, 2).join("").toUpperCase()}</AvatarFallback></Avatar><span className="text-xs font-medium text-gray-900 flex-1 truncate">{name(member)}{member.membership_status === "pending" && member.display_name !== "Pending approval" && <span className="ml-1 text-amber-700">· Pending approval</span>}{member.user_id === actorId && <span className="ml-1 text-brand-500">(you)</span>}</span></div> : <>
+              {locked || admin || pendingPlayer ? <div className="flex items-center gap-2 rounded-lg border border-dashed border-gray-200 px-2 py-1.5 text-xs text-gray-400">Position {index + 1} · {admin || pendingPlayer ? "Open" : "Locked for players"}</div> : <button type="button" disabled={disabled || !!pendingPlayer || (!player && !accepted)} aria-label={`${player ? "Choose" : "Join"} team ${slotIndex} position ${index + 1}`} onClick={() => void choose(slotIndex, index + 1)} className="w-full flex items-center gap-2 rounded-lg border-2 border-dashed border-brand-300 px-2 py-1.5 hover:border-brand-500 hover:bg-brand-50 transition-colors group disabled:opacity-50"><div className="h-6 w-6 rounded-full border-2 border-brand-300 flex items-center justify-center flex-shrink-0"><Plus className="h-3 w-3 text-brand-400" /></div><span className="text-xs text-brand-500 font-medium">{player ? activeSlot > 0 ? "Move here" : "Choose this spot" : "Join this spot"}</span></button>}
               {adminCanAssign && (team || !snapshot.matches.length) && <Button size="sm" variant="outline" disabled={disabled} aria-label={`Place registered player in team ${slotIndex} position ${index + 1}`} className="mt-1 w-full" onClick={() => { setTarget({ slot: slotIndex, position: index + 1 }); setSelectedName(""); setSelectionError(""); setAdminPlayerId(""); setReason(""); }}>Place player</Button>}
             </>}
-            {member && admin && !locked && <div className="mt-1 flex flex-wrap gap-1"><Button size="sm" variant="outline" disabled={disabled} onClick={() => void remove(String(member.user_id), true)}>Free position</Button><Button size="sm" variant="outline" disabled={disabled} onClick={() => void remove(String(member.user_id), false)}>Remove player</Button></div>}
+            {member && member.membership_status === "active" && admin && team && <PlayerActions snapshot={snapshot} team={team} member={member} disabled={disabled} run={run} />}
           </div>;
-        })}</CardContent>
+        })}{admin && team?.entry_state === "approved" && <TeamActions snapshot={snapshot} team={team} label={id => { const index = snapshot.teams.findIndex(row => row.id === id); return tournamentTeamLabel(snapshot, snapshot.teams[index], doubles, index + 1); }} disabled={disabled} owner={owner} matchLabel={matchLabel} run={run} />}</CardContent>
       </Card>;
     })}</div>
   </div>;

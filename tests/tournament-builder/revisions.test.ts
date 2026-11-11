@@ -27,7 +27,7 @@ function apply(s: CommandSnapshot, command: string, data: Record<string, unknown
 }
 function setup(count = 8) {
   const d: GraphDefinition = JSON.parse(readFileSync('../examples/four-groups-definition.json', 'utf8'));
-  d.registration.min_entries = 8;
+  d.registration.min_entries = 8; d.registration.mode = 'open';
   let s: CommandSnapshot = { event: null, definitions: [], teams: [], team_members: [], tournament_players: [], stages: [], rounds: [], matches: [], standings: [] };
   s = apply(s, 'createDraft', { definition: d });
   const p = previewDefinition(d, 1);

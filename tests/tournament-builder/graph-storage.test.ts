@@ -29,6 +29,7 @@ async function apply(event: string, name: string, data: Record<string, unknown>,
 test('actual SQL persists and completes a 16-doubles graph through all 27 results, fencing stale writes', async () => {
   const event = randomUUID();
   const definition = JSON.parse(readFileSync('../examples/four-groups-definition.json', 'utf8'));
+  definition.registration.mode = 'open';
   const now = Date.now();
   definition.event.timezone = 'UTC';
   definition.registration.closes_at = new Date(now + 30 * 86400000).toISOString();

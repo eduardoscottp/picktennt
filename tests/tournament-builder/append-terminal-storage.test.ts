@@ -22,6 +22,7 @@ async function apply(event: string, name: string, data: Record<string, unknown>,
 }
 async function fixture(hasBronze = false) {
   const event = randomUUID(), d = JSON.parse(readFileSync('tests/tournament-builder/fixtures/tournament-definition.json', 'utf8'));
+  d.registration.mode = 'open';
   const now = Date.now();
   d.event.timezone = 'UTC';
   d.registration.closes_at = new Date(now + 30 * 86400000).toISOString();

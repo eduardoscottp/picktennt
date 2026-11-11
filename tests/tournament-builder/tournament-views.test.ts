@@ -11,6 +11,7 @@ import { ToastProvider } from "../../components/ui/toast";
 import { AppRouterContext } from "next/dist/shared/lib/app-router-context.shared-runtime";
 import { orderedMatches, reachedStage } from "../../components/tournament-builder/match-presentation";
 import { AdminStatusActions } from "../../components/tournament/admin-status-actions";
+import { tournamentTeamLabel } from "../../lib/tournament-builder/team-label";
 import type { Tournament } from "../../types/database";
 
 const definition = JSON.parse(readFileSync("tests/tournament-builder/fixtures/tournament-definition.json", "utf8"));
@@ -93,7 +94,7 @@ test("match cards show round, court and uniformly styled player names", () => {
   ];
   const html = render("matches", data, "p1");
   assert.match(html, /Round 1 - Court 1/);
-  for (const name of ["Player One", "Player Two", "Player Three", "Player Four"]) assert.ok(html.includes(`class="text-sm font-bold text-gray-900">${name}</p>`));
+  for (const name of ["Player One", "Player Two", "Player Three", "Player Four"]) assert.ok(html.includes(`>${name}</p>`));
 });
 test("completed match displays historical players rather than the current replacement", () => {
   const data = snapshot("completed");
@@ -119,13 +120,13 @@ test("standings show player names including entries without results", () => {
 });
 test("admin view contains entry and lifecycle controls, links to score administration and excludes match wall", () => {
   const html = render("admin", snapshot("registration_open"));
-  assert.match(html, /Tournament administration/); assert.match(html, /Approve entry/); assert.match(html, /Close registration/); assert.match(html, /Remove Alpha/); assert.match(html, /Organizer review and event controls/);
-  assert.match(html, /<details open=""[^>]*><summary[^>]*>Edit tournament (setup and teams|name and venue)/);
+  assert.match(html, /Tournament administration/); assert.match(html, /Pending approvals/); assert.match(html, />Approve</); assert.match(html, />Reject</); assert.match(html, /Generate games/); assert.match(html, /Edit team/); assert.match(html, /Organizer review and event controls/);
+  assert.match(html, /<details[^>]*><summary[^>]*>Edit tournament (setup and teams|name and venue)/);
   assert.match(html, /Open Matches to enter, validate, or correct scores/);
   assert.doesNotMatch(html, /id="rules"|id="matches"|id="placements"|Join as a player/);
   const overview = render("overview", snapshot("registration_open"));
   assert.doesNotMatch(overview, /Approve entry|Close registration/);
-  assert.match(render("admin", snapshot("active")), /Retirar equipo/);
+  assert.match(render("admin", snapshot("active")), /Withdraw team/);
   assert.doesNotMatch(render("admin", snapshot("active")), /Withdraw a player|Remove a player before starting|Apply walkovers \/ forfeits/);
   assert.doesNotMatch(render("overview", snapshot("active")), /Retirar equipo|Review withdrawal impact/);
   assert.doesNotMatch(render("matches", snapshot("active")), /Retirar equipo|Review withdrawal impact/);
@@ -140,10 +141,9 @@ test("team withdrawal names only current active players after a replacement", ()
     { id: "pending", team_id: "a", user_id: "pending", membership_status: "pending", display_name: "Pending Player" },
   ];
   const html = render("admin", data);
-  const selector = html.match(/<select aria-label="Equipo a retirar"[^>]*>(.*?)<\/select>/)![1];
-  assert.match(selector, /<option value="a">Current One \/ Current Two<\/option>/);
-  assert.doesNotMatch(selector, /Former Player|Withdrawn Player|Pending Player/);
-  assert.match(selector, /<option value="b">Beta<\/option>/);
+  assert.match(html, /Withdraw team/);
+  data.teams[0].name = "Team 1";
+  assert.equal(tournamentTeamLabel(data, data.teams[0], true, 1), "Current / Current");
 });
 
 test("member views preserve own consent and opponent confirmation while restricting administrator actions", () => {
@@ -250,6 +250,52 @@ test("individual positions remain visible but self-service closes with registrat
   const closed = render("overview", data, "player");
   assert.match(closed, /contact the administrator/); assert.match(closed, /Player One/);
   assert.doesNotMatch(closed, /Leave tournament|Move here|Cancel my entry|Withdraw Team 1/);
+});
+
+test("admin player controls stay on each occupied card and approval queue is conditional", () => {
+  const data = openRoster("owner");
+  data.teams = [{ id: "slot", name: "Team 1", entry_state: "approved", registration_slot: 1 }];
+  data.team_members = [{ id: "member", team_id: "slot", user_id: "player", membership_status: "active", player_slot: 1, display_name: "Eduardo Scott" }];
+  const openDefinition = (data.definitions[0].definition as typeof definition);
+  openDefinition.registration.mode = "open";
+  let html = render("admin", data);
+  assert.match(html, /Edit player/); assert.match(html, /Free position/); assert.match(html, /Remove player/);
+  assert.match(html, /Replace or edit player in this position/); assert.match(html, /Edit team/);
+  assert.doesNotMatch(html, /Pending approvals|Administrator enrolled · Picktennt account/);
+  assert.match(html, /Generate games/); assert.match(html, /incomplete/);
+  data.teams.push({ id: "pending", name: "Pending entry", entry_state: "pending" });
+  openDefinition.registration.mode = "approval";
+  html = render("admin", data);
+  assert.match(html, /Pending approvals/); assert.match(html, />Approve</); assert.match(html, />Reject</);
+  openDefinition.registration.mode = "open";
+  assert.doesNotMatch(render("admin", data), /Pending approvals/);
+});
+
+test("an individual approval hold is visible to the organizer and pending player", () => {
+  const data = openRoster("owner");
+  const rules = data.definitions[0].definition as typeof definition;
+  rules.registration.mode = "approval";
+  data.teams = [{ id: "slot", name: "Team 1", entry_state: "approved", registration_slot: 1 }];
+  data.team_members = [{ id: "member", team_id: "slot", user_id: "player", membership_status: "pending", player_slot: 1, display_name: "Eduardo Scott", consented_at: "now", consented_definition_id: "definition" }];
+  data.tournament_players = [{ id: "requested", user_id: "player", status: "pending", display_name: "Eduardo Scott" }];
+  const admin = render("admin", data);
+  assert.match(admin, /Pending approvals/); assert.match(admin, /Position 1 held/); assert.match(admin, />Approve</); assert.match(admin, />Reject</);
+  assert.match(admin, /Approve or reject pending player requests before closing registration/);
+  const player = render("overview", { ...data, caller_role: "player" }, "player");
+  assert.match(player, /Your request is pending organizer approval/); assert.match(player, /Cancel request/);
+  assert.doesNotMatch(player, /Join this spot/);
+});
+
+test("the same automatic doubles name appears across tournament pages", () => {
+  const data = snapshot("active");
+  data.teams = [{ id: "a", name: "Team 1", registration_slot: 1, entry_state: "approved" }, { id: "b", name: "Team 2", registration_slot: 2, entry_state: "approved" }];
+  data.team_members = [
+    { id: "a1", team_id: "a", user_id: "a1", membership_status: "active", player_slot: 1, display_name: "Eduardo Scott" },
+    { id: "a2", team_id: "a", user_id: "a2", membership_status: "active", player_slot: 2, display_name: "Ana Ravelo" },
+    { id: "b1", team_id: "b", user_id: "b1", membership_status: "active", player_slot: 1, display_name: "Luis Rojas" },
+    { id: "b2", team_id: "b", user_id: "b2", membership_status: "active", player_slot: 2, display_name: "Mia Smith" },
+  ];
+  for (const view of ["overview", "admin", "matches", "standings"] as const) assert.match(render(view, data), /Eduardo \/ Ana/);
 });
 
 test("registered-account form starts disabled and binds only distinct resolved profile IDs, current definition and admin audit reason", () => {

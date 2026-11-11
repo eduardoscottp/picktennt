@@ -14,6 +14,7 @@ test('SQL preserves the published registration plan and persists underfilled ass
     const event = randomUUID(), actor = { id: owner, clientId: 'web' };
     const context = { now: '2026-10-28T16:00:00Z', id: randomUUID, draw: (ids: readonly string[]) => [...ids] };
     const full: GraphDefinition = JSON.parse(readFileSync('../examples/four-groups-definition.json', 'utf8'));
+    full.registration.mode = 'open';
     const now = Date.now();
     full.event.timezone = 'UTC';
     full.registration.closes_at = new Date(now + 30 * 86400000).toISOString();
