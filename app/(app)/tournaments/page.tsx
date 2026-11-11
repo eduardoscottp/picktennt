@@ -1,10 +1,11 @@
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { Search } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatDate, statusLabel, tournamentTypeLabel } from "@/lib/utils";
 import type { Tournament } from "@/types/database";
+import { searchTournaments } from "@/lib/tournament/search";
 
 export default async function TournamentsPage({
   searchParams,
@@ -14,17 +15,8 @@ export default async function TournamentsPage({
   const { q } = await searchParams;
   const supabase = await createClient();
 
-  let query = supabase
-    .from("tournaments")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(50);
-
-  if (q) query = query.ilike("name", `%${q}%`);
-
-  // RLS includes public events and the current account's owned/admin/player events.
-  const { data: tournaments, error } = await query;
-  if (error) throw new Error("Could not load tournaments. Please try again.");
+  const { data: { user } } = await supabase.auth.getUser();
+  const tournaments = await searchTournaments(supabase, q, user ? createAdminClient : undefined);
 
   const statusVariant = (s: string): "success" | "secondary" | "default" => {
     if (s === "active" || s === "finals") return "success";
@@ -43,7 +35,7 @@ export default async function TournamentsPage({
           <input
             name="q"
             defaultValue={q}
-            placeholder="Search tournaments..."
+            placeholder="Search by tournament name or full ID"
             className="w-full h-11 pl-10 pr-4 rounded-xl border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
@@ -56,8 +48,8 @@ export default async function TournamentsPage({
         </div>
       ) : (
         <div className="space-y-3">
-          {(tournaments ?? []).map((t: Tournament) => (
-            <Link key={t.id} href={`/tournaments/${t.id}`}>
+          {(tournaments ?? []).map(({ tournament: t, href }: { tournament: Tournament; href: string }) => (
+            <Link key={t.id} href={href}>
               <Card className="hover:border-brand-200 transition-colors cursor-pointer">
                 <CardContent className="flex items-center gap-3 py-4">
                   <div className="flex-1 min-w-0">
@@ -78,3 +70,4 @@ export default async function TournamentsPage({
     </div>
   );
 }
+

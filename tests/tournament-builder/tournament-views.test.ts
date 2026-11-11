@@ -149,7 +149,8 @@ test("team withdrawal names only current active players after a replacement", ()
 test("member views preserve own consent and opponent confirmation while restricting administrator actions", () => {
   const member = openRoster();
   const overview = render("overview", member, "new-player");
-  assert.match(overview, /Join tournament/); assert.match(overview, /I accept the published rules/);
+  assert.match(overview, /Join tournament/); assert.doesNotMatch(overview, /I accept the published rules/);
+  assert.match(overview, /aria-label="Join team 1 position 1"/);
   assert.doesNotMatch(overview, /href="\/tournaments\/event\/admin"|Manage tournament|Approve entry/);
   const active = snapshot("active", "player");
   active.tournament_players = [{ id: "player-row", user_id: "player", status: "approved" }, { id: "third-row", user_id: "third", status: "approved" }];
@@ -400,3 +401,4 @@ test("legacy start action requires generated rounds and disappears after registr
   assert.match(unprepared, /Generate the round robin schedule before starting/);
   for (const state of ["draft", "active", "finals", "completed"] as const) assert.doesNotMatch(renderStatus(state, true), /Start Tournament<\/button>/);
 });
+
