@@ -13,8 +13,12 @@ export function orderedMatches(matches: StorageRow[], rounds: StorageRow[], ownT
     const value = Number(localRound ?? round?.[graph ? "logical_wave" : "round_number"]);
     return Number.isFinite(value) ? value : Infinity;
   };
+  const courtNumber = (match: StorageRow) => {
+    const value = Number(match.court_number);
+    return match.court_number != null && Number.isFinite(value) && value > 0 ? value : Infinity;
+  };
   return matches.filter(match => match.is_current !== false && !match.voided_at).slice().sort((a, b) =>
-    (prioritizeOwn ? Number(own(b)) - Number(own(a)) : 0) || roundNumber(a) - roundNumber(b)
+    (prioritizeOwn ? Number(own(b)) - Number(own(a)) : 0) || roundNumber(a) - roundNumber(b) || courtNumber(a) - courtNumber(b)
   );
 }
 function graphMatch(match: StorageRow, schedule: MatchSchedule) {
