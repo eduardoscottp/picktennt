@@ -32,3 +32,16 @@ test('filling an existing vacancy preserves complete past identities and schedul
  frozen.matches[1].player_a1_id=former;
  assert.throws(()=>planAdminFillPosition(frozen,actor,data,context),{code:'STRUCTURE_LOCKED'});
 });
+
+
+test('full capacity reports unassigned players while allowing an approved player to fill the vacancy', () => {
+ const owner=randomUUID(), team=randomUUID(), teammate=randomUUID(), unassigned=randomUUID(), newcomer=randomUUID(), definitionId=randomUUID();
+ const definition=JSON.parse(readFileSync('tests/tournament-builder/fixtures/tournament-definition.json','utf8'));
+ definition.registration={...definition.registration,entry_type:'fixed_doubles',max_entries:1};
+ const snapshot:CommandSnapshot={event:{id:randomUUID(),created_by:owner,definition_id:definitionId,modular_state:'registration_open',roster_revision:1},definitions:[{id:definitionId,definition}],teams:[{id:team,entry_state:'approved',registration_slot:1}],team_members:[{id:randomUUID(),team_id:team,user_id:teammate,membership_status:'active',player_slot:1},{id:randomUUID(),team_id:team,user_id:unassigned,membership_status:'cancelled',player_slot:2}],tournament_players:[{id:randomUUID(),user_id:teammate,status:'approved'},{id:randomUUID(),user_id:unassigned,status:'approved'}],matches:[],stages:[],rounds:[],standings:[]};
+ const actor={id:owner,clientId:'web'}, data={user_id:newcomer,slot_index:1,position:2,reason:'Fill vacancy'}, context={now:new Date().toISOString(),id:randomUUID};
+ assert.throws(()=>planAdminFillPosition(snapshot,actor,data,context),{code:'CAPACITY_FULL',message:/registered players have no position/i});
+ assert.equal(planAdminFillPosition(snapshot,actor,{...data,user_id:unassigned},context).effects.team_members?.[0].user_id,unassigned);
+ snapshot.tournament_players[1].status='rejected';
+ assert.equal(planAdminFillPosition(snapshot,actor,data,context).effects.team_members?.[0].user_id,newcomer);
+});

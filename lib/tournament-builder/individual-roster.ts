@@ -49,3 +49,8 @@ export function adminPlacement(members: StorageRow[], userId: string, locked: bo
   const current = members.find(row => row.user_id === userId && ['active', 'pending'].includes(String(row.membership_status)));
   return !current ? 'add' : current.membership_status === 'active' && !locked ? 'move' : 'blocked';
 }
+
+/** Approved registrations without a current team still consume capacity. */
+export function unassignedRegisteredPlayers(snapshot: CommandSnapshot): StorageRow[] {
+  return snapshot.tournament_players.filter(player => player.status === 'approved' && !snapshot.team_members.some(member => member.user_id === player.user_id && ['active', 'pending'].includes(String(member.membership_status))));
+}

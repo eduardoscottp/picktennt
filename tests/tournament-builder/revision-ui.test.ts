@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { AppRouterContext } from 'next/dist/shared/lib/app-router-context.shared-runtime';
 import { canReviseTournament, RevisionEditor } from '../../components/tournament-builder/revision-editor';
 import { GroupFinalization } from '../../components/tournament-builder/group-finalization';
+import { IndividualRegistration } from '../../components/tournament-builder/individual-registration';
 import type { CommandSnapshot } from '../../lib/tournament-builder/commands';
 
 const definition = JSON.parse(readFileSync('tests/tournament-builder/fixtures/tournament-definition.json', 'utf8'));
@@ -77,4 +78,18 @@ test('Doubles registration always renders individual slots regardless of histori
     assert.doesNotMatch(html, /Team name|Your entry name|Partner’s Picktennt username|Request entry and invite partner|Accept invitation for/);
     assert.doesNotMatch(html, /<input[^>]*type="text"/);
   }
+});
+
+
+test('administrators can see unassigned registrations and available positions', () => {
+  const rules = structuredClone(definition);
+  rules.registration = { ...rules.registration, entry_type: 'fixed_doubles', max_entries: 1, closes_at: '2099-01-01T00:00:00Z' };
+  const snapshot: CommandSnapshot = { ...base, event: { id: 'event', definition_id: 'definition', modular_state: 'registration_open' }, definitions: [{ id: 'definition', definition: rules }], teams: [{ id: 'team', registration_slot: 1, entry_state: 'approved' }], team_members: [{ id: 'member', team_id: 'team', user_id: 'player', membership_status: 'active', player_slot: 1 }], tournament_players: [{ id: 'registration', user_id: 'unassigned', status: 'approved', display_name: 'Unassigned Player' }] };
+  const html = renderToStaticMarkup(createElement(IndividualRegistration, { snapshot, actorId: 'owner', definitionId: 'definition', doubles: true, maxEntries: 1, admin: true, owner: true, matchLabel: () => '', disabled: false, run: async () => {} }));
+  assert.match(html, /Unassigned Player/);
+  assert.match(html, /Team 1 · Position 2/);
+  assert.match(html, /Assign position/);
+  assert.match(html, /Remove from tournament/);
+  const publicHtml = renderToStaticMarkup(createElement(IndividualRegistration, { snapshot, actorId: 'other', definitionId: 'definition', doubles: true, maxEntries: 1, admin: false, owner: false, matchLabel: () => '', disabled: false, run: async () => {} }));
+  assert.doesNotMatch(publicHtml, /Unassigned Player/);
 });

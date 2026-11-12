@@ -25,7 +25,7 @@ export function useTournamentCommand(actorId: string, eventId: string | undefine
   }
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const [feedback, setFeedback] = useState<{ matchId?: string; message: string } | null>(null);
+  const [feedback, setFeedback] = useState<{ matchId?: string; command: string; message: string } | null>(null);
   const locked = useRef(false);
   function clear() { sessionStorage.removeItem(key); changed(); }
   async function send(operation: PendingOperation, recovering = false) {
@@ -34,13 +34,13 @@ export function useTournamentCommand(actorId: string, eventId: string | undefine
     const matchId = typeof operation.envelope.data.match_id === "string" ? operation.envelope.data.match_id : undefined;
     try {
       const outcome = await (recovering ? recoverPending(operation) : submitPending(operation));
-      if (outcome.kind === "uncertain") { setMessage(outcome.message); setFeedback({ matchId, message: outcome.message }); }
+      if (outcome.kind === "uncertain") { setMessage(outcome.message); setFeedback({ matchId, command: operation.command, message: outcome.message }); }
       else if (outcome.kind === "rejected") {
         const rejected = rejectionFeedback(outcome);
-        clear(); setMessage(rejected.message); setFeedback({ matchId, message: rejected.message });
+        clear(); setMessage(rejected.message); setFeedback({ matchId, command: operation.command, message: rejected.message });
         if (rejected.refresh && eventId) await onSuccess({ operation_id: operation.envelope.operation_id, tournament_id: eventId, revision, status: "stale", data: {} });
       } else { clear(); await onSuccess(outcome.receipt); return outcome.receipt; }
-    } catch { const message = "Your action may have completed. Reload to review the current tournament."; setMessage(message); setFeedback({ matchId, message }); }
+    } catch { const message = "Your action may have completed. Reload to review the current tournament."; setMessage(message); setFeedback({ matchId, command: operation.command, message }); }
     finally { locked.current = false; setBusy(false); }
   }
   async function run(command: string, data: Record<string, unknown>, expectedRevision = revision) {
