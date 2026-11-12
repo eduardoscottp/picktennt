@@ -87,7 +87,7 @@ export function IndividualRegistration({ snapshot, actorId, definitionId, double
       const roster = positionedMembers(members(team), slotsPerTeam);
       const full = roster.every(Boolean);
       return <Card key={slotIndex} aria-label={doubles ? `Team ${slotIndex}` : `Entry ${slotIndex}`} className={`overflow-hidden ${full ? "border-green-200" : ""}`}>
-        <CardHeader className={`py-2 px-3 border-b ${full ? "bg-green-50" : "bg-brand-50"}`}><CardTitle className={`text-xs font-bold flex items-center gap-1.5 ${full ? "text-green-700" : "text-brand-700"}`}><Users className="h-3 w-3" />{tournamentTeamLabel(snapshot, team, doubles, slotIndex)}{full && <span className="ml-auto text-[10px] font-semibold bg-green-100 text-green-700 rounded-full px-1.5 py-0.5">Ready</span>}</CardTitle></CardHeader>
+        <CardHeader className={`h-12 justify-center border-b px-3 py-2 ${full ? "bg-green-50" : "bg-brand-50"}`}><CardTitle className={`flex min-w-0 items-center gap-1.5 text-xs font-bold ${full ? "text-green-700" : "text-brand-700"}`}><Users className="h-3 w-3 shrink-0" /><span className="min-w-0 flex-1 line-clamp-2 break-all" title={tournamentTeamLabel(snapshot, team, doubles, slotIndex)}>{tournamentTeamLabel(snapshot, team, doubles, slotIndex)}</span>{full && <span className="shrink-0 rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-700">Ready</span>}</CardTitle></CardHeader>
         <CardContent className="p-2.5 space-y-1.5">{roster.map((member, index) => {
           const parts = member ? name(member).trim().split(/\s+/) : [];
           return <div key={index}>
