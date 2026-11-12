@@ -1,5 +1,5 @@
 import type { CommandActor, CommandContext, CommandPlan, CommandSnapshot } from './commands';
-import { positionedMembers } from './individual-roster';
+import { positionedMembers, unassignedRegisteredPlayers } from './individual-roster';
 import { resolvedDefinition } from './resolved-definition';
 import { DomainError, UUID } from './requests';
 
@@ -39,7 +39,7 @@ export function planAdminFillPosition(snapshot: CommandSnapshot, actor: CommandA
   const teamId = team?.id ?? context.id();
   const previous = snapshot.team_members.find(member => member.team_id === teamId && member.user_id === user);
   const player = snapshot.tournament_players.find(row => row.user_id === user);
-  if (player?.status !== 'approved' && snapshot.tournament_players.filter(row => row.status === 'approved').length >= Number(max) * size) throw new DomainError('CAPACITY_FULL', 'The tournament has no available player positions.');
+  if (player?.status !== 'approved' && snapshot.tournament_players.filter(row => row.status === 'approved').length >= Number(max) * size) throw new DomainError('CAPACITY_FULL', unassignedRegisteredPlayers(snapshot).length ? 'The tournament is full. Some registered players have no position. Assign them to an open position or remove their registration before adding another player.' : 'The tournament has no available player positions.');
   if (typeof event.definition_id !== 'string') throw new DomainError('INVALID_STATE', 'Published rules are unavailable.');
   return { effects: {
     event: { roster_revision: Number(event.roster_revision ?? 0) + 1 },

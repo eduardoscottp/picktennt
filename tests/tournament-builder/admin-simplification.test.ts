@@ -3,7 +3,7 @@ import test from 'node:test';
 import type { CommandSnapshot } from '../../lib/tournament-builder/commands';
 import { generationProblems } from '../../lib/tournament-builder/generation-readiness';
 import { tournamentTeamLabel } from '../../lib/tournament-builder/team-label';
-import { displayRosterTeams } from '../../lib/tournament-builder/individual-roster';
+import { displayRosterTeams, unassignedRegisteredPlayers } from '../../lib/tournament-builder/individual-roster';
 
 const snapshot = (): CommandSnapshot => ({
   event: { id: 'event', definition_id: 'definition' }, definitions: [], stages: [], rounds: [], matches: [], standings: [], tournament_players: [],
@@ -48,4 +48,14 @@ test('generation readiness reports incomplete teams and accepts valid administra
   assert.deepEqual(generationProblems(s, true, 2, 'definition'), []);
   s.teams[1].entry_state = 'pending';
   assert.match(generationProblems(s, true, 2, 'definition').join(' '), /At least 2/);
+});
+
+
+test('approved players without a current position remain visible to administrators', () => {
+  const s = snapshot();
+  s.tournament_players = [{ id: 'p1', user_id: 'a1', status: 'approved' }, { id: 'p2', user_id: 'former', status: 'approved', display_name: 'Former player' }, { id: 'p3', user_id: 'rejected', status: 'rejected' }];
+  s.team_members.push({ id: 'old', user_id: 'former', team_id: 'a', membership_status: 'cancelled' });
+  assert.deepEqual(unassignedRegisteredPlayers(s).map(player => player.user_id), ['former']);
+  s.team_members.push({ id: 'pending', user_id: 'former', team_id: 'b', membership_status: 'pending' });
+  assert.deepEqual(unassignedRegisteredPlayers(s), []);
 });
