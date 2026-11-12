@@ -118,6 +118,15 @@ test("standings show player names including entries without results", () => {
   assert.match(empty, /Beta/);
   assert.match(empty, /Waiting Player/);
 });
+test("standings show first and last names on separate lines without a team label", () => {
+  const data = snapshot();
+  data.teams[0].name = "Custom Team";
+  data.team_members = [{ id: "one", team_id: "a", user_id: "one", membership_status: "active", display_name: "Ana Maria Ravelo" }, { id: "two", team_id: "a", user_id: "two", membership_status: "active", display_name: "Eduardo Scott" }];
+  const html = render("standings", data);
+  assert.match(html, />Ana Ravelo<\/span>/);
+  assert.match(html, />Eduardo Scott<\/span>/);
+  assert.doesNotMatch(html, />Custom Team<\/span>/);
+});
 test("admin view contains entry and lifecycle controls, links to score administration and excludes match wall", () => {
   const html = render("admin", snapshot("registration_open"));
   assert.match(html, /Tournament administration/); assert.match(html, /Pending approvals/); assert.match(html, />Approve</); assert.match(html, />Reject</); assert.match(html, /Generate games/); assert.match(html, /Edit team/); assert.match(html, /Organizer review and event controls/);
