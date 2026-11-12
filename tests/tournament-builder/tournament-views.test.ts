@@ -43,6 +43,25 @@ test("match ordering prioritizes the player's matches and sorts each group by ro
   const graphMatches = [{ id: "r2", round_id: "early", logical_key: "A:r2:m1" }, { id: "r1", round_id: "late", logical_key: "B:r1:m1" }];
   assert.deepEqual(orderedMatches(graphMatches, [{ id: "early", logical_wave: 1 }, { id: "late", logical_wave: 3 }], [], false, true).map(match => match.id), ["r1", "r2"]);
 });
+test("matches sort by round and court, with each player's games first when requested", () => {
+  const rounds = [1, 3, 4, 5, 8].map(round_number => ({ id: `r${round_number}`, round_number, logical_wave: round_number }));
+  const matches = [
+    { id: 'r1c4', round_id: 'r1', court_number: 4 }, { id: 'r1c1', round_id: 'r1', court_number: 1 },
+    { id: 'r1c3', round_id: 'r1', court_number: 3 }, { id: 'r1c2', round_id: 'r1', court_number: 2 },
+    { id: 'mine8', round_id: 'r8', court_number: 4, team_a_id: 'mine' },
+    { id: 'mine5', round_id: 'r5', court_number: 2, team_b_id: 'mine' },
+    { id: 'mine3b', round_id: 'r3', court_number: 4, team_a_id: 'mine' },
+    { id: 'mine3a', round_id: 'r3', court_number: 1, team_a_id: 'mine' },
+    { id: 'mine4', round_id: 'r4', court_number: 2, team_b_id: 'mine' },
+    { id: 'unassigned', round_id: 'r1', court_number: null },
+  ];
+  const all = ['r1c1', 'r1c2', 'r1c3', 'r1c4', 'unassigned', 'mine3a', 'mine3b', 'mine4', 'mine5', 'mine8'];
+  const ownFirst = ['mine3a', 'mine3b', 'mine4', 'mine5', 'mine8', 'r1c1', 'r1c2', 'r1c3', 'r1c4', 'unassigned'];
+  for (const graph of [false, true]) {
+    assert.deepEqual(orderedMatches(matches, rounds, ['mine'], false, graph).map(match => match.id), all);
+    assert.deepEqual(orderedMatches(matches, rounds, ['mine'], true, graph).map(match => match.id), ownFirst);
+  }
+});
 test("stage labels follow assigned playoff matches and ignore voided matches", () => {
   const schedule = { rounds: [{ id: "sf", round_type: "elimination", round_number: 1 }, { id: "final", round_type: "finals_gold", round_number: 2 }], matches: [{ id: "sf1", round_id: "sf", team_a_id: "a", team_b_id: "b", bracket_next_winner_match_id: "f" }, { id: "f", round_id: "final", team_a_id: "a", team_b_id: "c" }, { id: "old", round_id: "final", team_a_id: "b", voided_at: "now" }] };
   assert.equal(reachedStage("a", schedule), "Final");
