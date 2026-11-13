@@ -87,6 +87,8 @@ export async function storageDatabase(deferIndividualRoster = false) {
   if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611060014_replay_terminal_match.sql'), 'utf8'));
   if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611060015_append_terminal_match.sql'), 'utf8'));
   if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611100001_individual_approval.sql'), 'utf8').replace(/\r\n/g, '\n'));
+  if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611130001_reviewed_next_stage.sql'), 'utf8').replace(/\r\n/g, '\n'));
+  if (!deferIndividualRoster) await db.exec(readFileSync(resolve('supabase/migrations/202611130002_reviewed_graph_stage.sql'), 'utf8').replace(/\r\n/g, '\n'));
   return db;
 }
 export async function role<T>(db: PGlite, name: 'anon'|'authenticated'|'service_role', actor: string, fn: () => Promise<T>) {

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { previewNextStage } from '../../lib/tournament-builder/next-stage-preview';
 import { planCommand, type CommandActor, type CommandPlan, type CommandSnapshot } from '../../lib/tournament-builder/commands';
 import { previewCorrection, previewWithdrawal } from '../../lib/tournament-builder/corrections';
 import { definitionHash } from '../../lib/tournament-builder/requests';
@@ -101,6 +102,9 @@ for (const graph of [false,true]) test(`${graph?'graph':'v1'} full withdrawal bl
     const a=snapshot.teams.find(team=>team.id===game.team_a_id)!,b=snapshot.teams.find(team=>team.id===game.team_b_id)!;
     snapshot=run(snapshot,'attestScore',{match_id:game.id,outcome_kind:'played',score_a:String(a.name)<String(b.name)?11:3,score_b:String(a.name)<String(b.name)?3:11,reason:'Observed'});
   }
+  const review = previewNextStage(snapshot, owner);
+  if (review.state !== 'ready') throw new Error('Expected a ready bracket');
+  snapshot = run(snapshot, 'generateNextStage', { preview_hash: review.preview_hash });
   const final=snapshot.matches.find(match=>!String(match.logical_key).startsWith('rr:'))!;
   snapshot=run(snapshot,'attestScore',{match_id:final.id,outcome_kind:'played',score_a:11,score_b:5,reason:'Observed final'});
   const before=structuredClone(snapshot);

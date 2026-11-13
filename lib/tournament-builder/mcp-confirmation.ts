@@ -21,6 +21,14 @@ export function confirmationQuestion(name: string, value: unknown, args: Record<
   if (name === 'admin_preview_replay_terminal_match' || name === 'admin_replay_terminal_match') return 'Invalidate this match, keep its prior players and score in the history, and create the reviewed replay?';
   if (name === 'admin_preview_append_terminal_match' || name === 'admin_append_terminal_match') return 'Add the reviewed placement match, preserve all completed games and recalculate final placements after it is played?';
   if (name === 'admin_preview_schedule' || name === 'admin_lock_roster') return `Close player positions and generate the reviewed schedule${count(source.fixtures) ? ` of ${count(source.fixtures)} games` : ''}?`;
+  if (name === 'admin_preview_next_stage') {
+    const automatic = Array.isArray(source.fixtures) && source.fixtures.some(fixture => {
+      const item = record(fixture);
+      return ['walkover', 'no_contest'].includes(String(item.automatic_outcome)) || (item.match_id === null && ['walkover', 'no_contest'].includes(String(item.outcome_kind)));
+    });
+    return source.state === 'ready' ? `Generate the reviewed next stage${count(source.fixtures) ? ` of ${count(source.fixtures)} games` : ''}${automatic ? ', including the automatic walkovers or no-contests shown' : ''}?${source.no_eligible_champion === true ? ' No eligible champion will be determined; final placements will remain blocked for review.' : ''}` : undefined;
+  }
+  if (name === 'admin_generate_next_stage') return 'Generate the reviewed next stage and its dependent games?';
   if (name === 'admin_preview_correction') return source.requires_reopen === true ? 'The owner must reopen completed results before this correction. Review the affected games first?' : 'After reviewing the affected games, which available resolution should be used?';
   if (name === 'admin_commit_correction') return record(args.data).resolution === 'void_and_replay' ? 'Correct this result and invalidate the reviewed dependent games for replay?' : 'Apply the reviewed correction and its stated effects on dependent games?';
   if (name === 'admin_preview_bulk_adjudication') return `Apply administrative results to ${count(source.selected_matches)} selected games${count(source.archived_matches) ? ` and archive ${count(source.archived_matches)} dependent games for regeneration` : ''}?${source.dupr_history_unknown === true ? ' Previously submitted DUPR results may require separate review.' : ''}`;

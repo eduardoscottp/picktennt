@@ -73,7 +73,7 @@ export function resolveBracket(fixtures: readonly Fixture[], results: readonly F
         }
       }
       current.state = 'completed'; current.result = result; current.winnerEntryId = winner;
-      current.loserEntryId = winner ? (winner === entryA ? entryB : entryA) ?? null : null;
+      current.loserEntryId = winner ? (winner === entryA ? entryB : entryA) || null : null;
     }
     resolved.set(fixture.id, current);
   }

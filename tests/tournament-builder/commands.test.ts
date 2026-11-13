@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { previewNextStage } from '../../lib/tournament-builder/next-stage-preview';
 import { planCommand, planInternalRuntime, type CommandActor, type CommandContext, type CommandSnapshot, type CommandPlan, type StorageRow } from '../../lib/tournament-builder/commands';
 import { previewCorrection, previewWithdrawal } from '../../lib/tournament-builder/corrections';
 import { definitionHash, requestHash } from '../../lib/tournament-builder/requests';
@@ -371,6 +372,23 @@ test('F01 full command workflow preserves all UUIDs while materializing only new
   let clock = Date.parse(context.now);
   while (s.event!.modular_state !== 'completed') {
     const current = s.matches.find(m => m.status === 'scheduled' && m.team_a_id && m.team_b_id);
+    if (!current) {
+      const review = previewNextStage(s, admin);
+      assert.equal(review.state, 'ready');
+      if (review.state !== 'ready') throw new Error('Expected a ready review');
+      assert.throws(() => planCommand(s, a, 'generateNextStage', { preview_hash: review.preview_hash }, context), { code: 'FORBIDDEN' });
+      assert.throws(() => planCommand(s, admin, 'generateNextStage', { preview_hash: 'stale' }, context), { code: 'STALE_PREVIEW' });
+      s = apply(s, planCommand(s, admin, 'generateNextStage', { preview_hash: review.preview_hash }, context));
+      assert.equal(previewNextStage(s, admin).state, 'existing');
+      const partial = structuredClone(s);
+      partial.matches.find(match => String(match.logical_key).startsWith('playoff:'))!.is_current = false;
+      const beforePartial = structuredClone(partial);
+      assert.equal(previewNextStage(partial, admin).state, 'blocked');
+      assert.throws(() => planInternalRuntime(partial, admin, context), { code: 'INVALID_STATE' });
+      assert.throws(() => planCommand(partial, admin, 'internalRuntime', {}, context, Symbol('reviewed runtime regeneration')), { code: 'INVALID_COMMAND' });
+      assert.deepEqual(partial, beforePartial);
+      continue;
+    }
     assert.ok(current, 'There must be an eligible fixture until complete.');
     const matchContext = { ...context, now: new Date(clock += 30 * 60_000).toISOString() };
     const teamA = s.teams.find(t => t.id === current.team_a_id)!, teamB = s.teams.find(t => t.id === current.team_b_id)!;
@@ -413,6 +431,10 @@ test('current whole-group draw unblocks tied qualification and remains stable du
   const plan = planCommand(s, admin, 'resolveTie', data, context);
   s = apply(s, plan);
   assert.deepEqual(plan.result.draw, [...data.entry_ids].reverse());
+  const review = previewNextStage(s, admin);
+  assert.equal(review.state, 'ready');
+  if (review.state !== 'ready') throw new Error('Expected a ready review');
+  s = apply(s, planCommand(s, admin, 'generateNextStage', { preview_hash: review.preview_hash }, context));
   assert.equal(s.matches.length, 4);
   assert.equal(s.stages.find(row => row.module_id === 'qualify')!.state, 'completed');
   const final = s.matches.find(m => String(m.logical_key).startsWith('playoff:'))!;

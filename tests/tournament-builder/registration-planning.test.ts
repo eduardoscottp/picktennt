@@ -7,6 +7,7 @@ import { previewDefinition } from '../../lib/tournament-builder/preview';
 import { validateDraft } from '../../lib/tournament-builder/validate';
 import type { GraphDefinition } from '../../lib/tournament-builder/graph-types';
 import { resolvedDefinition } from '../../lib/tournament-builder/resolved-definition';
+import { previewNextStage } from '../../lib/tournament-builder/next-stage-preview';
 import { previewCorrection } from '../../lib/tournament-builder/corrections';
 import { callTournamentTool } from '../../lib/tournament-builder/mcp';
 import { ADMIN_TOOLS } from '../../lib/tournament-builder/mcp-admin';
@@ -79,7 +80,7 @@ test('registration opens without players or a finished knockout; generation requ
   assert.throws(() => execute(closed, 'lockRoster', { reviewed_roster_revision: closed.event!.roster_revision, group_assignments: assignments(closed) }), /complete|pending|graph/i);
   const locked = execute(closed, 'lockRoster', { reviewed_roster_revision: closed.event!.roster_revision, group_assignments: assignments(closed), nodes: definition().nodes });
   assert.equal(locked.event!.modular_state, 'ready');
-  assert.equal(locked.matches.length, 11);
+  assert.equal(locked.matches.length, 8);
   assert.deepEqual((locked.definitions[0].definition as GraphDefinition).nodes, d.nodes, 'Published plan remains immutable');
   assert.deepEqual((resolvedDefinition(locked)!.definition as GraphDefinition).nodes, definition().nodes);
   assert.equal(previewDefinition(resolvedDefinition(locked)!.definition, 1).generationReady, true);
@@ -91,11 +92,18 @@ test('underfilled group assignments generate occupied games only and complete th
   const data = { reviewed_roster_revision: s.event!.roster_revision, group_assignments: assignments(s) };
   let locked = execute(s, 'lockRoster', data);
   assert.equal(locked.teams.length, 10);
-  assert.equal(locked.matches.length, 11); // 3+3+1+1 group games, two semis and final.
+  assert.equal(locked.matches.length, 8); // 3+3+1+1 group games; later blocks await review.
   assert.equal(locked.matches.filter(m => m.team_a_id && m.team_b_id).length, 8);
   locked = execute(locked, 'startTournament');
   for (let i = 0; i < 11; i++) {
-    const match = locked.matches.find(m => m.status === 'scheduled' && m.team_a_id && m.team_b_id);
+    let match = locked.matches.find(m => m.status === 'scheduled' && m.team_a_id && m.team_b_id);
+    if (!match) {
+      const review = previewNextStage(locked, owner);
+      assert.equal(review.state, 'ready');
+      if (review.state !== 'ready') throw new Error('Expected a ready stage review');
+      locked = execute(locked, 'generateNextStage', { preview_hash: review.preview_hash });
+      match = locked.matches.find(m => m.status === 'scheduled' && m.team_a_id && m.team_b_id);
+    }
     assert.ok(match);
     const a = Number(locked.teams.find(t => t.id === match.team_a_id)!.seed), b = Number(locked.teams.find(t => t.id === match.team_b_id)!.seed);
     locked = execute(locked, 'attestScore', { match_id: match.id, score_a: a < b ? 11 : 0, score_b: a < b ? 0 : 11, reason: 'Confirmed final score' });
@@ -140,6 +148,6 @@ test('MCP accepts reviewed actual groups and enforces confirmation before forwar
   await assert.rejects(callTournamentTool('admin_lock_roster', { ...args, confirmed_structure_change: false }, deps), { code: 'CONFIRMATION_REQUIRED' });
   assert.equal(calls, 0);
   const plan = await callTournamentTool('admin_lock_roster', args, deps) as ReturnType<typeof planCommand>;
-  assert.equal(plan.effects.matches?.length, 11);
+  assert.equal(plan.effects.matches?.length, 8);
   assert.equal(calls, 1);
 });

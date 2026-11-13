@@ -69,7 +69,7 @@ function build(snapshot: CommandSnapshot, actor: CommandActor, data: Record<stri
   const id = () => { const hash = definitionHash({ seed, counter: counter++ }); return `${hash.slice(0,8)}-${hash.slice(8,12)}-5${hash.slice(13,16)}-a${hash.slice(17,20)}-${hash.slice(20,32)}`; };
   let runtime: CommandPlan;
   try {
-    runtime = definition.schema_version === '2.0' ? planGraphRuntime(work,definition,actor,{now,id},revision) : planInternalRuntime(work,actor,{now,id});
+    runtime = definition.schema_version === '2.0' ? planGraphRuntime(work,definition,actor,{now,id},revision,new Set(),new Set(),false) : planInternalRuntime(work,actor,{now,id});
   } catch (error) {
     if (error instanceof DomainError) throw error;
     if (error instanceof Error && /winner|participating|feeder|accepted outcome|placement|illegal/i.test(error.message)) fail('DOWNSTREAM_STARTED','This withdrawal changes existing match dependencies. Review the affected results manually.');

@@ -9,6 +9,7 @@ import { previewPlayerReplacement } from '@/lib/tournament-builder/player-replac
 import { previewBulkOperation } from '@/lib/tournament-builder/bulk-adjudication';
 import { previewPlayerWithdrawal } from '@/lib/tournament-builder/player-withdrawal';
 import { assertWebWithdrawalPolicy } from '@/lib/tournament-builder/web-withdrawal-policy';
+import { previewNextStage } from '@/lib/tournament-builder/next-stage-preview';
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -20,6 +21,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw new DomainError('INVALID_REQUEST', 'Provide the proposed change.');
     const verifiedActor: CommandActor = { ...actor, role: snapshot.caller_role === 'owner' || snapshot.caller_role === 'admin' ? snapshot.caller_role : 'player' };
     const kind = new URL(request.url).searchParams.get('kind');
+    if (kind === 'next-stage' && Object.keys(body).length) throw new DomainError('INVALID_REQUEST', 'This review takes no additional fields.');
     assertWebWithdrawalPolicy(kind === 'withdrawal' ? 'withdrawEntry' : kind === 'player-withdrawal' ? 'withdrawPlayer' : kind === 'correction' ? 'commitCorrection' : '', body as Record<string, unknown>, snapshot);
     const preview = kind === 'correction' ? previewCorrection(snapshot, verifiedActor, body as Record<string, unknown>) :
       kind === 'withdrawal' ? previewWithdrawal(snapshot, verifiedActor, body as Record<string, unknown>) :
@@ -27,8 +29,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       kind === 'player-replacement' ? previewPlayerReplacement(snapshot, verifiedActor, body as Record<string, unknown>) :
       kind === 'bulk-adjudication' ? previewBulkOperation(snapshot, verifiedActor, body as Record<string, unknown>) :
       kind === 'player-withdrawal' ? previewPlayerWithdrawal(snapshot, verifiedActor, body as Record<string, unknown>) :
-      kind === 'schedule' ? previewSchedule(snapshot, verifiedActor, body as Record<string, unknown>) : null;
-    if (!preview) throw new DomainError('INVALID_REQUEST', 'Choose a correction, withdrawal, replacement, revision or schedule preview.');
+      kind === 'schedule' ? previewSchedule(snapshot, verifiedActor, body as Record<string, unknown>) :
+      kind === 'next-stage' ? previewNextStage(snapshot, verifiedActor) : null;
+    if (!preview) throw new DomainError('INVALID_REQUEST', 'Choose a supported tournament review.');
     return Response.json(preview, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) { return errorResponse(error); }
 }

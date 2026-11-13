@@ -8,6 +8,8 @@ import { generateElimination } from '../../lib/tournament-builder/modules/elimin
 import { scheduleFairly, summarizeScheduleFairness } from '../../lib/tournament-builder/fair-scheduling';
 import type { FixtureResult } from '../../lib/tournament-builder/types';
 import { planCommand, type CommandPlan, type CommandSnapshot } from '../../lib/tournament-builder/commands';
+import { planGraphRuntime } from '../../lib/tournament-builder/graph-command-runtime';
+import { entryPlayerIds } from '../../lib/tournament-builder/entry-roster';
 import { previewDefinition } from '../../lib/tournament-builder/preview';
 
 const roster = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `e${i + 1}`, playerIds: [`p${i + 1}`] }));
@@ -136,6 +138,13 @@ test('accepting results preserves the stored schedule of an already-running grap
   for (let i = 0; i < 8; i++) execute('addRegisteredEntry', { definition_id: s.event!.definition_id, player_ids: [id()], entry_name: `Team ${i + 1}`, reason: 'Organizer enrollment' });
   execute('closeRegistration');
   execute('lockRoster', { reviewed_roster_revision: s.event!.roster_revision });
+  // Model a graph whose later fixtures were already saved before stage review existed.
+  const entries = s.stages.find(stage => stage.module_id === 'entries')!;
+  const locked = entries.output as { entryIds: string[]; seedAssignments?: Record<string, string> };
+  const oldRoster = locked.entryIds.map(teamId => ({ id: teamId, playerIds: entryPlayerIds(s, teamId) }));
+  const planned = analyzeGraph(d, oldRoster, [], { allowIncompleteRoster: true, seedAssignments: locked.seedAssignments });
+  const missing = new Set(planned.fixtures.filter(fixture => !s.matches.some(match => match.logical_key === fixture.id)).map(fixture => fixture.id));
+  apply(planGraphRuntime(s, d, actor, context, Number(s.event!.revision) + 1, new Set(), missing));
   execute('startTournament');
   // A previously saved plan or administrator assignment differs from the new planner.
   s.rounds.forEach(round => { round.logical_wave = Number(round.logical_wave) + 20; });

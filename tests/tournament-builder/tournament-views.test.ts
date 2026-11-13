@@ -35,6 +35,20 @@ function openRoster(role = "player") {
   data.matches = [];
   return data;
 }
+test("published rules explain the configured semifinal and bronze routes", () => {
+  const data = snapshot();
+  const configured = structuredClone(definition);
+  configured.nodes.find((node: { module: string }) => node.module === "elimination@1").config.bronze = true;
+  data.definitions = [{ id: "definition", definition: configured }];
+  const markup = render("overview", data);
+  assert.match(markup, /1st vs 4th and 2nd vs 3rd/);
+  assert.match(markup, /semifinal losers play for third place/);
+});
+test("only tournament administrators see the next-stage review", () => {
+  assert.match(render("admin", snapshot("active", "admin"), "admin"), /Review next stage/);
+  assert.doesNotMatch(render("admin", snapshot("active", "player"), "player"), /Review next stage/);
+  assert.doesNotMatch(render("overview", snapshot("active", "player"), "player"), /Review next stage/);
+});
 test("match ordering prioritizes the player's matches and sorts each group by round", () => {
   const rounds = [{ id: "r1", round_number: 1 }, { id: "r2", round_number: 2 }];
   const matches = [{ id: "other", round_id: "r1", team_a_id: "c", team_b_id: "d" }, { id: "mine2", round_id: "r2", team_a_id: "a", team_b_id: "c" }, { id: "mine1", round_id: "r1", team_a_id: "b", team_b_id: "a" }, { id: "void", round_id: "r1", team_a_id: "a", voided_at: "now" }];
@@ -100,7 +114,7 @@ test("matches retains scoring while standings shows rankings and tie controls", 
   assert.doesNotMatch(matches, /id="entries"|Edit tournament/);
   assert.doesNotMatch(matches, /id="rules"|id="placements"/);
   const standings = render("standings");
-  assert.match(standings, /Leaderboard/); assert.match(standings, /🥇/); assert.match(standings, /2W – 0L · 22:10/); assert.match(standings, /Tied/); assert.doesNotMatch(standings, /id="placements"|Shared placement/); assert.match(standings, /Resolve remaining ties/);
+  assert.match(standings, /Leaderboard/); assert.match(standings, /#1/); assert.doesNotMatch(standings, /🥇|🥈|🥉/); assert.match(standings, /2W – 0L · 22:10/); assert.match(standings, /Tied/); assert.doesNotMatch(standings, /id="placements"|Shared placement/); assert.match(standings, /Resolve remaining ties/);
   assert.doesNotMatch(standings, /id="rules"|id="entries"|id="matches"/);
 });
 test("match cards show round, court and uniformly styled player names", () => {

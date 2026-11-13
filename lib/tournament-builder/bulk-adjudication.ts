@@ -43,7 +43,8 @@ function build(snapshot: CommandSnapshot, actor: CommandActor, data: Record<stri
   const seed = definitionHash({ event_id: snapshot.event!.id, event_revision: snapshot.event!.revision, proposal, regenerate_downstream: data.regenerate_downstream });
   let counter = 0;
   const id = () => { const hex = definitionHash({ seed, counter: counter++ }); return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`; };
-  const runtime = definition.schema_version === '2.0' ? planGraphRuntime(work, definition, actor, { now, id }, next) : planInternalRuntime(work, actor, { now, id });
+  const allowedMissing = new Set(snapshot.matches.filter(match => archive.includes(match.id) && typeof match.logical_key === 'string').map(match => String(match.logical_key)));
+  const runtime = definition.schema_version === '2.0' ? planGraphRuntime(work, definition, actor, { now, id }, next, new Set(), allowedMissing) : planInternalRuntime(work, actor, { now, id }, data.regenerate_downstream === true);
   const before = new Map(snapshot.matches.map(match => [match.id, match]));
   const changedFixtures = (runtime.effects.matches ?? []).filter(patch => !simulation.selected_matches.some(match => match.match_id === patch.id)).map(patch => {
     const old = before.get(patch.id);

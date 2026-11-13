@@ -11,6 +11,7 @@ import type { FixtureResult, RuntimeOptions } from './types';
 import { graphDependencies, graphManualEntries, type GraphDefinition } from './graph-types';
 import { planTeamForfeit, previewTeamForfeit, TEAM_FORFEIT_POLICY } from './team-forfeit';
 import { analyzeGraph } from './graph-runtime';
+import { graphRankLocks } from './graph-rank-locks';
 import type { GraphRuntimeOptions } from './graph-types';
 
 const record = (value: unknown): Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -85,7 +86,10 @@ function graphCorrectionImpact(s: CommandSnapshot, d: GraphDefinition, source: S
   const matches = current(s).filter(m => !possible.has(m.id)).map(m => m.id === source.id ? { ...m, ...outcome, result_revision: Number(s.event!.revision) + 1 } : m);
   const stageInputs: GraphRuntimeOptions['stageInputs'] = Object.fromEntries(s.stages.map(stage => [String(stage.node_id), { inputRevision: Math.max(0, ...matches.filter(m => m.stage_id === stage.id).map(m => Number(m.result_revision ?? 0))), rankingDraws: record(stage.output).rankingDraws as RuntimeOptions['rankingDraws'] }]));
   const results: FixtureResult[] = matches.filter(m => m.outcome_kind).map(m => ({ fixtureId: String(m.logical_key), accepted: accepted(m), outcome: m.outcome_kind as OutcomeKind, winnerEntryId: m.winner_team_id as string | null, scoreA: m.score_a as number | null, scoreB: m.score_b as number | null }));
-  const analysis = analyzeGraph(d, ids.map(id => ({ id, playerIds: entryPlayerIds(s, id) })), results, { allowIncompleteRoster: true, seedAssignments: rosterOutput.seedAssignments as GraphRuntimeOptions['seedAssignments'], stageInputs, eligibleEntryIds: s.teams.filter(t => isEligibleEntry(s,t)).map(t => t.id), excludedByNode: rosterOutput.excludedByNode as Record<string, string[]> | undefined, manualMatchEntries: graphManualEntries(s.stages, d) });
+  const entries = ids.map(id => ({ id, playerIds: entryPlayerIds(s, id) }));
+  const options: GraphRuntimeOptions = { allowIncompleteRoster: true, seedAssignments: rosterOutput.seedAssignments as GraphRuntimeOptions['seedAssignments'], stageInputs, eligibleEntryIds: s.teams.filter(t => isEligibleEntry(s,t)).map(t => t.id), excludedByNode: rosterOutput.excludedByNode as Record<string, string[]> | undefined, manualMatchEntries: graphManualEntries(s.stages, d) };
+  options.lockedRanks = graphRankLocks(d, entries, options, s.stages, matches);
+  const analysis = analyzeGraph(d, entries, results, options);
   const changed = new Set<string>();
   for (const node of d.nodes.filter(n => graphDependencies(n).includes(sourceNode))) {
     const affected = analysis.resolvedFixtures.filter(f => f.fixture.stageId === node.id).some(f => {

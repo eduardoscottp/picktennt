@@ -3,6 +3,7 @@ import { entryPlayerIds } from './entry-roster';
 import { isEligibleEntry } from './disciplinary-eligibility';
 import { graphDependencies, graphManualEntries, type GraphRuntimeOptions } from './graph-types';
 import { analyzeGraph } from './graph-runtime';
+import { graphRankLocks } from './graph-rank-locks';
 import { isLegalScore, type OutcomeKind } from './policies';
 import { DomainError, UUID } from './requests';
 import { resolvedDefinition } from './resolved-definition';
@@ -92,7 +93,10 @@ export function previewBulkAdjudication(snapshot: CommandSnapshot, actor: Comman
   const results: FixtureResult[] = included.filter(match => match.logical_key && (match.outcome_kind || ['score_entered', 'disputed'].includes(String(match.status)))).map(match => ({ fixtureId: String(match.logical_key), accepted: ['validated', 'walkover'].includes(String(match.status)), outcome: (match.outcome_kind ?? 'played') as OutcomeKind, winnerEntryId: match.winner_team_id as string | null, scoreA: match.score_a as number | null, scoreB: match.score_b as number | null }));
   let analysis: ReturnType<typeof analyzeGraph>;
   try {
-    analysis = analyzeGraph(d, ids.map(id => ({ id, playerIds: entryPlayerIds(snapshot, id) })), results, { allowIncompleteRoster: true, seedAssignments: roster.seedAssignments as GraphRuntimeOptions['seedAssignments'], stageInputs, eligibleEntryIds: snapshot.teams.filter(team => isEligibleEntry(snapshot,team)).map(team => team.id), excludedByNode: roster.excludedByNode as Record<string, string[]> | undefined, manualMatchEntries: graphManualEntries(snapshot.stages, d) });
+    const entries = ids.map(id => ({ id, playerIds: entryPlayerIds(snapshot, id) }));
+    const options: GraphRuntimeOptions = { allowIncompleteRoster: true, seedAssignments: roster.seedAssignments as GraphRuntimeOptions['seedAssignments'], stageInputs, eligibleEntryIds: snapshot.teams.filter(team => isEligibleEntry(snapshot,team)).map(team => team.id), excludedByNode: roster.excludedByNode as Record<string, string[]> | undefined, manualMatchEntries: graphManualEntries(snapshot.stages, d) };
+    options.lockedRanks = graphRankLocks(d, entries, options, snapshot.stages, included);
+    analysis = analyzeGraph(d, entries, results, options);
   } catch (error) {
     if (error instanceof Error && /winner|participating|feeder|accepted outcome|placement matches/i.test(error.message)) return fail('DEPENDENCY_CHANGED', 'A selected or intervening game may have different participants; review that dependency separately.');
     throw error;

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { planCommand, type CommandSnapshot, type CommandPlan, type CommandActor } from '../../lib/tournament-builder/commands';
+import { planGraphRuntime } from '../../lib/tournament-builder/graph-command-runtime';
 import { previewDefinition } from '../../lib/tournament-builder/preview';
 import { previewCorrection, previewWithdrawal } from '../../lib/tournament-builder/corrections';
 import { previewBulkAdjudication } from '../../lib/tournament-builder/bulk-adjudication-preview';
@@ -44,6 +45,13 @@ export function activeGroups(d = JSON.parse(readFileSync('../examples/four-group
   }
   s = execute(s, 'closeRegistration');
   s = execute(s, 'lockRoster', { reviewed_roster_revision: s.event!.roster_revision });
+  // These regression cases exercise graphs already materialized before the review gate existed.
+  const entries = s.stages.find(stage => stage.module_id === 'entries')!;
+  const locked = entries.output as { entryIds: string[]; seedAssignments?: Record<string, string> };
+  const roster = locked.entryIds.map(teamId => ({ id: teamId, playerIds: entryPlayerIds(s, teamId) }));
+  const planned = analyzeGraph(d, roster, [], { allowIncompleteRoster: true, seedAssignments: locked.seedAssignments });
+  const missing = new Set(planned.fixtures.filter(fixture => !s.matches.some(match => match.logical_key === fixture.id)).map(fixture => fixture.id));
+  s = apply(s, planGraphRuntime(s, d, owner, context, Number(s.event!.revision) + 1, new Set(), missing));
   return execute(s, 'startTournament');
 }
 function score(s: CommandSnapshot, matchId: string) {
@@ -72,6 +80,38 @@ test('graph runtime keeps previous results and allows a walkover when an active 
   assert.equal(s.matches.find(match => match.id === pending.id)!.outcome_kind, 'walkover');
   assert.equal(s.matches.find(match => match.id === first.id)!.score_a, saved.score_a);
   assert.equal(s.matches.find(match => match.id === first.id)!.score_b, saved.score_b);
+});
+
+test('one winner feeding a whole group propagates to every game and correction reviews the whole dependency', () => {
+  const d = JSON.parse(readFileSync('../examples/four-groups-definition.json', 'utf8'));
+  d.registration.min_entries = d.registration.max_entries = 8;
+  d.nodes = [
+    { id: 'registration', module: 'registration@1' }, { id: 'entries', module: 'entries@1', from: 'registration' },
+    ...[1, 2, 3, 4].map(i => ({ id: `q${i}`, module: 'match@1', inputs: [{ kind: 'seed', seed: i * 2 - 1 }, { kind: 'seed', seed: i * 2 }] })),
+    { id: 'pool', module: 'round_robin@2', inputs: [1, 2, 3, 4].map(i => ({ kind: 'winner', node_id: `q${i}` })) },
+    { id: 'final', module: 'match@1', inputs: [{ kind: 'rank', node_id: 'pool', rank: 1 }, { kind: 'rank', node_id: 'pool', rank: 2 }] },
+    { id: 'placements', module: 'placements@2', final: 'final' },
+  ];
+  let s = activeGroups(d);
+  for (const match of s.matches.filter(match => /^q[1-4]:match$/.test(String(match.logical_key)))) s = score(s, match.id);
+  const source = s.matches.find(match => match.logical_key === 'q1:match')!;
+  assert.equal(source.bracket_next_winner_match_id ?? null, null);
+  const poolStage = s.stages.find(stage => stage.node_id === 'pool')!;
+  const pool = s.matches.filter(match => match.stage_id === poolStage.id);
+  const involving = pool.filter(match => [match.team_a_id, match.team_b_id].includes(source.winner_team_id));
+  assert.equal(pool.length, 6); assert.equal(involving.length, 3);
+  s = score(s, involving[0].id);
+  const final = s.matches.find(match => match.logical_key === 'final:match')!;
+  const proposal = { match_id: source.id, score_a: source.score_b, score_b: source.score_a };
+  const review = previewCorrection(s, owner, proposal);
+  assert.ok(pool.every(match => review.affected_match_ids.includes(match.id)));
+  assert.ok(review.affected_match_ids.includes(final.id));
+  assert.ok(review.started_dependent_ids.includes(involving[0].id));
+  assert.throws(() => planCommand(s, owner, 'commitCorrection', { ...proposal, preview_hash: review.preview_hash, reason: 'Correct source', resolution: 'ordinary' }, context), { code: 'DOWNSTREAM_STARTED' });
+  const oldIds = new Set(pool.map(match => match.id));
+  s = execute(s, 'commitCorrection', { ...proposal, preview_hash: review.preview_hash, reason: 'Correct source', resolution: 'void_and_replay' });
+  assert.ok(s.matches.filter(match => oldIds.has(match.id)).every(match => match.is_current === false));
+  assert.equal(s.matches.filter(match => match.stage_id === poolStage.id && match.is_current !== false).length, 6);
 });
 
 test('forcing a pending terminal match preserves prior results and survives later runtime propagation', () => {
@@ -277,6 +317,14 @@ test('a completed group winner withdrawal propagates an audited semifinal walkov
   assert.equal(completed.status, 'walkover');
   assert.equal(completed.team_a_id, entryId, 'Historical participant identity remains stable');
   assert.equal(completed.winner_team_id, semifinal.team_b_id);
+  const sourceStage = s.stages.find(stage => stage.node_id === 'A')!;
+  const sourceMatch = s.matches.find(match => match.stage_id === sourceStage.id && ![match.team_a_id, match.team_b_id].includes(entryId) && match.outcome_kind === 'played')!;
+  const proposal = { match_id: sourceMatch.id, score_a: sourceMatch.score_b, score_b: sourceMatch.score_a };
+  const correction = previewCorrection(s, owner, proposal);
+  assert.ok(correction.affected_match_ids.includes(semifinal.id));
+  s = execute(s, 'commitCorrection', { ...proposal, preview_hash: correction.preview_hash, reason: 'Review group result after withdrawal', resolution: 'void_and_replay' });
+  assert.equal(s.matches.find(match => match.id === semifinal.id)!.is_current, false);
+  assert.notEqual(s.matches.find(match => match.logical_key === 'SF1:match' && match.is_current !== false)?.team_a_id, entryId);
 });
 
 test('correcting semifinal points while keeping its winner does not replay the final', () => {
