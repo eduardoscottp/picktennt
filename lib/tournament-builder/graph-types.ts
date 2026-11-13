@@ -12,6 +12,7 @@ export type GraphSource = {
   kind: 'winner' | 'loser';
   node_id: string;
 };
+export type GraphFixtureSource = GraphSource | { kind: 'entry'; entryId: string };
 export type GraphNode = {
   id: string;
   module: 'registration@1';
@@ -43,6 +44,7 @@ export type GraphDefinition = Omit<LegacyTournamentDefinition, 'schema_version' 
   nodes: GraphNode[];
 };
 export interface GraphRuntimeOptions extends RuntimeOptions {
+  lockedRanks?: Record<string, Record<number, string | null>>;
   seedAssignments?: Record<string, string>;
   manualMatchEntries?: Record<string, { a?: string; b?: string }>;
   stageInputs?: Record<string, {
@@ -72,6 +74,7 @@ export interface GraphStageOutput {
 export type GraphAnalysis = TournamentAnalysis & {
   graphStages: Record<string, GraphStageOutput>;
   resolvedFixtures: ResolvedFixture[];
+  fixtureSources: Record<string, [GraphFixtureSource, GraphFixtureSource]>;
 };
 export function graphSources(node: GraphNode): GraphSource[] {
   if ('inputs' in node)

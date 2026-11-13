@@ -6,6 +6,7 @@ import type { PGlite } from '@electric-sql/pglite';
 import { storageDatabase, role, command, owner, stranger } from './helpers/storage-db';
 import { planCommand, type CommandSnapshot } from '../../lib/tournament-builder/commands';
 import { previewDefinition } from '../../lib/tournament-builder/preview';
+import { previewNextStage } from '../../lib/tournament-builder/next-stage-preview';
 import { previewForcedPendingMatch } from '../../lib/tournament-builder/force-pending-match';
 import { previewCorrection, previewWithdrawal } from '../../lib/tournament-builder/corrections';
 import { previewReplayTerminalMatch } from '../../lib/tournament-builder/replay-terminal-match';
@@ -45,6 +46,9 @@ test('SQL independently fences forced pending finalists and persists their routi
   current = await apply(event, 'lockRoster', { reviewed_roster_revision: current.event!.roster_revision });
   current = await apply(event, 'startTournament', {});
   for (const semi of current.matches.filter(match => ['left:match', 'right:match'].includes(String(match.logical_key)))) current = await apply(event, 'attestScore', { match_id: semi.id, outcome_kind: 'played', score_a: 11, score_b: 1, reason: 'Observed score' });
+  const stageReview = previewNextStage(current, actor);
+  if (stageReview.state !== 'ready') throw new Error('Expected a ready stage review');
+  current = await apply(event, 'generateNextStage', { preview_hash: stageReview.preview_hash });
   const final = current.matches.find(match => match.logical_key === 'final:match')!;
   const bronze = current.matches.find(match => match.logical_key === 'bronze:match')!;
   const proposal = { match_id: final.id, team_a_id: final.team_b_id, team_b_id: final.team_a_id, reason: 'Reviewed administrative replacement' };

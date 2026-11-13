@@ -10,7 +10,7 @@ export function analyzeGraph(d: GraphDefinition, entries: readonly TournamentEnt
   const invalid = validateGraph(d);
   if (invalid.length)
     throw new Error(invalid.map(i => i.message).join(' '));
-  const out: GraphAnalysis = { state: 'waiting', fixtures: [], resolvedFixtures: [], standings: [], ties: [], qualifiers: [], graphStages: {} };
+  const out: GraphAnalysis = { state: 'waiting', fixtures: [], resolvedFixtures: [], standings: [], ties: [], qualifiers: [], graphStages: {}, fixtureSources: {} };
   const expectedPlayers = d.registration.entry_type === 'singles' ? 1 : 2;
   if (entries.length < d.registration.min_entries || entries.length > d.registration.max_entries || entries.some(e => options.allowIncompleteRoster ? e.playerIds.length > expectedPlayers : e.playerIds.length !== expectedPlayers))
     return { ...out, state: 'blocked', blockedCode: 'INVALID_CAPACITY' };
@@ -41,10 +41,11 @@ export function analyzeGraph(d: GraphDefinition, entries: readonly TournamentEnt
     if (!completed.has(s.node_id))
       return undefined;
     if (s.kind === 'rank') {
-      const id = stage.rows?.[s.rank - 1]?.entryId;
+      const locked = options.lockedRanks?.[s.node_id];
+      const id = locked && Object.hasOwn(locked, s.rank) ? locked[s.rank] : (locked ? stage.rows : stage.rows?.filter(row => eligible.includes(row.entryId)))?.[s.rank - 1]?.entryId;
       if (!id)
         return null;
-      return stage.ties?.some(t => t.includes(id)) ? undefined : id;
+      return !locked && stage.ties?.some(t => t.includes(id) && t.filter(entryId => eligible.includes(entryId)).length > 1) ? undefined : id;
     }
     return (s.kind === 'winner' ? stage.winnerEntryId : stage.loserEntryId) ?? null;
   }
@@ -64,32 +65,35 @@ export function analyzeGraph(d: GraphDefinition, entries: readonly TournamentEnt
       if (bronze && final.entryIds.some(id => bronze.entryIds.includes(id))) throw new Error('Placement matches cannot share a team.');
       const allPlayingBlocksComplete = d.nodes.filter(n => graphSources(n).length).every(n => completed.has(n.id));
       if (final.state === 'completed' && (!bronze || bronze.state === 'completed') && allPlayingBlocksComplete) {
-        if (!final.winnerEntryId) {
+        if (!final.winnerEntryId || !eligible.includes(final.winnerEntryId)) {
           out.placements = { state: 'blocked', blockedCode: 'NO_ELIGIBLE_CHAMPION' };
           out.state = 'blocked';
           out.blockedCode = 'NO_ELIGIBLE_CHAMPION';
         }
         else {
           const groups: PlacementGroup[] = [{ rank: 1, entryIds: [final.winnerEntryId] }];
-          if (final.loserEntryId)
+          if (final.loserEntryId && eligible.includes(final.loserEntryId))
             groups.push({ rank: 2, entryIds: [final.loserEntryId] });
           if (bronze) {
-            if (bronze.winnerEntryId)
+            if (bronze.winnerEntryId && eligible.includes(bronze.winnerEntryId))
               groups.push({ rank: 3, entryIds: [bronze.winnerEntryId] });
-            if (bronze.loserEntryId)
+            if (bronze.loserEntryId && eligible.includes(bronze.loserEntryId))
               groups.push({ rank: 4, entryIds: [bronze.loserEntryId] });
           }
           // Group eliminated entries by distance from the final; unrelated pool ranks are never compared.
           const seen = new Set(groups.flatMap(g => g.entryIds));
-          let frontier = [node.final], rank = Math.max(3, seen.size + 1);
+          const seenHistory = new Set([final.winnerEntryId, final.loserEntryId, bronze?.winnerEntryId, bronze?.loserEntryId].filter((id): id is string => !!id));
+          let frontier = [node.final], rank = bronze ? 5 : 3;
           while (frontier.length) {
             const feeders = frontier.flatMap(id => { const n = d.nodes.find(n => n.id === id); return n?.module === 'match@1' ? n.inputs.flatMap(s => s.kind === 'winner' ? [s.node_id] : []) : []; });
-            const ids = [...new Set(feeders.flatMap(id => { const loser = out.graphStages[id]?.loserEntryId; return loser && !seen.has(loser) ? [loser] : []; }))];
+            const historicalLosers = [...new Set(feeders.flatMap(id => { const loser = out.graphStages[id]?.loserEntryId; return loser && !seenHistory.has(loser) ? [loser] : []; }))];
+            const ids = historicalLosers.filter(id => eligible.includes(id));
             if (ids.length) {
               groups.push({ rank, entryIds: ids });
               ids.forEach(id => seen.add(id));
             }
-            rank += ids.length;
+            historicalLosers.forEach(id => seenHistory.add(id));
+            rank += historicalLosers.length;
             frontier = feeders;
           }
           const rest = entries.filter(e => eligible.includes(e.id) && !seen.has(e.id)).map(e => e.id);
@@ -129,6 +133,10 @@ export function analyzeGraph(d: GraphDefinition, entries: readonly TournamentEnt
       : node.module === 'cross_play@1'
         ? crossPairs.map((pair, i) => ({ id: `${node.id}:r${pair.round}:m${crossPairs.slice(0, i + 1).filter(item => item.round === pair.round).length}`, stageId: node.id, round: pair.round, wave: 1, court: 1, a: slot(sources[pair.a]), b: slot(sources[pair.b]) }))
         : generatedRoundRobin.map(f => ({ ...f, a: slot(sources[Number(f.a.kind === 'entry' ? f.a.entryId : 0)]), b: slot(sources[Number(f.b.kind === 'entry' ? f.b.entryId : 0)]) }));
+    fixtures.forEach((fixture, i) => {
+      const source = (index: number) => manual[index] ? { kind: 'entry' as const, entryId: manual[index]! } : sources[index];
+      out.fixtureSources[fixture.id] = [source(template[i][0]), source(template[i][1])];
+    });
     // Keep possible participants fixed even after results resolve the ports.
     schedulingBlocks.push({
       id: node.id,
@@ -161,10 +169,11 @@ export function analyzeGraph(d: GraphDefinition, entries: readonly TournamentEnt
     const inputRevision = stageInput?.inputRevision ?? options.inputRevision ?? 0;
     const draws = stageInput?.rankingDraws ?? [];
     const ranking = computeStandings(entryIds, resolved.flatMap(f => f.result && f.entryA && f.entryB ? [{ a: f.entryA, b: f.entryB, scoreA: f.result.scoreA, scoreB: f.result.scoreB, outcome: f.result.outcome, winner: f.result.winnerEntryId, accepted: true }] : []), d.policies.ranking.order, draws.filter(draw => draw.inputRevision === inputRevision).map(draw => draw.entryIds), options.excludedByNode?.[node.id]);
-    out.graphStages[node.id] = { state: isComplete && ranking.ties.length ? 'blocked' : state, entryIds, rows: ranking.rows, ties: ranking.ties, inputRevision, rankingDraws: draws, ...(isComplete && ranking.ties.length ? { blockedCode: 'UNRESOLVED_TIE' } : {}) };
+    const unresolvedTies = ranking.ties.filter(tie => tie.filter(id => eligible.includes(id)).length > 1);
+    out.graphStages[node.id] = { state: isComplete && unresolvedTies.length ? 'blocked' : state, entryIds, rows: ranking.rows, ties: ranking.ties, inputRevision, rankingDraws: draws, ...(isComplete && unresolvedTies.length ? { blockedCode: 'UNRESOLVED_TIE' } : {}) };
     out.standings.push(...ranking.rows);
     if (isComplete)
-      out.ties.push(...ranking.ties);
+      out.ties.push(...unresolvedTies);
   }
   if (results.some(r => !out.fixtures.some(f => f.id === r.fixtureId)))
     throw new Error('Results must reference known graph fixtures.');

@@ -9,6 +9,7 @@ import { previewForcedPendingMatch } from '@/lib/tournament-builder/force-pendin
 import { previewReplayTerminalMatch } from '@/lib/tournament-builder/replay-terminal-match';
 import { previewAppendTerminalMatch } from '@/lib/tournament-builder/append-terminal-match';
 import { previewSchedule } from '@/lib/tournament-builder/schedule-preview';
+import { previewNextStage } from '@/lib/tournament-builder/next-stage-preview';
 import { createAdminClient } from '@/lib/supabase/server';
 import { createOAuthConfig, hashOAuthSecret } from '@/lib/tournament-builder/oauth';
 import { handleMcpRequest } from '@/lib/tournament-builder/mcp-http';
@@ -60,6 +61,7 @@ async function handle(request: Request) {
           previewPlayerReplacement: async (id:string,data:Record<string,unknown>) => { const snapshot=await authorizedSnapshot(actor,id); return previewPlayerReplacement(snapshot,{...actor,role:snapshot.caller_role==='admin'?'admin':'owner'},data); },
           previewPlayerWithdrawal: async (id:string,data:Record<string,unknown>) => { const snapshot=await authorizedSnapshot(actor,id); return previewPlayerWithdrawal(snapshot,{...actor,role:snapshot.caller_role==='admin'?'admin':'owner'},data); },
           previewSchedule: async (id:string,data:Record<string,unknown>) => { const snapshot=await getSnapshot(db,actor,id); return previewSchedule(snapshot,{...actor,role:snapshot.caller_role==='admin'?'admin':'player'},data); },
+          previewNextStage: async (id:string) => { const snapshot=await authorizedSnapshot(actor,id); return previewNextStage(snapshot,{...actor,role:snapshot.caller_role==='admin'?'admin':'owner'}); },
         }} : {}),
         ...(actor.permissions?.includes('owner:manage') ? { owner: {
           snapshot: (id:string) => authorizedSnapshot(actor,id,true),

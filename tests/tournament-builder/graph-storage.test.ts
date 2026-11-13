@@ -9,6 +9,7 @@ import { previewDefinition } from '../../lib/tournament-builder/preview';
 import { previewBulkOperation } from '../../lib/tournament-builder/bulk-adjudication';
 import { previewRevision } from '../../lib/tournament-builder/revisions';
 import { previewCorrection } from '../../lib/tournament-builder/corrections';
+import { previewNextStage } from '../../lib/tournament-builder/next-stage-preview';
 
 let db: PGlite;
 before(async () => { db = await storageDatabase(); });
@@ -71,7 +72,7 @@ test('actual SQL persists and completes a 16-doubles graph through all 27 result
 
   current = await apply(event, 'lockRoster', { reviewed_roster_revision: current.event!.roster_revision });
   current = await apply(event, 'startTournament', {});
-  assert.equal(current.matches.length, 27);
+  assert.equal(current.matches.length, 24);
   assert.equal(new Set(current.rounds.map(round => Number(round.round_number))).size, current.rounds.length, 'Legacy SQL requires globally unique round numbers');
   const poolA = current.stages.find(stage => stage.node_id === 'A')!;
   const poolMatches = current.matches.filter(match => match.stage_id === poolA.id);
@@ -100,6 +101,15 @@ test('actual SQL persists and completes a 16-doubles graph through all 27 result
   assert.equal(history.rows[0].reason, proposal.reason);
   assert.equal(history.rows[0].before_facts.matches.find(match => match.id === first.id)?.outcome_kind, 'played');
   assert.equal(history.rows[0].after_facts.matches.find(match => match.id === first.id)?.outcome_kind, 'administrative_score');
+  for (const match of current.matches.filter(match => match.status === 'scheduled')) {
+    const a = Number(current.teams.find(team => team.id === match.team_a_id)!.seed), b = Number(current.teams.find(team => team.id === match.team_b_id)!.seed);
+    current = await apply(event, 'attestScore', { match_id: match.id, outcome_kind: 'played', score_a: a < b ? 11 : 2, score_b: a < b ? 2 : 11, reason: 'Organizer observed this completed game.' });
+  }
+  const stageReview = previewNextStage(current, actor);
+  assert.equal(stageReview.state, 'ready');
+  if (stageReview.state !== 'ready') throw new Error('Expected a ready stage review');
+  current = await apply(event, 'generateNextStage', { preview_hash: stageReview.preview_hash });
+  assert.equal(current.matches.filter(match => match.is_current !== false).length, 27);
   const regeneration = { entry_id: entry.id, match_ids: [first.id], mode: 'walkover', reason: 'Reviewed withdrawal and dependent schedule', overwrite_existing: true, regenerate_downstream: true };
   const regenPreview = previewBulkOperation(current, actor, regeneration);
   assert.ok(regenPreview.archived_matches.length > 0);
@@ -112,10 +122,10 @@ test('actual SQL persists and completes a 16-doubles graph through all 27 result
   current = await apply(event, 'bulkAdjudicate', regenData);
   assert.ok(regenPreview.archived_matches.every(match => current.matches.find(saved => saved.id === match.match_id)?.is_current === false));
   assert.ok(regenPreview.changed_fixtures.filter(match => match.new_fixture).every(match => current.matches.find(saved => saved.id === match.match_id)?.is_current !== false));
-  let played = 2;
+  let played = 24;
   while (current.event!.modular_state !== 'completed') {
     assert.ok(played < 27, 'Graph must complete within its 27 matches');
-    const match = current.matches.find(match => match.status === 'scheduled' && match.team_a_id && match.team_b_id);
+    const match = current.matches.find(match => match.is_current !== false && !match.voided_at && match.status === 'scheduled' && match.team_a_id && match.team_b_id);
     assert.ok(match, 'Stored graph must expose an eligible next match');
     if (match.logical_key === 'F:match') {
       const leaders = current.teams.filter(team => poolMatches.some(game => [game.team_a_id,game.team_b_id].includes(team.id))).sort((a,b)=>Number(a.seed)-Number(b.seed));
@@ -148,4 +158,50 @@ test('actual SQL persists and completes a 16-doubles graph through all 27 result
   assert.equal(new Set(groups.flatMap(group => group.entryIds)).size, 16);
   assert.equal(groups.find(group => group.rank === 1)!.entryIds[0], current.matches.find(match => match.logical_key === 'F:match' && match.is_current !== false)!.winner_team_id);
   assert.equal((current.definitions.find(row => row.id === definitionId)!.definition as { schema_version: string }).schema_version, '2.0');
+});
+
+test('SQL requires validation of every initial group before reviewing the next stage', async () => {
+  const event = randomUUID();
+  const definition = JSON.parse(readFileSync('tests/tournament-builder/fixtures/tournament-definition.json', 'utf8'));
+  definition.schema_version = '2.0'; definition.registration.mode = 'open';
+  definition.registration.entry_type = 'singles'; definition.registration.partner_consent = false;
+  definition.registration.min_entries = definition.registration.max_entries = 6;
+  const now = Date.now();
+  definition.event.timezone = 'UTC';
+  definition.registration.closes_at = new Date(now + 30 * 86400000).toISOString();
+  definition.event.starts_at = new Date(now + 31 * 86400000).toISOString();
+  definition.event.expected_end_at = new Date(now + 31 * 86400000 + 4 * 3600000).toISOString();
+  definition.nodes = [
+    { id: 'registration', module: 'registration@1' }, { id: 'entries', module: 'entries@1', from: 'registration' },
+    ...['A', 'B', 'C'].map((id, index) => ({ id, module: 'round_robin@2', inputs: [index * 2 + 1, index * 2 + 2].map(seed => ({ kind: 'seed', seed })) })),
+    { id: 'final', module: 'match@1', inputs: [{ kind: 'rank', node_id: 'A', rank: 1 }, { kind: 'rank', node_id: 'B', rank: 1 }] },
+    { id: 'placements', module: 'placements@2', final: 'final' },
+  ];
+  let current = await apply(event, 'createDraft', { definition }, empty());
+  const published = previewDefinition(definition, Number(current.event!.revision));
+  current = await apply(event, 'publishTournament', { reviewed_definition_hash: published.definitionHash, acknowledged_warning_codes: published.warningCodes ?? [] });
+  for (let index = 0; index < 6; index++) {
+    const user = randomUUID();
+    await db.query('INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES($1,$2,$3)', [user, `independent-${user}@example.invalid`, JSON.stringify({ given_name: `Player ${index}` })]);
+    current = await apply(event, 'addRegisteredEntry', { definition_id: current.event!.definition_id, player_ids: [user], entry_name: `Player ${index}`, reason: 'Organizer enrolled verified player.' });
+  }
+  current = await apply(event, 'closeRegistration', {});
+  current = await apply(event, 'lockRoster', { reviewed_roster_revision: current.event!.roster_revision });
+  current = await apply(event, 'startTournament', {});
+  for (const match of current.matches.filter(match => ['A', 'B'].some(id => current.stages.find(stage => stage.node_id === id)?.id === match.stage_id))) {
+    current = await apply(event, 'attestScore', { match_id: match.id, outcome_kind: 'played', score_a: 11, score_b: 3, reason: 'Verified result' });
+  }
+  const unrelated = current.stages.find(stage => stage.node_id === 'C')!;
+  assert.equal(current.matches.find(match => match.stage_id === unrelated.id)!.status, 'scheduled');
+  const incomplete = previewNextStage(current, actor);
+  assert.equal(incomplete.state, 'blocked');
+  if (incomplete.state !== 'blocked') throw new Error('Expected pending group');
+  assert.equal(incomplete.reason, 'RESULTS_INCOMPLETE');
+  for (const match of current.matches.filter(match => match.stage_id === unrelated.id)) current = await apply(event, 'attestScore', { match_id: match.id, outcome_kind: 'played', score_a: 11, score_b: 3, reason: 'Verified independent group result' });
+  const review = previewNextStage(current, actor);
+  assert.equal(review.state, 'ready');
+  if (review.state !== 'ready') throw new Error('Expected a ready independent branch');
+  current = await apply(event, 'generateNextStage', { preview_hash: review.preview_hash });
+  assert.ok(current.matches.some(match => match.logical_key === 'final:match'));
+  assert.equal(current.matches.find(match => match.stage_id === unrelated.id)!.status, 'validated');
 });

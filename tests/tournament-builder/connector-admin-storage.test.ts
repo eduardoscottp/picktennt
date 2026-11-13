@@ -7,6 +7,7 @@ import { storageDatabase, role, owner, player, stranger } from './helpers/storag
 import { executeCommand, getSnapshot, getOperation, previewTournament, type RpcClient } from '../../lib/tournament-builder/repository';
 import type { CommandActor } from '../../lib/tournament-builder/commands';
 import { previewBulkOperation } from '../../lib/tournament-builder/bulk-adjudication';
+import { previewNextStage } from '../../lib/tournament-builder/next-stage-preview';
 import { callTournamentTool, type McpDependencies } from '../../lib/tournament-builder/mcp';
 let db: PGlite;
 before(async()=>{db=await storageDatabase();});after(async()=>{await db?.close();});
@@ -74,6 +75,9 @@ test('v1 qualification changes require reviewed playoff regeneration and preserv
   await f.run('attestScore',{match_id:game.id,outcome_kind:'played',score_a:a<b?11:0,score_b:a<b?0:11,reason:'Observed result'},administrator);
  }
  current=await getSnapshot(rpc,administrator,f.event);
+ const review=previewNextStage(current,administrator);if(review.state!=='ready')throw new Error('Expected a ready bracket');
+ await f.run('generateNextStage',{preview_hash:review.preview_hash},administrator);
+ current=await getSnapshot(rpc,administrator,f.event);
  const elimination=current.stages.find(stage=>stage.module_id==='elimination')!;
  const semifinal=current.matches.find(match=>match.stage_id===elimination.id&&match.team_a_id&&match.team_b_id)!;
  await f.run('attestScore',{match_id:semifinal.id,outcome_kind:'played',score_a:11,score_b:0,reason:'Observed semifinal'},administrator);
@@ -105,7 +109,8 @@ test('v1 elimination correction previews actual bracket successors and preserves
  await f.run('closeRegistration',{},administrator);await f.run('lockRoster',{reviewed_roster_revision:roster.event!.roster_revision},administrator);await f.run('startTournament',{},administrator);
  let current=await getSnapshot(rpc,administrator,f.event);
  while(current.event!.modular_state!=='completed'){
-  const game=current.matches.find(match=>match.is_current!==false&&match.status==='scheduled'&&match.team_a_id&&match.team_b_id)!;
+  const game=current.matches.find(match=>match.is_current!==false&&match.status==='scheduled'&&match.team_a_id&&match.team_b_id);
+  if(!game){const review=previewNextStage(current,administrator);if(review.state!=='ready')throw new Error('Expected a ready bracket');await f.run('generateNextStage',{preview_hash:review.preview_hash},administrator);current=await getSnapshot(rpc,administrator,f.event);continue;}
   assert.ok(game);
   const a=Number(current.teams.find(team=>team.id===game.team_a_id)!.seed),b=Number(current.teams.find(team=>team.id===game.team_b_id)!.seed);
   await f.run('attestScore',{match_id:game.id,outcome_kind:'played',score_a:a<b?11:0,score_b:a<b?0:11,reason:'Observed result'},administrator);
@@ -120,6 +125,9 @@ test('v1 elimination correction previews actual bracket successors and preserves
  assert.throws(()=>previewBulkOperation(current,administrator,{...proposal,match_ids:[semifinal.id,previousFinal.id]}),{code:'INVALID_STATE'});
  const reviewed=previewBulkOperation(current,administrator,{...proposal,regenerate_downstream:true});
  assert.ok(reviewed.archived_matches.some(match=>match.match_id===previousFinal.id&&match.outcome_kind==='played'));
+ assert.throws(()=>previewBulkOperation(current,{id:stranger,clientId:'web',role:'player'},{...proposal,regenerate_downstream:true}),{code:'FORBIDDEN'});
+ await assert.rejects(executeCommand(rpc,administrator,'bulkAdjudicate',f.event,{operation_id:randomUUID(),expected_revision:Number(current.event!.revision),data:{...proposal,regenerate_downstream:true,preview_hash:'0'.repeat(64)}}),{code:'STALE_PREVIEW'});
+ assert.equal((await getSnapshot(rpc,administrator,f.event)).event!.revision,current.event!.revision);
  await executeCommand(rpc,administrator,'bulkAdjudicate',f.event,{operation_id:randomUUID(),expected_revision:Number(current.event!.revision),data:{...proposal,regenerate_downstream:true,preview_hash:reviewed.preview_hash}});
  const after=await getSnapshot(rpc,administrator,f.event);
  assert.equal(after.matches.find(match=>match.id===previousFinal.id)?.is_current,false);

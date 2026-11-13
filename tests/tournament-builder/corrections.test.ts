@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { previewNextStage } from '../../lib/tournament-builder/next-stage-preview';
 import { planCommand, type CommandActor, type CommandContext, type CommandPlan, type CommandSnapshot } from '../../lib/tournament-builder/commands';
 import { planWithdrawal, previewCorrection, previewWithdrawal } from '../../lib/tournament-builder/corrections';
 import { definitionHash } from '../../lib/tournament-builder/requests';
@@ -48,6 +49,11 @@ function finish(s: CommandSnapshot, matchId: string, winningName?: string): Comm
   return apply(s, planCommand(s, { id: String(b.user_id), clientId: 'web' }, 'confirmScore', { match_id: m.id, result_revision: s.matches.find(r => r.id === m.id)!.result_revision }, ctx()));
 }
 function corrected(m: CommandSnapshot['matches'][number]) { return { match_id: m.id, score_a: Number(m.score_b), score_b: Number(m.score_a) }; }
+function generateBracket(s: CommandSnapshot): CommandSnapshot {
+  const review = previewNextStage(s, admin);
+  if (review.state !== 'ready') throw new Error('Expected a ready bracket');
+  return apply(s, planCommand(s, admin, 'generateNextStage', { preview_hash: review.preview_hash }, ctx()));
+}
 function commit(s: CommandSnapshot, data: ReturnType<typeof corrected>, resolution: 'ordinary' | 'void_and_replay' = 'ordinary'): CommandSnapshot {
   const preview = previewCorrection(s, admin, data);
   return apply(s, planCommand(s, admin, 'commitCorrection', { ...data, preview_hash: preview.preview_hash, reason: 'Reviewed score correction.', resolution }, ctx()));
@@ -164,6 +170,7 @@ test('withdrawing a team leaves a replaced player and their current entry untouc
 test('completed RR withdrawal backfills only before any playoff starts', () => {
   let s = setup(5, 'combined'); const rr = s.matches.filter(m => String(m.logical_key).startsWith('rr:'));
   for (const m of rr) s = finish(s, m.id);
+  s = generateBracket(s);
   const d = s.teams.find(t => t.name === 'D')!, e = s.teams.find(t => t.name === 'E')!;
   const before = previewWithdrawal(s, admin, { entry_id: d.id, reason: 'withdrew' });
   assert.equal(before.timing, 'completed_rr_before_playoff');
@@ -201,6 +208,7 @@ test('court changes are bounded, reject same-wave collisions and never move a st
 });
 test('RR cutoff correction preserves an unrelated live semifinal and changes only the affected branch', () => {
   let s = setup(5, 'combined'); for (const game of [...s.matches]) s = finish(s, game.id);
+  s = generateBracket(s);
   const d = s.teams.find(t => t.name === 'D')!, e = s.teams.find(t => t.name === 'E')!;
   const source = s.matches.find(m => [m.team_a_id, m.team_b_id].includes(d.id) && [m.team_a_id, m.team_b_id].includes(e.id))!;
   const untouched = s.matches.find(m => String(m.logical_key).startsWith('playoff:') && m.team_a_id && m.team_b_id && ![m.team_a_id, m.team_b_id].includes(d.id))!;
@@ -214,6 +222,7 @@ test('RR cutoff correction preserves an unrelated live semifinal and changes onl
 });
 test('a correction creating an exact seed tie pauses replay until a new recorded draw', () => {
   let s = setup(3, 'combined'); for (const game of [...s.matches]) s = finish(s, game.id);
+  s = generateBracket(s);
   const a = s.teams.find(t => t.name === 'A')!, c = s.teams.find(t => t.name === 'C')!;
   const source = s.matches.find(m => [m.team_a_id, m.team_b_id].includes(a.id) && [m.team_a_id, m.team_b_id].includes(c.id))!;
   const final = s.matches.find(m => String(m.logical_key).startsWith('playoff:'))!;
@@ -230,12 +239,36 @@ test('a correction creating an exact seed tie pauses replay until a new recorded
 });
 test('insufficient replacements retain an empty qualifier slot and create an audited walkover', () => {
   let s = setup(4, 'combined'); for (const game of [...s.matches]) s = finish(s, game.id);
+  s = generateBracket(s);
   const entryId = s.teams.find(t => t.name === 'D')!.id;
   const p = previewWithdrawal(s, admin, { entry_id: entryId, reason: 'withdrew' });
   assert.equal(p.empty_qualifier_slots, true);
   s = apply(s, planCommand(s, admin, 'withdrawEntry', { entry_id: entryId, reason: 'withdrew', preview_hash: p.preview_hash }, ctx()));
   assert.ok(s.matches.some(m => m.outcome_kind === 'walkover'));
   assert.equal(s.event!.modular_state, 'active');
+});
+
+test('reviewed generation after a withdrawal matches the automatic walkover and final slot preview', () => {
+  let s = setup(4, 'combined');
+  for (const game of [...s.matches]) s = finish(s, game.id);
+  const withdrawn = s.teams.find(team => team.name === 'D')!;
+  const proposal = { entry_id: withdrawn.id, reason: 'Withdrew before playoffs' };
+  const withdrawal = previewWithdrawal(s, admin, proposal);
+  assert.equal(withdrawal.empty_qualifier_slots, true);
+  s = apply(s, planCommand(s, admin, 'withdrawEntry', { ...proposal, preview_hash: withdrawal.preview_hash }, ctx()));
+  const review = previewNextStage(s, admin);
+  assert.equal(review.state, 'ready');
+  if (review.state !== 'ready') throw new Error('Expected reviewed vacancy');
+  const automatic = review.fixtures.flatMap(fixture => 'a' in fixture ? [fixture] : []).find(fixture => fixture.automatic_outcome === 'walkover');
+  assert.ok(automatic);
+  const plan = planCommand(s, admin, 'generateNextStage', { preview_hash: review.preview_hash }, ctx());
+  const saved = plan.effects.matches?.find(match => match.logical_key === automatic.id);
+  assert.equal(saved?.status, 'walkover'); assert.equal(saved?.winner_team_id, automatic.automatic_winner_entry_id);
+  assert.equal(saved?.team_a_id, automatic.resolved_entry_a); assert.equal(saved?.team_b_id, automatic.resolved_entry_b);
+  assert.equal(saved?.score_a, null); assert.equal(saved?.score_b, null);
+  const reviewedFinal = review.fixtures.flatMap(fixture => 'a' in fixture ? [fixture] : []).find(fixture => fixture.id === 'playoff:r2:m1')!;
+  const savedFinal = plan.effects.matches?.find(match => match.logical_key === reviewedFinal.id);
+  assert.equal(savedFinal?.team_a_id, reviewedFinal.resolved_entry_a); assert.equal(savedFinal?.team_b_id, reviewedFinal.resolved_entry_b);
 });
 test('own cancellation before lock frees capacity and does not require admin impersonation', () => {
   let s = setup(4, 'rr', false, false); const team = s.teams[0], member = s.team_members.find(m => m.team_id === team.id)!;

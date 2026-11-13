@@ -13,6 +13,7 @@ import { planReplayTerminalMatch } from './replay-terminal-match';
 import { planAppendTerminalMatch } from './append-terminal-match';
 import { planRevision, planEventDetails } from './revisions';
 import { previewSchedule, generationOrder } from './schedule-preview';
+import { inspectV1Bracket, previewNextStage } from './next-stage-preview';
 export type StorageRow = { id: string } & Record<string, unknown>;
 export interface CommandSnapshot { event: StorageRow | null; definitions: StorageRow[]; teams: StorageRow[]; team_members: StorageRow[]; tournament_players: StorageRow[]; stages: StorageRow[]; rounds: StorageRow[]; matches: StorageRow[]; standings: StorageRow[]; admins?: StorageRow[]; disciplinary_excluded_team_ids?: string[] }
 export interface CommandActor { id: string; clientId: string; grantId?: string; role?: 'owner' | 'admin' | 'player'; permissions?: readonly string[] }
@@ -37,7 +38,7 @@ const fields: Record<string, readonly string[]> = {
   addAdministrator: ['user_id', 'reason', 'confirmed_owner_action', 'reviewed_action_hash'], removeAdministrator: ['user_id', 'reason', 'confirmed_owner_action', 'reviewed_action_hash'],
   approveEntry: ['entry_id'], rejectEntry: ['entry_id', 'reason'], cancelEntry: ['entry_id'],
   approveIndividual: ['user_id'], rejectIndividual: ['user_id', 'reason'], renameTeam: ['team_id', 'name', 'reason'],
-  closeRegistration: [], reopenRegistration: [], lockRoster: ['reviewed_roster_revision', 'nodes', 'group_assignments', 'preview_hash'], startTournament: [],
+  closeRegistration: [], reopenRegistration: [], lockRoster: ['reviewed_roster_revision', 'nodes', 'group_assignments', 'preview_hash'], startTournament: [], generateNextStage: ['preview_hash'],
   startMatch: ['match_id', 'rest_override_reason'], submitScore: ['match_id', 'score_a', 'score_b'], confirmScore: ['match_id', 'result_revision'],
   disputeScore: ['match_id', 'result_revision', 'reason'], attestScore: ['match_id', 'score_a', 'score_b', 'outcome_kind', 'winner_entry_id', 'reason'],
   adjudicateDispute: ['match_id', 'score_a', 'score_b', 'outcome_kind', 'winner_entry_id', 'reason'],
@@ -48,6 +49,7 @@ const fields: Record<string, readonly string[]> = {
 };
 const record = (value: unknown): Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const runtimeCapability = Symbol('runtime planner');
+const reviewedRuntimeCapability = Symbol('reviewed runtime regeneration');
 const fail = (code: string, message: string, details?: unknown): never => { throw new DomainError(code, message, details); };
 function text(value: unknown, label: string, max = 200): string {
   if (typeof value !== 'string' || !value.trim() || value.length > max) return fail('INVALID_REQUEST', `Specify ${label}.`);
@@ -73,13 +75,14 @@ function strings(value: unknown, label: string): string[] {
 export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, command: string, data: Record<string, unknown>, context: CommandContext, capability?: symbol): CommandPlan {
   if (!actor.id || !actor.clientId) return fail('UNAUTHENTICATED', 'Sign in before issuing a command.');
   if (!Object.hasOwn(fields, command)) return fail('INVALID_COMMAND', 'Unsupported command.');
-  if (command === 'internalRuntime' && capability !== runtimeCapability) return fail('INVALID_COMMAND', 'Unsupported command.');
+  if (command === 'internalRuntime' && capability !== runtimeCapability && capability !== reviewedRuntimeCapability) return fail('INVALID_COMMAND', 'Unsupported command.');
   if (!data || Array.isArray(data) || Object.keys(data).some(key => !fields[command].includes(key))) return fail('INVALID_REQUEST', 'Command contains unknown fields.');
   if (command === 'addGuestEntry') return fail('ACCOUNT_REQUIRED', 'Every player must have a Picktennt account. Register an existing player profile instead.');
   if (actor.clientId !== 'web' && !['createDraft', 'updateDraft'].includes(command) && !(['joinTournament', 'selectEntrySlot', 'cancelRegistration'].includes(command) && actor.permissions?.includes('player:manage')) && !(isOwnerAction(command) ? actor.permissions?.includes('owner:manage') : actor.permissions?.includes('admin:manage'))) return fail('FORBIDDEN', 'Explicit permission is required for this assistant action.');
   const work = structuredClone(snapshot), effects: CommandEffects = {};
   work.stages = work.stages.filter(stage => !stage.definition_id || stage.definition_id === work.event?.definition_id);
   let result: Record<string, unknown> = {};
+  let reviewedGraphMissing = new Set<string>();
   const now = new Date(context.now);
   if (!Number.isFinite(now.getTime())) return fail('INVALID_REQUEST', 'Invalid server clock.');
   const iso = now.toISOString(), nextRevision = Number(work.event?.revision ?? 0) + 1;
@@ -206,7 +209,7 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
     if (depth > 16) fail('INVALID_STATE', 'Bounded bracket propagation exceeded the supported size.');
     const d = definition();
     if (d.schema_version === '2.0') {
-      const plan = planGraphRuntime(work, d, actor, context, nextRevision);
+      const plan = planGraphRuntime(work, d, actor, context, nextRevision, new Set(), reviewedGraphMissing);
       if (plan.effects.event) event(plan.effects.event);
       for (const table of ['stages', 'rounds', 'matches', 'standings'] as const) for (const patch of plan.effects[table] ?? []) put(table, patch);
       result = { ...result, ...plan.result };
@@ -221,6 +224,20 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
     const rankingStage = work.stages.find(s => s.node_id === d.nodes.find(n => n.module === 'standings@1')?.id);
     const qualifyStage = work.stages.find(s => s.node_id === d.nodes.find(n => n.module === 'qualify@1')?.id);
     const eliminationStage = work.stages.find(s => s.node_id === d.nodes.find(n => n.module === 'elimination@1')?.id);
+    const eliminationNode = d.nodes.find(node => node.module === 'elimination@1');
+    const qualifyNode = d.nodes.find(node => node.module === 'qualify@1');
+    const existingBracket = eliminationStage ? activeMatches.filter(match => match.stage_id === eliminationStage.id) : [];
+    const priorBracket = eliminationStage ? snapshot.matches.filter(match => match.stage_id === eliminationStage.id && match.is_current !== false && !match.voided_at) : [];
+    if (rrNode && eliminationNode?.module === 'elimination@1' && qualifyNode?.module === 'qualify@1' && priorBracket.length &&
+        !record(snapshot.stages.find(stage => stage.id === rosterStage.id)?.output).qualificationUnderReview && capability !== reviewedRuntimeCapability &&
+        inspectV1Bracket(eliminationNode.id, qualifyNode.config.count, eliminationNode.config.bronze, priorBracket).inconsistent) {
+      fail('INVALID_STATE', 'The existing bracket is incomplete or inconsistent. Review its matches before continuing.');
+    }
+    if (rrNode && eliminationNode?.module === 'elimination@1' && qualifyNode?.module === 'qualify@1' && existingBracket.length &&
+        !rosterOutput.qualificationUnderReview && capability !== reviewedRuntimeCapability && !['commitCorrection', 'withdrawEntry'].includes(command) &&
+        inspectV1Bracket(eliminationNode.id, qualifyNode.config.count, eliminationNode.config.bronze, existingBracket).inconsistent) {
+      fail('INVALID_STATE', 'The existing bracket is incomplete or inconsistent. Review its matches before continuing.');
+    }
     const inputRevision = Math.max(0, ...activeMatches.filter(m => m.stage_id === rrStage?.id).map(m => Number(m.result_revision ?? 0)));
     const output = record(rankingStage?.output);
     const runtimeOptions: RuntimeOptions = {
@@ -247,9 +264,12 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
         put('stages', { id: rosterStage.id, output: { ...rosterOutput, qualificationUnderReview: false } });
       }
     } else analysis = analyzeTournament(d, roster, results, runtimeOptions);
-    const fixtureIds = new Map(analysis.fixtures.map(f => [f.id, activeMatches.find(m => m.logical_key === f.id)?.id ?? context.id()]));
+    // Existing brackets keep propagating; new ranked brackets wait for explicit review.
+    const bracketApproved = !rrNode || !qualifyStage || !eliminationStage || record(eliminationStage.output).generationApproved === true || existingBracket.length > 0;
+    const materializedFixtures = bracketApproved ? analysis.fixtures : analysis.fixtures.filter(f => f.stageId !== eliminationStage?.node_id);
+    const fixtureIds = new Map(materializedFixtures.map(f => [f.id, activeMatches.find(m => m.logical_key === f.id)?.id ?? context.id()]));
     const pending: StorageRow[] = [];
-    for (const fixture of analysis.fixtures) {
+    for (const fixture of materializedFixtures) {
       const stage = work.stages.find(s => s.node_id === fixture.stageId)!;
       const resolved = analysis.bracket?.fixtures.find(f => f.fixture.id === fixture.id);
       const old = activeMatches.find(m => m.logical_key === fixture.id);
@@ -264,14 +284,14 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
     }
     // Insert successors first because legacy bracket-next FKs are immediate, then patch feeder links.
     for (const patch of pending.reverse()) put('matches', patch);
-    for (const fixture of analysis.fixtures) for (const [side, slot] of [['a', fixture.a], ['b', fixture.b]] as const) if (slot.kind !== 'entry') {
+    for (const fixture of materializedFixtures) for (const [side, slot] of [['a', fixture.a], ['b', fixture.b]] as const) if (slot.kind !== 'entry') {
       const feeder = work.matches.find(m => m.logical_key === slot.fixtureId && m.is_current !== false)!;
       const key = slot.kind === 'winner' ? 'bracket_next_winner_match_id' : 'bracket_next_loser_match_id';
       const fills = slot.kind === 'winner' ? 'bracket_winner_fills_side' : 'bracket_loser_fills_side';
       if (feeder[key] !== fixtureIds.get(fixture.id) || feeder[fills] !== side) put('matches', { id: feeder.id, [key]: fixtureIds.get(fixture.id), [fills]: side });
     }
     let automated = false;
-    for (const fixture of analysis.bracket?.fixtures ?? []) if (fixture.state === 'ready' && fixture.requiredOutcome) {
+    for (const fixture of bracketApproved ? analysis.bracket?.fixtures ?? [] : []) if (fixture.state === 'ready' && fixture.requiredOutcome) {
       const row = work.matches.find(m => m.logical_key === fixture.fixture.id && m.is_current !== false)!;
       put('matches', { id: row.id, status: fixture.requiredOutcome === 'walkover' ? 'walkover' : 'validated', outcome_kind: fixture.requiredOutcome, winner_team_id: fixture.requiredOutcome === 'walkover' ? fixture.entryA ?? fixture.entryB : null, score_a: null, score_b: null, validated_by: actor.id, result_revision: nextRevision, revision: nextRevision });
       automated = true;
@@ -283,13 +303,13 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
       const prior = record(stage.output);
       const payload = node.module === 'standings@1' ? { ...prior, inputRevision, rows: analysis.standings, ties: analysis.ties }
         : node.module === 'qualify@1' ? { ...prior, entryIds: rosterOutput.qualificationUnderReview && analysis.blockedCode === 'UNRESOLVED_TIE' ? prior.entryIds ?? [] : analysis.qualifiers }
-        : node.module === 'elimination@1' ? { fixtures: analysis.bracket?.fixtures ?? [] }
+        : node.module === 'elimination@1' ? { ...prior, fixtures: bracketApproved ? analysis.bracket?.fixtures ?? [] : [] }
         : node.module === 'placements@1' ? analysis.placements ?? {} : prior;
       const stageState = ['registration@1', 'entries@1'].includes(node.module) ? 'completed'
         : node.module === 'round_robin@1' ? rrDone ? 'completed' : 'ready'
         : node.module === 'standings@1' ? rrDone ? analysis.ties.length ? 'blocked' : 'completed' : 'waiting'
         : node.module === 'qualify@1' ? analysis.qualifiers.length ? 'completed' : analysis.blockedCode ? 'blocked' : 'waiting'
-        : node.module === 'elimination@1' ? analysis.bracket?.state ?? (analysis.blockedCode ? 'blocked' : 'waiting')
+        : node.module === 'elimination@1' ? !bracketApproved ? 'waiting' : analysis.bracket?.state ?? (analysis.blockedCode ? 'blocked' : 'waiting')
         : analysis.placements?.state ?? (analysis.blockedCode ? 'blocked' : 'waiting');
       put('stages', { id: stage.id, state: stageState, input_revision: inputRevision, output_revision: nextRevision, output: payload, blocked_code: stageState === 'blocked' ? analysis.blockedCode ?? 'UNRESOLVED_TIE' : null });
     }
@@ -306,11 +326,24 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
       for (const row of work.standings.filter(s => s.stage_id === rankingStage.id && !analysis.standings.some(r => r.entryId === s.team_id))) put('standings', { id: row.id, wins: 0, losses: 0, points_for: 0, points_against: 0, rank: null, eligible: false, tie_group: null, input_revision: inputRevision });
     }
     if (analysis.state === 'completed') event({ modular_state: 'completed', completed_at: iso, result_version: Number(work.event!.result_version ?? 0) + 1, results_under_review: false });
-    else if (analysis.bracket) event({ status: 'finals' });
+    else if (analysis.bracket && bracketApproved) event({ status: 'finals' });
     result = { ...result, runtime_state: analysis.state, ...(analysis.blockedCode ? { blocked_code: analysis.blockedCode } : {}) };
   }
 
   if (command === 'internalRuntime') { needAdmin(); syncRuntime(); return { effects, result }; }
+  if (command === 'generateNextStage') {
+    needAdmin(); state('active');
+    const review = previewNextStage(snapshot, actor);
+    if (review.state !== 'ready') return fail('INVALID_STATE', 'The next stage is not ready to generate.');
+    if (data.preview_hash !== review.preview_hash) fail('STALE_PREVIEW', 'Review the current next stage before generating it.');
+    const graph = definition().schema_version === '2.0';
+    if (graph) reviewedGraphMissing = new Set(review.fixtures.map(fixture => fixture.id));
+    const stage = work.stages.find(row => row.module_id === (graph ? 'entries' : 'elimination'));
+    if (!stage) fail('INVALID_STATE', 'The next stage is unavailable.');
+    put('stages', { id: stage!.id, output: { ...record(stage!.output), ...(graph ? { graphNextStageApproved: true } : { generationApproved: true }) } });
+    syncRuntime();
+    return { effects, result };
+  }
   if (command === 'reviseTournament') return planRevision(snapshot, actor, data, context);
   if (command === 'updateEventDetails') return planEventDetails(snapshot, actor, data);
   if (command === 'setDuprSubmission') {
@@ -370,6 +403,10 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
     if (intervention.effects.event) event(intervention.effects.event);
     for (const table of ['teams', 'team_members', 'tournament_players', 'stages', 'rounds', 'matches', 'standings'] as const) for (const patch of intervention.effects[table] ?? []) put(table, patch);
     result = intervention.result;
+    if (command === 'commitCorrection' && Array.isArray(result.replayed_match_ids)) {
+      const replayed = new Set(result.replayed_match_ids);
+      reviewedGraphMissing = new Set(snapshot.matches.filter(match => replayed.has(match.id) && typeof match.logical_key === 'string').map(match => String(match.logical_key)));
+    }
     if (command !== 'changeCourt' && command !== 'bulkAdjudicate' && !(command === 'withdrawEntry' && data.policy === 'all_matches_0_11') && work.event?.modular_state === 'active') syncRuntime();
   } else if (command === 'cancelTournament') {
     if (!work.event) fail('NOT_FOUND', 'Event not found.');
@@ -629,8 +666,8 @@ export function planCommand(snapshot: CommandSnapshot, actor: CommandActor, comm
   }
   return { effects, result };
 }
-export function planInternalRuntime(snapshot: CommandSnapshot, actor: CommandActor, context: CommandContext): CommandPlan {
-  return planCommand(snapshot, actor, 'internalRuntime', {}, context, runtimeCapability);
+export function planInternalRuntime(snapshot: CommandSnapshot, actor: CommandActor, context: CommandContext, reviewedRegeneration = false): CommandPlan {
+  return planCommand(snapshot, actor, 'internalRuntime', {}, context, reviewedRegeneration ? reviewedRuntimeCapability : runtimeCapability);
 }
 import type { TournamentDefinition } from './definition';
 import { validateDraft } from './validate';

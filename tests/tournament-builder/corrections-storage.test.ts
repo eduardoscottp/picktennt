@@ -5,6 +5,7 @@ import test from 'node:test';
 import { planCommand, type CommandActor, type CommandSnapshot } from '../../lib/tournament-builder/commands';
 import { previewCorrection, previewWithdrawal } from '../../lib/tournament-builder/corrections';
 import { definitionHash, requestHash } from '../../lib/tournament-builder/requests';
+import { previewNextStage } from '../../lib/tournament-builder/next-stage-preview';
 import { command as applySql, owner, player, stranger, role, storageDatabase } from './helpers/storage-db';
 
 test('real SQL preserves replay history, successor identities and before/after-playoff withdrawal boundaries', async () => {
@@ -62,6 +63,9 @@ test('real SQL preserves replay history, successor identities and before/after-p
 
     const combined = await setup(6, true);
     for (const match of [...combined.snapshot.matches]) await combined.finish(match.id);
+    const review = previewNextStage(combined.snapshot, host);
+    if (review.state !== 'ready') throw new Error('Expected a ready bracket');
+    await combined.run('generateNextStage', { preview_hash: review.preview_hash });
     const teamD = combined.snapshot.teams.find(t => t.name === 'D')!, teamE = combined.snapshot.teams.find(t => t.name === 'E')!, teamF = combined.snapshot.teams.find(t => t.name === 'F')!;
     const first = { entry_id: teamD.id, reason: 'withdrew' }, before = previewWithdrawal(combined.snapshot, host, first);
     await combined.run('withdrawEntry', { ...first, preview_hash: before.preview_hash });

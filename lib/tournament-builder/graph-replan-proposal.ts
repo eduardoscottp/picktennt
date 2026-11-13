@@ -1,6 +1,7 @@
 import type { CommandActor, CommandSnapshot, StorageRow } from './commands';
 import { analyzeReplan } from './replan-analysis';
 import { analyzeGraph } from './graph-runtime';
+import { graphRankLocks } from './graph-rank-locks';
 import { graphDependencies, graphManualEntries, type GraphDefinition, type GraphRuntimeOptions } from './graph-types';
 import { entryPlayerIds } from './entry-roster';
 import { isEligibleEntry } from './disciplinary-eligibility';
@@ -77,7 +78,12 @@ export function previewGraphReplanProposal(snapshot: CommandSnapshot, actor: Com
   const stageInputs: GraphRuntimeOptions['stageInputs'] = Object.fromEntries(after.nodes.map(node => { const stage = stages.find(row => row.node_id === node.id); return [node.id, { inputRevision: Math.max(0, ...retained.filter(match => match.stage_id === stage?.id).map(match => Number(match.result_revision ?? 0))), rankingDraws: record(stage?.output).rankingDraws as RuntimeOptions['rankingDraws'] }]; }));
   const results: FixtureResult[] = retained.filter(match => match.logical_key && (match.outcome_kind || ['score_entered', 'disputed'].includes(String(match.status)))).map(match => ({ fixtureId: String(match.logical_key), accepted: ['validated', 'walkover'].includes(String(match.status)), outcome: (match.outcome_kind ?? 'played') as FixtureResult['outcome'], winnerEntryId: match.winner_team_id as string | null, scoreA: match.score_a as number | null, scoreB: match.score_b as number | null }));
   let analysis: ReturnType<typeof analyzeGraph>;
-  try { analysis = analyzeGraph(after, rosterIds.map(id => ({ id, playerIds: entryPlayerIds(snapshot, id) })), results, { seedAssignments: rosterOutput.seedAssignments as GraphRuntimeOptions['seedAssignments'], eligibleEntryIds: snapshot.teams.filter(team => rosterIds.includes(team.id) && isEligibleEntry(snapshot,team)).map(team => team.id), stageInputs, excludedByNode: rosterOutput.excludedByNode as Record<string, string[]> | undefined, manualMatchEntries: manual }); }
+  try {
+    const entries = rosterIds.map(id => ({ id, playerIds: entryPlayerIds(snapshot, id) }));
+    const options: GraphRuntimeOptions = { seedAssignments: rosterOutput.seedAssignments as GraphRuntimeOptions['seedAssignments'], eligibleEntryIds: snapshot.teams.filter(team => rosterIds.includes(team.id) && isEligibleEntry(snapshot,team)).map(team => team.id), stageInputs, excludedByNode: rosterOutput.excludedByNode as Record<string, string[]> | undefined, manualMatchEntries: manual };
+    options.lockedRanks = graphRankLocks(after, entries, options, stages, retained);
+    analysis = analyzeGraph(after, entries, results, options);
+  }
   catch { return fail('DEPENDENCY_CHANGED', 'The proposed routes cannot preserve all selected results consistently; review the affected matches and assignments.'); }
   if (analysis.blockedCode === 'INVALID_CAPACITY') fail('INVALID_STATE', 'The current roster is incomplete or incompatible with the proposed graph.');
   const placement = after.nodes.find(node => node.module === 'placements@2');

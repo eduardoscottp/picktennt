@@ -6,6 +6,7 @@ import { planCommand, type CommandSnapshot, type CommandActor } from '../../lib/
 import { previewDefinition } from '../../lib/tournament-builder/preview';
 import { previewRevision } from '../../lib/tournament-builder/revisions';
 import { previewSchedule } from '../../lib/tournament-builder/schedule-preview';
+import { previewNextStage } from '../../lib/tournament-builder/next-stage-preview';
 import { resolvedDefinition } from '../../lib/tournament-builder/resolved-definition';
 import { entryPlayerIds } from '../../lib/tournament-builder/entry-roster';
 import type { GraphDefinition } from '../../lib/tournament-builder/graph-types';
@@ -59,11 +60,20 @@ test('revision preserves history, swaps players, regenerates and completes throu
   const data = groupData(s), preview = previewSchedule(s,owner,data,context.now);
   assert.equal(new Set(preview.fixtures.map(f => `${f.wave}:${f.court}`)).size, preview.fixtures.length, JSON.stringify(preview.fixtures));
   s = apply(s,'lockRoster',{...data,preview_hash:preview.preview_hash});
-  assert.equal(s.matches.filter(m=>m.is_current!==false).length,7);
+  assert.equal(s.matches.filter(m=>m.is_current!==false).length,4);
   assert.ok(s.matches.filter(m=>oldMatches.includes(m.id)).every(m=>m.is_current===false));
   for (const fixture of preview.fixtures) { const m=s.matches.find(m=>m.logical_key===fixture.id&&m.is_current!==false)!; assert.equal(m.court_number,fixture.court); assert.equal(s.rounds.find(r=>r.id===m.round_id)!.logical_wave,fixture.wave); }
   s=apply(s,'startTournament');
-  for(let i=0;i<7;i++) { const m=s.matches.find(m=>m.is_current!==false&&m.status==='scheduled'&&m.team_a_id&&m.team_b_id)!; assert.ok(m); s=apply(s,'attestScore',{match_id:m.id,score_a:11,score_b:0,reason:'Verified score'}); }
+  for(let i=0;i<7;i++) {
+    let m=s.matches.find(m=>m.is_current!==false&&m.status==='scheduled'&&m.team_a_id&&m.team_b_id);
+    if (!m) {
+      const stageReview = previewNextStage(s, owner);
+      if (stageReview.state !== 'ready') throw new Error('Expected a ready stage review');
+      s = apply(s, 'generateNextStage', { preview_hash: stageReview.preview_hash });
+      m=s.matches.find(match=>match.is_current!==false&&match.status==='scheduled'&&match.team_a_id&&match.team_b_id);
+    }
+    assert.ok(m); s=apply(s,'attestScore',{match_id:m.id,score_a:11,score_b:0,reason:'Verified score'});
+  }
   assert.equal(s.event!.modular_state,'completed');
 });
 test('revision before play can add an existing-account replacement after fixture generation', () => {
@@ -117,7 +127,7 @@ test('capacity reduction needs explicit removals and singles conversion needs th
   next=revise(next,singles,next.teams.filter(t=>t.entry_state==='approved').map(t=>({entry_id:t.id,entry_name:String(t.name),player_ids:entryPlayerIds(next,t.id).slice(0,1)})));
   const data=groupData(next), review=previewSchedule(next,owner,data,context.now);
   next=apply(next,'lockRoster',{...data,preview_hash:review.preview_hash});
-  assert.equal(next.matches.filter(m=>m.is_current!==false).length,7);
+  assert.equal(next.matches.filter(m=>m.is_current!==false).length,4);
 });
 test('pending entrants can accept revised rules without fabricating prior consent',()=>{
   let {s,d}=setup(0); const user={id:randomUUID(),clientId:'web'}, partner={id:randomUUID(),clientId:'web'};

@@ -190,13 +190,16 @@ test('published unlisted links are readable; pending entries and draft definitio
 });
 
 
-test('F01 real SQL persists sixteen-player fixed doubles through 28 round-robin fixtures and three playoffs',async()=>{
+for (const [advancing, bronze] of [[2,false],[4,false],[4,true]] as const) test(`F01 real SQL preserves round robin and generates top-${advancing} playoffs, bronze=${bronze}`,async()=>{
  const { planCommand } = await import('../../lib/tournament-builder/commands');
+ const { previewNextStage } = await import('../../lib/tournament-builder/next-stage-preview');
  const { definitionHash } = await import('../../lib/tournament-builder/requests');
  const { readFileSync } = await import('node:fs');
  type Snapshot=import('../../lib/tournament-builder/commands').CommandSnapshot;
  type Actor=import('../../lib/tournament-builder/commands').CommandActor;
  const definition=JSON.parse(readFileSync('tests/tournament-builder/fixtures/tournament-definition.json','utf8'));
+ definition.nodes.find((node:{module:string})=>node.module==='qualify@1').config.count=advancing;
+ definition.nodes.find((node:{module:string})=>node.module==='elimination@1').config.bronze=bronze;
  definition.event.starts_at='2030-11-07T09:00:00-05:00';definition.event.expected_end_at='2030-11-07T12:30:00-05:00';definition.registration.closes_at='2030-11-06T18:00:00-05:00';definition.scheduling.minimum_rest_minutes=0;
  const event=uuid();let snapshot:Snapshot={event:null,definitions:[],teams:[],team_members:[],tournament_players:[],stages:[],rounds:[],matches:[],standings:[]};
  const host:Actor={id:owner,clientId:'web',role:'owner'};const players:Actor[][]=[];
@@ -217,8 +220,36 @@ test('F01 real SQL persists sixteen-player fixed doubles through 28 round-robin 
  await run('closeRegistration');await run('lockRoster',{reviewed_roster_revision:snapshot.event!.roster_revision});assert.equal(snapshot.matches.length,28);
  const initial=snapshot.matches.map(m=>m.id);await run('startTournament');let played=0;
  while(snapshot.event!.modular_state!=='completed'){
-  assert.ok(played++<32,'Progression must terminate at supported fixture count.');
-  const match=snapshot.matches.find(m=>m.status==='scheduled'&&m.team_a_id&&m.team_b_id);assert.ok(match);
+  assert.ok(played++<33,'Progression must terminate at supported fixture count.');
+  const match=snapshot.matches.find(m=>m.status==='scheduled'&&m.team_a_id&&m.team_b_id);
+  if (!match) {
+   const review = previewNextStage(snapshot, host); if (review.state !== 'ready') throw new Error('Expected ready bracket');
+   const request = {preview_hash:review.preview_hash};
+   const plan = planCommand(snapshot, host, 'generateNextStage', request, {now:new Date().toISOString(),id:uuid,draw:ids=>[...ids].reverse()});
+   const input = {event, command:'generateNextStage', revision:Number(snapshot.event!.revision), request, effects:plan.effects, result:plan.result};
+   await assert.rejects(command(db,{...input,actor:stranger}),/FORBIDDEN/);
+   await assert.rejects(command(db,{...input,revision:input.revision-1}),/STALE_REVISION/);
+   for (const corrupt of ['team', 'fixture', 'standing', 'link', 'score'] as const) {
+    const effects = structuredClone(plan.effects);
+    const semi = effects.matches!.find(m=>String(m.logical_key).endsWith(':r1:m1'))!;
+    if (corrupt === 'team') semi.team_a_id=semi.team_b_id;
+    if (corrupt === 'fixture') {
+     const stage = effects.stages!.find(s=>s.id===semi.stage_id)!;
+     const output = stage.output as {fixtures: {fixture:{id:string;court:number}}[]};
+     output.fixtures.find(f=>f.fixture.id===semi.logical_key)!.fixture.court=99;
+    }
+    if (corrupt === 'standing') effects.standings![0].wins=999;
+    if (corrupt === 'link') semi.bracket_next_winner_match_id=uuid();
+    if (corrupt === 'score') semi.score_a=11;
+    await assert.rejects(command(db,{...input,effects}),/INVALID_EFFECTS/);
+   }
+   assert.equal(await count('matches',event),28);
+   const operation=uuid(), first=await command(db,{...input,operation});
+   assert.deepEqual(await command(db,{...input,operation}),first);
+   await assert.rejects(command(db,input),/STALE_REVISION/);
+   snapshot=await role(db,'service_role',owner,async()=>{const r=await db.query<{r:Snapshot}>('SELECT tb_get_snapshot($1,$2,$3,NULL) r',[owner,'web',event]);return r.rows[0].r;});
+   continue;
+  }
   const a=snapshot.teams.find(t=>t.id===match.team_a_id)!,b=snapshot.teams.find(t=>t.id===match.team_b_id)!;
   if (played !== 2) await run('startMatch',{match_id:match.id});
   const expectedA = players[String(a.name).charCodeAt(0)-65].map(p=>p.id).sort();
@@ -241,8 +272,10 @@ test('F01 real SQL persists sixteen-player fixed doubles through 28 round-robin 
   assert.deepEqual([completed.player_a1_id, completed.player_a2_id].sort(),expectedA);
   assert.deepEqual([completed.player_b1_id, completed.player_b2_id].sort(),expectedB);
  }
- assert.equal(snapshot.matches.length,31);assert.equal(snapshot.event!.result_version,1);assert.ok(initial.every(id=>snapshot.matches.some(m=>m.id===id)));
- const output=snapshot.stages.find(s=>s.module_id==='placements')!.output as {groups:{rank:number;entryIds:string[]}[]};assert.deepEqual(output.groups.map(g=>[g.rank,g.entryIds.length]),[[1,1],[2,1],[3,2],[5,1],[6,1],[7,1],[8,1]]);
+ assert.equal(snapshot.matches.length,28+advancing-1+Number(bronze));assert.equal(snapshot.event!.result_version,1);assert.ok(initial.every(id=>snapshot.matches.some(m=>m.id===id)));
+ const output=snapshot.stages.find(s=>s.module_id==='placements')!.output as {groups:{rank:number;entryIds:string[]}[]};
+ const expected = advancing===4&&!bronze ? [[1,1],[2,1],[3,2],[5,1],[6,1],[7,1],[8,1]] : Array.from({length:8},(_,i)=>[i+1,1]);
+ assert.deepEqual(output.groups.map(g=>[g.rank,g.entryIds.length]),expected);
 });
 
 

@@ -6,6 +6,7 @@ import type { PGlite } from '@electric-sql/pglite';
 import { storageDatabase, role, command, owner, stranger } from './helpers/storage-db';
 import { planCommand, type CommandSnapshot } from '../../lib/tournament-builder/commands';
 import { previewDefinition } from '../../lib/tournament-builder/preview';
+import { previewNextStage } from '../../lib/tournament-builder/next-stage-preview';
 import { previewAppendTerminalMatch, planAppendTerminalMatch } from '../../lib/tournament-builder/append-terminal-match';
 import { callTournamentTool, type McpDependencies } from '../../lib/tournament-builder/mcp';
 
@@ -42,7 +43,13 @@ async function fixture(hasBronze = false) {
   for (let index = 0; index < 4; index++) current = await apply(event, 'addRegisteredEntry', { definition_id: definitionId, player_ids: users.slice(index * 2, index * 2 + 2), entry_name: `Pair ${index + 1}`, reason: 'Registered accounts' });
   current = await apply(event, 'closeRegistration', {}); current = await apply(event, 'lockRoster', { reviewed_roster_revision: current.event!.roster_revision }); current = await apply(event, 'startTournament', {});
   while (current.event!.modular_state !== 'completed') {
-    const match = current.matches.find(row => row.status === 'scheduled' && row.team_a_id && row.team_b_id);
+    let match = current.matches.find(row => row.status === 'scheduled' && row.team_a_id && row.team_b_id);
+    if (!match) {
+      const stageReview = previewNextStage(current, actor);
+      if (stageReview.state !== 'ready') throw new Error(`Expected a ready stage review: ${stageReview.state}`);
+      current = await apply(event, 'generateNextStage', { preview_hash: stageReview.preview_hash });
+      match = current.matches.find(row => row.status === 'scheduled' && row.team_a_id && row.team_b_id);
+    }
     assert.ok(match); current = await apply(event, 'attestScore', { match_id: match.id, outcome_kind: 'played', score_a: 11, score_b: 1, reason: 'Observed score' });
   }
   const final = current.matches.find(match => match.logical_key === 'final:match')!;

@@ -5,6 +5,7 @@ import test from 'node:test';
 import { storageDatabase, role, command, owner } from './helpers/storage-db';
 import { planCommand, type CommandSnapshot } from '../../lib/tournament-builder/commands';
 import { previewDefinition } from '../../lib/tournament-builder/preview';
+import { previewNextStage } from '../../lib/tournament-builder/next-stage-preview';
 import { resolvedDefinition } from '../../lib/tournament-builder/resolved-definition';
 import type { GraphDefinition } from '../../lib/tournament-builder/graph-types';
 
@@ -46,7 +47,7 @@ test('SQL preserves the published registration plan and persists underfilled ass
     const data = { reviewed_roster_revision: current.event!.roster_revision, nodes: full.nodes, group_assignments: groups };
     const stalePlan = planCommand(stale, actor, 'lockRoster', data, context);
     await apply('lockRoster', data);
-    assert.equal(current.matches.length, 11);
+    assert.equal(current.matches.length, 8);
     assert.deepEqual(current.definitions[0], published);
     assert.equal((resolvedDefinition(current)!.definition as GraphDefinition).nodes.length, full.nodes.length);
     assert.equal(Object.keys((current.stages.find(s => s.module_id === 'entries')!.output as { seedAssignments: object }).seedAssignments).length, 10);
@@ -55,7 +56,13 @@ test('SQL preserves the published registration plan and persists underfilled ass
     assert.deepEqual(await snapshot(), before);
     await apply('startTournament', {});
     for (let i = 0; i < 11; i++) {
-      const m = current.matches.find(m => m.status === 'scheduled' && m.team_a_id && m.team_b_id)!;
+      let m = current.matches.find(m => m.status === 'scheduled' && m.team_a_id && m.team_b_id);
+      if (!m) {
+        const stageReview = previewNextStage(current, actor);
+        if (stageReview.state !== 'ready') throw new Error('Expected a ready stage review');
+        await apply('generateNextStage', { preview_hash: stageReview.preview_hash });
+        m = current.matches.find(match => match.status === 'scheduled' && match.team_a_id && match.team_b_id);
+      }
       assert.ok(m);
       const a = Number(current.teams.find(t => t.id === m.team_a_id)!.seed), b = Number(current.teams.find(t => t.id === m.team_b_id)!.seed);
       await apply('attestScore', { match_id: m.id, score_a: a < b ? 11 : 0, score_b: a < b ? 0 : 11, reason: 'Confirmed final result' });

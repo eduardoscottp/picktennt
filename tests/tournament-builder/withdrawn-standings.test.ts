@@ -78,7 +78,8 @@ for(const graph of [false,true]) test((graph?'graph':'v1')+' withdrawal demotes 
  assert.deepEqual(dto.standings.map(row=>[row.team_id,row.rank,row.eligible]),ranked.map(row=>[row.team_id,row.rank,row.eligible]));
  const router={back(){},forward(){},refresh(){},push(){},replace(){},prefetch(){},bfcacheId:'test'};
  const html=renderToStaticMarkup(createElement(AppRouterContext.Provider,{value:router},createElement(ToastProvider,null,createElement(TournamentBuilder,{actorId:owner.id,initialSnapshot:snapshot,initialPreview:previewDefinition(definition,Number(snapshot.event!.revision)),view:'standings'}))));
- assert.match(html,/Withdrawn/);assert.equal((html.match(/aria-label="Rank 1"/g)??[]).length,1);
+ assert.match(html,/Withdrawn/);assert.equal((html.match(/>#1<\/span>/g)??[]).length,1);
+ assert.doesNotMatch(html,/🥇|🥈|🥉/);
 });
 
 test('stale persisted rank is normalized per stage and tied active ranks stay tied',()=>{
